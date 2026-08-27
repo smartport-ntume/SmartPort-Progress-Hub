@@ -4,142 +4,148 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="color-scheme" content="light" />
-  <title>SmartPort Progress Hub</title>
+  <title>SmartPort Progress Hub v0.6</title>
   <link rel="stylesheet" href="css/app.css" />
 </head>
 <body>
-  <header class="topbar">
+<header class="legacy-header">
+  <div class="brand-row">
     <div>
-      <h1>SmartPort Progress Hub <span class="version">v0.6</span></h1>
-      <p>FSR → IF → WP / Subtask → CP / ACL → Verification Evidence</p>
+      <h1>SmartPort Progress Hub <span>v0.6</span></h1>
+      <div class="subhead">Reviewable Weekly Workflow｜Original → Parsed Draft → PM Approved｜GitHub Source of Truth</div>
     </div>
     <div class="connection-box">
       <span id="connDot" class="dot offline"></span>
       <span id="connText">GitHub Project Store 未連線</span>
-      <button id="btnReload" class="btn ghost">重新整理</button>
+      <button id="btnReload" class="btn small">重新整理</button>
     </div>
-  </header>
-
-  <nav class="tabs" aria-label="主要功能">
-    <button class="tab active" data-view="dashboard">Dashboard</button>
-    <button class="tab" data-view="plan">WP / Gantt</button>
-    <button class="tab" data-view="subtasks">Subtasks</button>
-    <button class="tab" data-view="fsr">FSR</button>
-    <button class="tab" data-view="cp">CP / ACL</button>
-    <button class="tab" data-view="weekly">Weekly Agent</button>
-    <button class="tab" data-view="review">PM Review</button>
-    <button class="tab" data-view="settings">Settings</button>
+  </div>
+  <nav class="legacy-nav">
+    <button class="active" data-view="dashboard">Dashboard</button>
+    <button data-view="reports">Weekly Reports</button>
+    <button data-view="plan">Plan Editor</button>
+    <button data-view="fsr">FSR</button>
+    <button data-view="cp">CP / ACL</button>
+    <button data-view="review">PM Review <span id="reviewCount"></span></button>
+    <button data-view="settings">設定 / 備份</button>
   </nav>
+</header>
 
-  <main>
-    <section id="view-dashboard" class="view active">
-      <div class="hero-grid">
-        <div class="metric"><span>Project</span><strong id="metricProject">SmartPort SC</strong></div>
-        <div class="metric"><span>Work Packages</span><strong id="metricWp">—</strong></div>
-        <div class="metric"><span>Subtasks</span><strong id="metricSubtasks">—</strong></div>
-        <div class="metric"><span>FSR</span><strong id="metricFsr">—</strong></div>
-        <div class="metric"><span>Next CP</span><strong id="metricCp">—</strong></div>
-      </div>
-      <div class="grid two">
-        <article class="card">
-          <div class="card-head"><h2>Checkpoint Readiness</h2></div>
-          <div id="dashboardCp" class="empty">等待 Project Store 資料。</div>
-        </article>
-        <article class="card">
-          <div class="card-head"><h2>FSR Maturity</h2></div>
-          <div id="dashboardFsr" class="empty">等待 Project Store 資料。</div>
-        </article>
-      </div>
-      <article class="card">
-        <div class="card-head"><h2>Work Package Status</h2></div>
-        <div id="dashboardWp" class="empty">等待 Project Store 資料。</div>
-      </article>
-    </section>
+<main>
+  <section id="view-dashboard" class="view active">
+    <div class="cards">
+      <div class="metric-card"><div class="k">Today</div><div class="v" id="todayCard">—</div><div class="small muted">紅線 = 今日</div></div>
+      <div class="metric-card"><div class="k">Current ACL</div><div class="v" id="currentAcl">—</div><div class="small muted" id="currentCpSub"></div></div>
+      <div class="metric-card"><div class="k">Next Checkpoint</div><div class="v" id="nextCp">—</div><div class="small muted" id="nextCpDate"></div></div>
+      <div class="metric-card"><div class="k">Schedule Health</div><div class="v" id="scheduleHealth">—</div><div class="small muted" id="scheduleSub"></div></div>
+      <div class="metric-card"><div class="k">Pending Updates</div><div class="v" id="pendingCount">0</div><div class="small muted">尚未 PM Approve</div></div>
+    </div>
 
-    <section id="view-plan" class="view">
-      <div class="section-head">
-        <div><h2>WP / Gantt</h2><p>Work Package 主資料由 Private Project-Control repo 管理。</p></div>
-        <button class="btn primary" data-action="add-wp">＋ 新增 WP</button>
-      </div>
-      <article class="card"><div id="wpTable" class="empty">尚未載入 Work Package。</div></article>
-      <article class="card">
-        <div class="card-head"><h3>Gantt Overview</h3></div>
-        <div id="gantt" class="empty">尚未載入 Gantt。</div>
-      </article>
-    </section>
-
-    <section id="view-subtasks" class="view">
-      <div class="section-head">
-        <div><h2>Subtasks / GitHub Issues</h2><p>每個 Subtask 對應一個 GitHub Issue。</p></div>
-        <button class="btn primary" data-action="add-subtask">＋ 新增 Subtask</button>
-      </div>
-      <article class="card"><div id="subtaskTable" class="empty">尚未載入 Subtasks。</div></article>
-    </section>
-
-    <section id="view-fsr" class="view">
-      <div class="section-head">
-        <div><h2>Functional Safety Requirements</h2><p>FSR 變更保留 traceability 與 commit history。</p></div>
-        <button class="btn primary" data-action="add-fsr">＋ 新增 FSR</button>
-      </div>
-      <article class="card"><div id="fsrTable" class="empty">尚未載入 FSR。</div></article>
-    </section>
-
-    <section id="view-cp" class="view">
-      <div class="section-head">
-        <div><h2>Checkpoint / ACL</h2><p>CP 定義 capability gate、FSR target 與 WP criteria。</p></div>
-        <button class="btn primary" data-action="add-cp">＋ 新增 CP</button>
-      </div>
-      <div id="cpGrid" class="cp-grid"><div class="empty">尚未載入 Checkpoint。</div></div>
-    </section>
-
-    <section id="view-weekly" class="view">
-      <div class="section-head"><div><h2>Weekly Agent</h2><p>保留 Original → Parsed → Approved 的週報流程。</p></div></div>
-      <article class="card">
-        <div class="form-grid">
-          <label>週次<input id="weeklyWeek" placeholder="2026-W35" /></label>
-          <label>Owner<input id="weeklyOwner" placeholder="Owner name" /></label>
+    <div class="panel">
+      <div class="panel-title">Integrated Gantt
+        <div class="toolbar">
+          <label class="inline muted"><input id="showSubs" type="checkbox" /> 顯示 Subtasks</label>
+          <span class="muted"><span class="legend-dot pending"></span> Pending Review</span>
         </div>
-        <label>Agent Proposal<textarea id="weeklyProposal" rows="12" placeholder="之後接 Auth/API 後，這裡會讀取 parsed / approved data。"></textarea></label>
-        <div class="actions"><button class="btn" disabled>匯入週報</button><button class="btn primary" disabled>送 PM Review</button></div>
-      </article>
-    </section>
+      </div>
+      <div class="gantt-wrap"><div id="gantt" class="gantt"><div class="empty">等待 Project Store 資料。</div></div></div>
+    </div>
 
-    <section id="view-review" class="view">
-      <div class="section-head"><div><h2>PM Review Queue</h2><p>AI/工程師提出的變更先審查，再寫回 GitHub。</p></div></div>
-      <article class="card"><div id="reviewQueue" class="empty">目前沒有待審項目。</div></article>
-    </section>
+    <div class="grid2 dashboard-bottom">
+      <div class="panel"><div class="panel-title">Project Snapshot</div><div id="projectSnapshot" class="panel-body muted">等待 Project Store 資料。</div></div>
+      <div class="panel"><div class="panel-title">FSR Maturity</div><div id="fsrSummary" class="panel-body muted">等待 Project Store 資料。</div></div>
+    </div>
+  </section>
 
-    <section id="view-settings" class="view">
-      <div class="section-head"><div><h2>Settings</h2><p>公開前端不儲存 GitHub secret。</p></div></div>
-      <article class="card settings-card">
-        <label>Auth / API Base URL
-          <input id="apiBase" placeholder="例如：https://smartport-api.example.com" />
-        </label>
-        <label>Project Repository
-          <input id="projectRepo" value="smartport-ntume/SmartPort-Project-Control" />
-        </label>
-        <div class="actions">
-          <button id="btnSaveSettings" class="btn primary">儲存設定</button>
-          <button id="btnTestConnection" class="btn">測試連線</button>
+  <section id="view-reports" class="view">
+    <div class="grid2">
+      <div class="panel">
+        <div class="panel-title">Weekly Report｜Original / Parsed Draft <span class="revision-badge">GitHub-backed</span></div>
+        <div class="panel-body">
+          <div class="alert info"><b>流程保持舊版邏輯。</b> Original → Parsed Draft → PM Approved；正式檔案會存 GitHub，不再依賴瀏覽器 localStorage。</div>
+          <div class="field"><label>Weekly Report (.docx)</label><input id="reportFile" type="file" accept=".docx" disabled /></div>
+          <div class="field"><label>Owner Team</label><select id="reportOwner" disabled><option>CTL</option><option>LOC/NAV</option><option>PER</option><option>STM</option><option>VERIFY</option></select></div>
+          <button class="btn primary" disabled>讀取 Word</button>
+          <button class="btn" disabled>儲存 Parsed Revision</button>
+          <button class="btn" disabled>重新分析 Mapping</button>
+          <div class="alert warning">Weekly Report API 尚未接上；目前先恢復你偏好的排版，下一階段再把 DOCX → Parsed → Review 流程接回 GitHub。</div>
         </div>
-        <div class="notice">
-          GitHub Pages 是公開靜態前端。Private repo 的讀寫必須透過安全的登入 / API 層；PAT、GitHub App private key、client secret 都不能放在此 repo。
-        </div>
-      </article>
-    </section>
-  </main>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Mapping / Progress Proposal <button class="btn primary small" disabled>送 PM Review</button></div>
+        <div class="panel-body muted">尚未載入週報。</div>
+      </div>
+    </div>
+    <div class="panel top-gap">
+      <div class="panel-title">Report Archive｜Original → Parsed → Approved</div>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Name</th><th>Original</th><th>Parsed Rev.</th><th>Status</th><th>Items</th><th></th></tr></thead><tbody><tr><td colspan="7" class="muted">Weekly archive API 下一階段接入。</td></tr></tbody></table></div>
+    </div>
+  </section>
 
-  <div id="drawerBackdrop" class="backdrop"></div>
-  <aside id="drawer" class="drawer" aria-hidden="true">
-    <div class="drawer-head"><h2 id="drawerTitle">Editor</h2><button id="drawerClose" class="icon-btn" aria-label="關閉">×</button></div>
-    <form id="editorForm" class="drawer-body"></form>
-  </aside>
+  <section id="view-plan" class="view">
+    <div class="panel">
+      <div class="panel-title">WP / Subtask Editor
+        <div class="toolbar"><button class="btn primary" data-action="add-wp">＋新增 WP</button><button class="btn" data-action="add-subtask">＋新增 Subtask</button></div>
+      </div>
+      <div class="table-wrap tall"><table id="planTable"><thead><tr><th>WP / Subtask</th><th>Owner</th><th>Start</th><th>End</th><th>Actual</th><th>IF / FSR</th><th>GitHub</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="panel top-gap">
+      <div class="panel-title">Checkpoint Editor <div class="toolbar"><button class="btn primary" data-action="add-cp">＋新增 CP</button></div></div>
+      <div class="table-wrap"><table id="cpEditTable"><thead><tr><th>CP</th><th>Date</th><th>ACL</th><th>Name</th><th>FSR Target</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
 
-  <div id="toast" class="toast" role="status"></div>
+  <section id="view-fsr" class="view">
+    <div class="panel">
+      <div class="panel-title">FSR Maturity / Allocation <div class="toolbar"><button class="btn primary" data-action="add-fsr">＋新增 FSR</button></div></div>
+      <div class="table-wrap tall"><table id="fsrTable"><thead><tr><th>FSR</th><th>Requirement</th><th>Primary</th><th>Support / IF</th><th>Linked WP</th><th>Current</th><th>12/31 Target</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
 
-  <script src="js/config.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/app.js"></script>
+  <section id="view-cp" class="view">
+    <div class="panel">
+      <div class="panel-title">Checkpoint / ACL / Vehicle Capability <div class="toolbar"><button class="btn primary" data-action="add-cp">＋新增 CP</button></div></div>
+      <div id="cpTimeline" class="cp-timeline"></div>
+      <div id="cpGrid" class="cp-grid"></div>
+    </div>
+  </section>
+
+  <section id="view-review" class="view">
+    <div class="panel">
+      <div class="panel-title">PM Review Queue <div class="toolbar"><button class="btn danger" disabled>清空 Queue</button></div></div>
+      <div id="reviewQueue" class="panel-body muted">目前沒有待審項目。</div>
+    </div>
+  </section>
+
+  <section id="view-settings" class="view">
+    <div class="grid2">
+      <div class="panel"><div class="panel-title">Project Settings</div><div class="panel-body">
+        <div class="field"><label>Auth / API Base URL</label><input id="apiBase" /></div>
+        <div class="field"><label>Project Repository</label><input id="projectRepo" value="smartport-ntume/SmartPort-Project-Control" readonly /></div>
+        <div class="field"><label>GitHub User</label><input id="githubUser" value="—" readonly /></div>
+        <button id="btnSaveSettings" class="btn primary">儲存 API 設定</button>
+        <button id="btnLogin" class="btn">GitHub Login</button>
+        <button id="btnLogout" class="btn danger">Logout</button>
+      </div></div>
+      <div class="panel"><div class="panel-title">備份 / Source of Truth</div><div class="panel-body">
+        <div class="alert info"><b>Source of Truth：GitHub Private Repo</b><br />Hub 的 WP / Subtask / CP / FSR 修改會寫回 GitHub，保留 commit / Issue history。</div>
+        <button id="btnExportSnapshot" class="btn primary">匯出目前 Snapshot JSON</button>
+        <div class="small muted top-gap">瀏覽器只保留短效登入 session 與 API URL，不再把正式 Project DB 存在 localStorage。</div>
+      </div></div>
+    </div>
+  </section>
+</main>
+
+<div id="drawerBackdrop" class="backdrop"></div>
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head"><strong id="drawerTitle"></strong><button id="drawerClose" class="btn">✕</button></div>
+  <form id="editorForm" class="drawer-body"></form>
+</aside>
+<div id="toast" class="toast"></div>
+
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
