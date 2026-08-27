@@ -18,6 +18,12 @@
     return sessionStorage.getItem('smartport.session') || '';
   }
 
+  function redirectToLogin() {
+    sessionStorage.removeItem('smartport.session');
+    const root = base();
+    if (root) window.location.replace(root + cfg.endpoints.login);
+  }
+
   async function request(path, options = {}) {
     const root = base();
     if (!root) throw new Error('尚未設定 Auth/API Base URL');
@@ -31,6 +37,14 @@
       },
       ...options
     });
+
+    if (res.status === 401) {
+      redirectToLogin();
+      const err = new Error('尚未登入 GitHub，正在前往授權頁面…');
+      err.status = 401;
+      throw err;
+    }
+
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch (_) {}
