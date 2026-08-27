@@ -64,6 +64,25 @@ async function putJsonFile(repo, path, payload, token, message) {
   });
 }
 
+async function repoAccess(repo, token) {
+  const info = await github(`/repos/${repo}`, token);
+  const p = info.permissions || {};
+  let permission = 'none';
+  if (p.admin) permission = 'admin';
+  else if (p.maintain) permission = 'maintain';
+  else if (p.push) permission = 'write';
+  else if (p.triage) permission = 'triage';
+  else if (p.pull) permission = 'read';
+
+  const canWrite = !!(p.admin || p.maintain || p.push);
+  return {
+    permission,
+    can_write: canWrite,
+    can_approve: canWrite,
+    role: canWrite ? 'PM' : 'ENGINEER'
+  };
+}
+
 function cookie(name, value, maxAge) {
   const bits = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'Secure', 'SameSite=None'];
   if (maxAge != null) bits.push(`Max-Age=${maxAge}`);
@@ -179,7 +198,11 @@ export default {
 
         const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
           method: 'POST',
-          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'SmartPort-Progress-Hub/0.6' },
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'SmartPort-Progress-Hub/0.6'
+          },
           body: JSON.stringify({
             client_id: env.GITHUB_CLIENT_ID,
             client_secret: env.GITHUB_CLIENT_SECRET,
@@ -220,8 +243,32 @@ export default {
       const repo = env.PROJECT_REPO;
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const me = await github('/user', token);
-        return json({ login: me.login, avatar_url: me.avatar_url }, 200, C);
+        const [me, access] = await Promise.all([
+          github('/user', token),
+          repoAccess(repo, token)
+        ]);
+        return json({
+          login: me.login,
+          avatar_url: me.avatar_url,
+          role: access.role,
+          repository_permission: access.permission,
+          can_write: access.can_write,
+          can_approve: access.can_approve
+        }, 200, C);
+      }
+
+      const isProjectWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) &&
+        (url.pathname.startsWith('/api/project/') || url.pathname.startsWith('/api/safety/'));
+      if (isProjectWrite) {
+        const access = await repoAccess(repo, token);
+        if (!access.can_write) {
+          return json({
+            error: 'forbidden',
+            message: 'This GitHub account has read-only access to SmartPort-Project-Control.',
+            role: access.role,
+            repository_permission: access.permission
+          }, 403, C);
+        }
       }
 
       if (url.pathname === '/api/project/snapshot' && request.method === 'GET') {
