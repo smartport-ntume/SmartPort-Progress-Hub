@@ -139,6 +139,7 @@ export default {
         const gh = new URL('https://github.com/login/oauth/authorize');
         gh.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
         gh.searchParams.set('redirect_uri', redirectUri);
+        gh.searchParams.set('scope', 'repo read:org');
         gh.searchParams.set('state', state);
         return new Response(null, { status: 302, headers: { Location: gh.toString(), 'Set-Cookie': cookie('sp_state', state, { maxAge: 600 }), ...C } });
       }
@@ -152,7 +153,7 @@ export default {
           body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, code: url.searchParams.get('code'), redirect_uri: `${url.origin}/auth/callback` })
         });
         const t = await tokenRes.json();
-        if (!t.access_token) return json({ error: 'GitHub App authorization failed', detail: t }, 401, C);
+        if (!t.access_token) return json({ error: 'GitHub OAuth authorization failed', detail: t }, 401, C);
         const maxAgeSec = Math.min(Number(t.expires_in || 28800), 28800);
         const sealed = await seal({ token: t.access_token, exp: Date.now() + maxAgeSec * 1000 }, env.SESSION_SECRET);
         return new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL, 'Set-Cookie': cookie('sp_session', sealed, { maxAge: maxAgeSec }), ...C } });
