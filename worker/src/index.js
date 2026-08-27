@@ -6,7 +6,7 @@ function cors(origin, frontendUrl) {
   return {
     'Access-Control-Allow-Origin': allowed ? origin : allowedOrigin,
     'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'Vary': 'Origin'
   };
@@ -116,6 +116,11 @@ async function unseal(value, secret) {
 }
 
 async function tokenFromSession(req, env) {
+  const auth = req.headers.get('Authorization') || '';
+  if (auth.startsWith('Bearer ') && env.SESSION_SECRET) {
+    const session = await unseal(auth.slice(7), env.SESSION_SECRET);
+    if (session?.token) return session.token;
+  }
   const c = parseCookies(req);
   if (!c.sp_session || !env.SESSION_SECRET) return null;
   const session = await unseal(c.sp_session, env.SESSION_SECRET);
@@ -156,7 +161,8 @@ export default {
         if (!t.access_token) return json({ error: 'GitHub OAuth authorization failed', detail: t }, 401, C);
         const maxAgeSec = Math.min(Number(t.expires_in || 28800), 28800);
         const sealed = await seal({ token: t.access_token, exp: Date.now() + maxAgeSec * 1000 }, env.SESSION_SECRET);
-        return new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL, 'Set-Cookie': cookie('sp_session', sealed, { maxAge: maxAgeSec }), ...C } });
+        const target = `${env.FRONTEND_URL.replace(/\/$/, '')}/#sp_session=${encodeURIComponent(sealed)}`;
+        return new Response(null, { status: 302, headers: { Location: target, 'Set-Cookie': cookie('sp_session', sealed, { maxAge: maxAgeSec }), ...C } });
       }
 
       if (url.pathname === '/auth/logout') {
