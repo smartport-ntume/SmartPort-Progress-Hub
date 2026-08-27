@@ -6,27 +6,52 @@
     return (saved || cfg.apiBase || '').replace(/\/$/, '');
   }
 
+  function captureSessionFromHash() {
+    const raw = window.location.hash || '';
+    if (!raw.startsWith('#sp_session=')) return;
+    const token = decodeURIComponent(raw.slice('#sp_session='.length));
+    if (token) sessionStorage.setItem('smartport.session', token);
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+
+  function sessionToken() {
+    return sessionStorage.getItem('smartport.session') || '';
+  }
+
   async function request(path, options = {}) {
     const root = base();
     if (!root) throw new Error('尚未設定 Auth/API Base URL');
+    const token = sessionToken();
     const res = await fetch(root + path, {
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+      },
       ...options
     });
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch (_) {}
-      throw new Error(`API ${res.status}${detail ? ': ' + detail : ''}`);
+      const err = new Error(`API ${res.status}${detail ? ': ' + detail : ''}`);
+      err.status = res.status;
+      throw err;
     }
     if (res.status === 204) return null;
     return res.json();
   }
 
+  captureSessionFromHash();
+
   window.SmartPortAPI = {
     getBase: base,
     setBase(url) { localStorage.setItem('smartport.apiBase', (url || '').trim().replace(/\/$/, '')); },
+    login() { window.location.href = base() + cfg.endpoints.login; },
+    logout() { sessionStorage.removeItem('smartport.session'); window.location.href = base() + cfg.endpoints.logout; },
+    hasSession() { return !!sessionToken(); },
     async health() { return request(cfg.endpoints.health); },
+    async me() { return request(cfg.endpoints.me); },
     async loadSnapshot() { return request(cfg.endpoints.snapshot); },
     async saveWorkPackages(payload) { return request(cfg.endpoints.workPackages, { method: 'PUT', body: JSON.stringify(payload) }); },
     async saveFSR(payload) { return request(cfg.endpoints.fsr, { method: 'PUT', body: JSON.stringify(payload) }); },
