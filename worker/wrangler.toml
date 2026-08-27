@@ -5,7 +5,7 @@ compatibility_date = "2026-08-27"
 [vars]
 FRONTEND_URL = "https://smartport-ntume.github.io/SmartPort-Progress-Hub/"
 PROJECT_REPO = "smartport-ntume/SmartPort-Project-Control"
-GITHUB_CLIENT_ID = "Ov231iGRrIsBDpAtXDck"
+GITHUB_CLIENT_ID = "Ov23liGRrIsBDpAtXDck"
 
 # Sensitive values must stay in Cloudflare Runtime Secrets, never commit them:
 #   GITHUB_CLIENT_SECRET
