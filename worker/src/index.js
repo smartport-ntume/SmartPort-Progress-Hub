@@ -25,6 +25,7 @@ async function github(path, token, options = {}) {
     headers: {
       'Accept': 'application/vnd.github+json',
       'Authorization': `Bearer ${token}`,
+      'User-Agent': 'SmartPort-Progress-Hub/0.6',
       'X-GitHub-Api-Version': '2022-11-28',
       'Content-Type': 'application/json',
       ...(options.headers || {})
@@ -178,7 +179,7 @@ export default {
 
         const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
           method: 'POST',
-          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'SmartPort-Progress-Hub/0.6' },
           body: JSON.stringify({
             client_id: env.GITHUB_CLIENT_ID,
             client_secret: env.GITHUB_CLIENT_SECRET,
