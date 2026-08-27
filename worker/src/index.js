@@ -1,9 +1,10 @@
 const GH_API = 'https://api.github.com';
 
 function cors(origin, frontendUrl) {
-  const allowed = origin === frontendUrl.replace(/\/$/, '') || origin === frontendUrl;
+  const allowedOrigin = frontendUrl.replace(/\/$/, '');
+  const allowed = origin === allowedOrigin || origin === frontendUrl;
   return {
-    'Access-Control-Allow-Origin': allowed ? origin : frontendUrl.replace(/\/$/, ''),
+    'Access-Control-Allow-Origin': allowed ? origin : allowedOrigin,
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
@@ -59,8 +60,12 @@ async function putJsonFile(repo, path, payload, token, message) {
 
 function cookie(name, value, opts = {}) {
   const bits = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'Secure', 'SameSite=None'];
-  if (opts.maxAge) bits.push(`Max-Age=${opts.maxAge}`);
+  if (opts.maxAge != null) bits.push(`Max-Age=${opts.maxAge}`);
   return bits.join('; ');
+}
+
+function clearCookie(name) {
+  return cookie(name, '', { maxAge: 0 });
 }
 
 function parseCookies(req) {
@@ -72,11 +77,49 @@ function parseCookies(req) {
   return out;
 }
 
+function bytesToB64url(bytes) {
+  let s = '';
+  bytes.forEach(b => { s += String.fromCharCode(b); });
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+function b64urlToBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  const raw = atob(s);
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+async function sessionKey(secret) {
+  const raw = new TextEncoder().encode(secret);
+  const digest = await crypto.subtle.digest('SHA-256', raw);
+  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+async function seal(value, secret) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await sessionKey(secret);
+  const plaintext = new TextEncoder().encode(JSON.stringify(value));
+  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext));
+  return `${bytesToB64url(iv)}.${bytesToB64url(encrypted)}`;
+}
+
+async function unseal(value, secret) {
+  try {
+    const [ivPart, dataPart] = String(value || '').split('.');
+    if (!ivPart || !dataPart) return null;
+    const key = await sessionKey(secret);
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64urlToBytes(ivPart) }, key, b64urlToBytes(dataPart));
+    const data = JSON.parse(new TextDecoder().decode(decrypted));
+    if (!data.exp || Date.now() > data.exp) return null;
+    return data;
+  } catch (_) { return null; }
+}
+
 async function tokenFromSession(req, env) {
   const c = parseCookies(req);
-  if (!c.sp_token) return null;
-  // Minimal deployment skeleton: encrypted/session-store replacement should be used before production.
-  return c.sp_token;
+  if (!c.sp_session || !env.SESSION_SECRET) return null;
+  const session = await unseal(c.sp_session, env.SESSION_SECRET);
+  return session?.token || null;
 }
 
 export default {
@@ -90,12 +133,12 @@ export default {
       if (url.pathname === '/api/health') return json({ ok: true, service: 'smartport-progress-hub-api' }, 200, C);
 
       if (url.pathname === '/auth/login') {
+        if (!env.GITHUB_CLIENT_ID) return json({ error: 'GITHUB_CLIENT_ID not configured' }, 500, C);
         const state = crypto.randomUUID();
         const redirectUri = `${url.origin}/auth/callback`;
         const gh = new URL('https://github.com/login/oauth/authorize');
         gh.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
         gh.searchParams.set('redirect_uri', redirectUri);
-        gh.searchParams.set('scope', 'repo read:org');
         gh.searchParams.set('state', state);
         return new Response(null, { status: 302, headers: { Location: gh.toString(), 'Set-Cookie': cookie('sp_state', state, { maxAge: 600 }), ...C } });
       }
@@ -109,13 +152,24 @@ export default {
           body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, code: url.searchParams.get('code'), redirect_uri: `${url.origin}/auth/callback` })
         });
         const t = await tokenRes.json();
-        if (!t.access_token) return json({ error: 'GitHub OAuth failed', detail: t }, 401, C);
-        return new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL, 'Set-Cookie': cookie('sp_token', t.access_token, { maxAge: 28800 }), ...C } });
+        if (!t.access_token) return json({ error: 'GitHub App authorization failed', detail: t }, 401, C);
+        const maxAgeSec = Math.min(Number(t.expires_in || 28800), 28800);
+        const sealed = await seal({ token: t.access_token, exp: Date.now() + maxAgeSec * 1000 }, env.SESSION_SECRET);
+        return new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL, 'Set-Cookie': cookie('sp_session', sealed, { maxAge: maxAgeSec }), ...C } });
+      }
+
+      if (url.pathname === '/auth/logout') {
+        return new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL, 'Set-Cookie': clearCookie('sp_session'), ...C } });
       }
 
       const token = await tokenFromSession(request, env);
-      if (!token) return json({ error: 'unauthorized' }, 401, C);
+      if (!token) return json({ error: 'unauthorized', login: `${url.origin}/auth/login` }, 401, C);
       const repo = env.PROJECT_REPO;
+
+      if (url.pathname === '/api/me' && request.method === 'GET') {
+        const me = await github('/user', token);
+        return json({ login: me.login, avatar_url: me.avatar_url }, 200, C);
+      }
 
       if (url.pathname === '/api/project/snapshot' && request.method === 'GET') {
         const [project, wp, subtasks, fsr, cp] = await Promise.all([
