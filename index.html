@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>SmartPort Progress Hub</title>
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>SmartPort Progress Hub <span class="version">v0.6</span></h1>
+      <p>FSR → IF → WP / Subtask → CP / ACL → Verification Evidence</p>
+    </div>
+    <div class="connection-box">
+      <span id="connDot" class="dot offline"></span>
+      <span id="connText">GitHub Project Store 未連線</span>
+      <button id="btnReload" class="btn ghost">重新整理</button>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="主要功能">
+    <button class="tab active" data-view="dashboard">Dashboard</button>
+    <button class="tab" data-view="plan">WP / Gantt</button>
+    <button class="tab" data-view="subtasks">Subtasks</button>
+    <button class="tab" data-view="fsr">FSR</button>
+    <button class="tab" data-view="cp">CP / ACL</button>
+    <button class="tab" data-view="weekly">Weekly Agent</button>
+    <button class="tab" data-view="review">PM Review</button>
+    <button class="tab" data-view="settings">Settings</button>
+  </nav>
+
+  <main>
+    <section id="view-dashboard" class="view active">
+      <div class="hero-grid">
+        <div class="metric"><span>Project</span><strong id="metricProject">SmartPort SC</strong></div>
+        <div class="metric"><span>Work Packages</span><strong id="metricWp">—</strong></div>
+        <div class="metric"><span>Subtasks</span><strong id="metricSubtasks">—</strong></div>
+        <div class="metric"><span>FSR</span><strong id="metricFsr">—</strong></div>
+        <div class="metric"><span>Next CP</span><strong id="metricCp">—</strong></div>
+      </div>
+      <div class="grid two">
+        <article class="card">
+          <div class="card-head"><h2>Checkpoint Readiness</h2></div>
+          <div id="dashboardCp" class="empty">等待 Project Store 資料。</div>
+        </article>
+        <article class="card">
+          <div class="card-head"><h2>FSR Maturity</h2></div>
+          <div id="dashboardFsr" class="empty">等待 Project Store 資料。</div>
+        </article>
+      </div>
+      <article class="card">
+        <div class="card-head"><h2>Work Package Status</h2></div>
+        <div id="dashboardWp" class="empty">等待 Project Store 資料。</div>
+      </article>
+    </section>
+
+    <section id="view-plan" class="view">
+      <div class="section-head">
+        <div><h2>WP / Gantt</h2><p>Work Package 主資料由 Private Project-Control repo 管理。</p></div>
+        <button class="btn primary" data-action="add-wp">＋ 新增 WP</button>
+      </div>
+      <article class="card"><div id="wpTable" class="empty">尚未載入 Work Package。</div></article>
+      <article class="card">
+        <div class="card-head"><h3>Gantt Overview</h3></div>
+        <div id="gantt" class="empty">尚未載入 Gantt。</div>
+      </article>
+    </section>
+
+    <section id="view-subtasks" class="view">
+      <div class="section-head">
+        <div><h2>Subtasks / GitHub Issues</h2><p>每個 Subtask 對應一個 GitHub Issue。</p></div>
+        <button class="btn primary" data-action="add-subtask">＋ 新增 Subtask</button>
+      </div>
+      <article class="card"><div id="subtaskTable" class="empty">尚未載入 Subtasks。</div></article>
+    </section>
+
+    <section id="view-fsr" class="view">
+      <div class="section-head">
+        <div><h2>Functional Safety Requirements</h2><p>FSR 變更保留 traceability 與 commit history。</p></div>
+        <button class="btn primary" data-action="add-fsr">＋ 新增 FSR</button>
+      </div>
+      <article class="card"><div id="fsrTable" class="empty">尚未載入 FSR。</div></article>
+    </section>
+
+    <section id="view-cp" class="view">
+      <div class="section-head">
+        <div><h2>Checkpoint / ACL</h2><p>CP 定義 capability gate、FSR target 與 WP criteria。</p></div>
+        <button class="btn primary" data-action="add-cp">＋ 新增 CP</button>
+      </div>
+      <div id="cpGrid" class="cp-grid"><div class="empty">尚未載入 Checkpoint。</div></div>
+    </section>
+
+    <section id="view-weekly" class="view">
+      <div class="section-head"><div><h2>Weekly Agent</h2><p>保留 Original → Parsed → Approved 的週報流程。</p></div></div>
+      <article class="card">
+        <div class="form-grid">
+          <label>週次<input id="weeklyWeek" placeholder="2026-W35" /></label>
+          <label>Owner<input id="weeklyOwner" placeholder="Owner name" /></label>
+        </div>
+        <label>Agent Proposal<textarea id="weeklyProposal" rows="12" placeholder="之後接 Auth/API 後，這裡會讀取 parsed / approved data。"></textarea></label>
+        <div class="actions"><button class="btn" disabled>匯入週報</button><button class="btn primary" disabled>送 PM Review</button></div>
+      </article>
+    </section>
+
+    <section id="view-review" class="view">
+      <div class="section-head"><div><h2>PM Review Queue</h2><p>AI/工程師提出的變更先審查，再寫回 GitHub。</p></div></div>
+      <article class="card"><div id="reviewQueue" class="empty">目前沒有待審項目。</div></article>
+    </section>
+
+    <section id="view-settings" class="view">
+      <div class="section-head"><div><h2>Settings</h2><p>公開前端不儲存 GitHub secret。</p></div></div>
+      <article class="card settings-card">
+        <label>Auth / API Base URL
+          <input id="apiBase" placeholder="例如：https://smartport-api.example.com" />
+        </label>
+        <label>Project Repository
+          <input id="projectRepo" value="smartport-ntume/SmartPort-Project-Control" />
+        </label>
+        <div class="actions">
+          <button id="btnSaveSettings" class="btn primary">儲存設定</button>
+          <button id="btnTestConnection" class="btn">測試連線</button>
+        </div>
+        <div class="notice">
+          GitHub Pages 是公開靜態前端。Private repo 的讀寫必須透過安全的登入 / API 層；PAT、GitHub App private key、client secret 都不能放在此 repo。
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <div id="drawerBackdrop" class="backdrop"></div>
+  <aside id="drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-head"><h2 id="drawerTitle">Editor</h2><button id="drawerClose" class="icon-btn" aria-label="關閉">×</button></div>
+    <form id="editorForm" class="drawer-body"></form>
+  </aside>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
