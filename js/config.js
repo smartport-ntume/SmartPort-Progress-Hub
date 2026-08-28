@@ -11,6 +11,7 @@ window.SMARTPORT_CONFIG = {
     workPackages: "/api/project/work-packages",
     subtasks: "/api/project/subtasks",
     fsr: "/api/safety/fsr",
-    checkpoints: "/api/project/checkpoints"
+    checkpoints: "/api/project/checkpoints",
+    proposals: "/api/reports/proposals"
   }
 };
