@@ -46,19 +46,40 @@
 
 <section id="reports" class="view">
   <div class="grid2">
-    <div class="panel"><div class="panel-title">Weekly Report｜Original / Parsed Draft <div class="toolbar"><span class="revision-badge">GitHub-backed</span></div></div>
-      <div style="padding:14px">
-        <div class="alert info"><b>流程維持原版：</b> Original → Parsed Draft → PM Approved。Weekly Report API 下一階段接回 GitHub。</div>
-        <div class="field"><label>Weekly Report (.docx)</label><input type="file" accept=".docx" disabled></div>
-        <div class="field"><label>Owner Team</label><select disabled><option>CTL</option><option>LOC/NAV</option><option>PER</option><option>STM</option><option>VERIFY</option></select></div>
-        <button class="btn primary" disabled>讀取 Word</button>
-        <button class="btn" disabled>儲存 Parsed Revision</button>
-        <button class="btn" disabled>重新分析 Mapping</button>
-      </div>
+    <div class="panel">
+      <div class="panel-title">Weekly Progress Proposal <div class="toolbar"><span class="revision-badge">GitHub-backed</span></div></div>
+      <form id="weeklyProposalForm" style="padding:14px">
+        <div class="alert info"><b>Engineer 提交的是 Proposal，不會直接改正式進度。</b><br>PM Approve 後才會更新 WP/Subtask baseline，並保留 GitHub Issue / commit history。</div>
+        <div class="form-grid">
+          <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
+          <div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div>
+          <div class="field"><label>Target Type</label><select id="weeklyTargetType" name="target_type" required><option value="WP">WP</option><option value="SUBTASK">Subtask</option></select></div>
+          <div class="field"><label>Target</label><select id="weeklyTargetId" name="target_id" required></select></div>
+          <div class="field"><label>Proposed Progress (%)</label><input name="progress" type="number" min="0" max="100" step="1" required></div>
+          <div class="field"><label>Status</label><select name="status" required><option value="On Track">On Track</option><option value="At Risk">At Risk</option><option value="Blocked">Blocked</option><option value="Delayed">Delayed</option><option value="Completed">Completed</option></select></div>
+        </div>
+        <div class="field"><label>Blocker</label><textarea name="blocker" rows="2" placeholder="沒有 blocker 可留白"></textarea></div>
+        <div class="field"><label>Evidence / Link</label><textarea name="evidence" rows="2" placeholder="測試紀錄、PR、commit、影片、log、文件路徑等"></textarea></div>
+        <div class="field"><label>Weekly Summary</label><textarea name="summary" rows="5" required placeholder="本週完成什麼、結果如何、下週做什麼"></textarea></div>
+        <button id="weeklySubmitBtn" class="btn primary" type="submit">送 PM Review</button>
+      </form>
     </div>
-    <div class="panel"><div class="panel-title">Mapping / Progress Proposal <div class="toolbar"><button class="btn primary" disabled>送 PM Review</button></div></div><div style="padding:14px" class="muted">尚未載入週報。</div></div>
+
+    <div class="panel">
+      <div class="panel-title">Proposal Status</div>
+      <div id="weeklyStatusSummary" style="padding:14px" class="muted">載入中...</div>
+    </div>
   </div>
-  <div class="panel" style="margin-top:14px"><div class="panel-title">Report Archive｜Original → Parsed → Approved</div><div style="overflow:auto;max-height:430px"><table><thead><tr><th>Date</th><th>Name</th><th>Original</th><th>Parsed Rev.</th><th>Status</th><th>Items</th><th></th></tr></thead><tbody><tr><td colspan="7" class="muted">Weekly archive API 下一階段接入。</td></tr></tbody></table></div></div>
+
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-title">Proposal Archive｜Submitted → PM Review → Approved / Rejected</div>
+    <div style="overflow:auto;max-height:520px">
+      <table id="proposalArchiveTable">
+        <thead><tr><th>Date</th><th>Author</th><th>Team</th><th>Target</th><th>Progress</th><th>Status</th><th>Review</th><th>GitHub</th></tr></thead>
+        <tbody><tr><td colspan="8" class="muted">載入中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
 </section>
 
 <section id="plan" class="view">
@@ -70,7 +91,12 @@
 
 <section id="cp" class="view"><div class="panel"><div class="panel-title">Checkpoint / ACL / Vehicle Capability <div class="toolbar"><button class="btn primary" data-action="add-cp">＋新增 CP</button></div></div><div id="cpTimeline" class="cp-timeline"></div><div id="cpGrid" class="cp-grid"></div></div></section>
 
-<section id="review" class="view"><div class="panel"><div class="panel-title">PM Review Queue <div class="toolbar"><button class="btn danger" disabled>清空 Queue</button></div></div><div id="reviewQueue" style="padding:14px" class="muted">目前沒有待核准的 Proposed Update。</div></div></section>
+<section id="review" class="view">
+  <div class="panel">
+    <div class="panel-title">PM Review Queue <div class="toolbar"><span class="revision-badge">Approve 才寫入 baseline</span></div></div>
+    <div id="reviewQueue" style="padding:14px" class="muted">載入中...</div>
+  </div>
+</section>
 
 <section id="settings" class="view">
   <div class="grid2">
@@ -95,5 +121,6 @@
 <script src="js/store.js"></script>
 <script src="js/app.js"></script>
 <script src="js/role.js"></script>
+<script src="js/weekly.js"></script>
 </body>
 </html>
