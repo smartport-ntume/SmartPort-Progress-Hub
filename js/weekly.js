@@ -142,8 +142,8 @@
         try{
           await API.approveProposal(n);
           toast(`Proposal #${n} 已核准並寫入 baseline`);
-          await reloadProposals();
           await refreshSnapshotAfterApprove();
+          await reloadProposals();
         }catch(err){toast(err.message)}finally{approve.disabled=false;}
         return;
       }
