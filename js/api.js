@@ -72,6 +72,10 @@
     async saveCheckpoints(payload) { return request(cfg.endpoints.checkpoints, { method: 'PUT', body: JSON.stringify(payload) }); },
     async createSubtask(payload) { return request(cfg.endpoints.subtasks, { method: 'POST', body: JSON.stringify(payload) }); },
     async updateSubtask(id, payload) { return request(`${cfg.endpoints.subtasks}/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }); },
-    async archiveSubtask(id) { return request(`${cfg.endpoints.subtasks}/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+    async archiveSubtask(id) { return request(`${cfg.endpoints.subtasks}/${encodeURIComponent(id)}`, { method: 'DELETE' }); },
+    async listProposals() { return request(cfg.endpoints.proposals); },
+    async createProposal(payload) { return request(cfg.endpoints.proposals, { method: 'POST', body: JSON.stringify(payload) }); },
+    async approveProposal(issueNumber) { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/approve`, { method: 'POST' }); },
+    async rejectProposal(issueNumber, reason='') { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); }
   };
 })();
