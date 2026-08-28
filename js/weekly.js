@@ -97,8 +97,7 @@
   async function refreshSnapshotAfterApprove(){
     try{
       const snap=await API.loadSnapshot();
-      Store.loadSnapshot(snap);
-      window.dispatchEvent(new Event('smartport:snapshot-updated'));
+      Store.replaceSnapshot(snap);
       document.querySelector('#btnReload')?.click();
     }catch(_){ }
   }
