@@ -154,19 +154,117 @@ async function tokenFromSession(req, env) {
   return session?.token || null;
 }
 
+function proposalBody(p, author) {
+  const payload = {
+    schema_version: '1.0',
+    kind: 'weekly_progress_proposal',
+    submitted_by: author,
+    submitted_at: new Date().toISOString(),
+    report_date: p.report_date,
+    owner_team: p.owner_team,
+    target_type: p.target_type,
+    target_id: p.target_id,
+    progress: Number(p.progress),
+    status: p.status,
+    blocker: p.blocker || '',
+    evidence: p.evidence || '',
+    summary: p.summary || ''
+  };
+  return `## Weekly Progress Proposal\n\n- **Report Date:** ${payload.report_date}\n- **Owner Team:** ${payload.owner_team}\n- **Target:** ${payload.target_type} ${payload.target_id}\n- **Proposed Progress:** ${payload.progress}%\n- **Status:** ${payload.status}\n- **Blocker:** ${payload.blocker || '—'}\n- **Evidence:** ${payload.evidence || '—'}\n\n## Summary\n${payload.summary || '—'}\n\n<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\n${JSON.stringify(payload)}\n-->`;
+}
+
+function parseProposalIssue(issue) {
+  const body = issue.body || '';
+  const m = body.match(/<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\s*\n([\s\S]*?)\n-->/);
+  if (!m) return null;
+  let payload;
+  try { payload = JSON.parse(m[1]); } catch (_) { return null; }
+  let review_status = 'PENDING';
+  if (issue.title.startsWith('[APPROVED]')) review_status = 'APPROVED';
+  else if (issue.title.startsWith('[REJECTED]')) review_status = 'REJECTED';
+  return {
+    issue_number: issue.number,
+    title: issue.title,
+    state: issue.state,
+    html_url: issue.html_url,
+    author: issue.user?.login || payload.submitted_by,
+    created_at: issue.created_at,
+    updated_at: issue.updated_at,
+    review_status,
+    ...payload
+  };
+}
+
+async function listProposals(repo, token) {
+  const issues = await github(`/repos/${repo}/issues?state=all&per_page=100&sort=created&direction=desc`, token);
+  return issues.map(parseProposalIssue).filter(Boolean);
+}
+
+function applyProposalToRecord(item, p) {
+  item.actual_progress = Number(p.progress);
+  item.status = p.status;
+  item.blocker = p.blocker || '';
+  item.actual_evidence = p.evidence || '';
+  item.last_update = p.report_date;
+  item.last_update_summary = p.summary || '';
+  item.last_update_by = p.submitted_by || '';
+  return item;
+}
+
+async function updateSubtaskIssueStatus(repo, subtask, p, token) {
+  if (!subtask.github_issue) return;
+  const issue = await github(`/repos/${repo}/issues/${subtask.github_issue}`, token);
+  const body = issue.body || '';
+  const replacement = `## Project Status\n\n- **Actual Progress:** ${Number(p.progress)}%\n- **Self-reported Progress:** ${Number(p.progress)}%\n- **Status:** ${p.status}\n- **Blocker:** ${p.blocker || '—'}\n- **Evidence:** ${p.evidence || '—'}\n- **Last Approved Update:** ${p.report_date}`;
+  const next = body.match(/## Project Status[\s\S]*?(?=\n## |\n> |$)/)
+    ? body.replace(/## Project Status[\s\S]*?(?=\n## |\n> |$)/, replacement)
+    : `${body}\n\n${replacement}`;
+  await github(`/repos/${repo}/issues/${subtask.github_issue}`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ body: next })
+  });
+}
+
+async function approveProposal(repo, issueNumber, token) {
+  const issue = await github(`/repos/${repo}/issues/${issueNumber}`, token);
+  const p = parseProposalIssue(issue);
+  if (!p) throw new Error('Invalid weekly proposal issue');
+  if (p.review_status !== 'PENDING') throw new Error(`Proposal already ${p.review_status}`);
+
+  if (String(p.target_type).toUpperCase() === 'WP') {
+    const file = await getJsonFile(repo, 'project/work_packages.json', token);
+    const idx = (file.json.work_packages || []).findIndex(x => x.id === p.target_id);
+    if (idx < 0) throw new Error(`WP not found: ${p.target_id}`);
+    applyProposalToRecord(file.json.work_packages[idx], p);
+    await putJsonFile(repo, 'project/work_packages.json', file.json, token, `PM Approve: weekly update ${p.target_id}`);
+  } else if (String(p.target_type).toUpperCase() === 'SUBTASK') {
+    const file = await getJsonFile(repo, 'project/subtasks.json', token);
+    const idx = (file.json.subtasks || []).findIndex(x => x.id === p.target_id);
+    if (idx < 0) throw new Error(`Subtask not found: ${p.target_id}`);
+    applyProposalToRecord(file.json.subtasks[idx], p);
+    await putJsonFile(repo, 'project/subtasks.json', file.json, token, `PM Approve: weekly update ${p.target_id}`);
+    await updateSubtaskIssueStatus(repo, file.json.subtasks[idx], p, token);
+  } else {
+    throw new Error(`Unsupported target_type: ${p.target_type}`);
+  }
+
+  const cleanTitle = issue.title.replace(/^\[(APPROVED|REJECTED)\]\s*/, '');
+  await github(`/repos/${repo}/issues/${issueNumber}`, token, {
+    method: 'PATCH',
+    body: JSON.stringify({ title: `[APPROVED] ${cleanTitle}`, state: 'closed', state_reason: 'completed' })
+  });
+  return { ok: true, target_type: p.target_type, target_id: p.target_id };
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const C = cors(request.headers.get('Origin') || '', env.FRONTEND_URL);
 
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: C });
-    }
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: C });
 
     try {
-      if (url.pathname === '/api/health') {
-        return json({ ok: true, service: 'smartport-progress-hub-api' }, 200, C);
-      }
+      if (url.pathname === '/api/health') return json({ ok: true, service: 'smartport-progress-hub-api' }, 200, C);
 
       if (url.pathname === '/auth/login') {
         if (!env.GITHUB_CLIENT_ID) return json({ error: 'GITHUB_CLIENT_ID not configured' }, 500, C);
@@ -177,14 +275,7 @@ export default {
         gh.searchParams.set('redirect_uri', redirectUri);
         gh.searchParams.set('scope', 'repo read:org');
         gh.searchParams.set('state', state);
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: gh.toString(),
-            'Set-Cookie': cookie('sp_state', state, 600),
-            ...C
-          }
-        });
+        return new Response(null, { status: 302, headers: { Location: gh.toString(), 'Set-Cookie': cookie('sp_state', state, 600), ...C } });
       }
 
       if (url.pathname === '/auth/callback') {
@@ -192,83 +283,80 @@ export default {
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
         if (!code || state !== cookies.sp_state) return json({ error: 'OAuth state mismatch' }, 400, C);
-        if (!env.GITHUB_CLIENT_SECRET || !env.SESSION_SECRET) {
-          return json({ error: 'Cloudflare secrets are not configured' }, 500, C);
-        }
-
+        if (!env.GITHUB_CLIENT_SECRET || !env.SESSION_SECRET) return json({ error: 'Cloudflare secrets are not configured' }, 500, C);
         const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
           method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'User-Agent': 'SmartPort-Progress-Hub/0.6'
-          },
-          body: JSON.stringify({
-            client_id: env.GITHUB_CLIENT_ID,
-            client_secret: env.GITHUB_CLIENT_SECRET,
-            code,
-            redirect_uri: `${url.origin}/auth/callback`
-          })
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'SmartPort-Progress-Hub/0.6' },
+          body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, code, redirect_uri: `${url.origin}/auth/callback` })
         });
         const t = await tokenRes.json();
         if (!t.access_token) return json({ error: 'GitHub OAuth authorization failed', detail: t }, 401, C);
-
         const maxAgeSec = Math.min(Number(t.expires_in || 28800), 28800);
         const sealed = await seal({ token: t.access_token, exp: Date.now() + maxAgeSec * 1000 }, env.SESSION_SECRET);
         const target = `${env.FRONTEND_URL.replace(/\/$/, '')}/#sp_session=${encodeURIComponent(sealed)}`;
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: target,
-            'Set-Cookie': cookie('sp_session', sealed, maxAgeSec),
-            ...C
-          }
-        });
+        return new Response(null, { status: 302, headers: { Location: target, 'Set-Cookie': cookie('sp_session', sealed, maxAgeSec), ...C } });
       }
 
       if (url.pathname === '/auth/logout') {
-        return new Response(null, {
-          status: 302,
-          headers: {
-            Location: env.FRONTEND_URL,
-            'Set-Cookie': cookie('sp_session', '', 0),
-            ...C
-          }
-        });
+        return new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL, 'Set-Cookie': cookie('sp_session', '', 0), ...C } });
       }
 
       const token = await tokenFromSession(request, env);
       if (!token) return json({ error: 'unauthorized', login: `${url.origin}/auth/login` }, 401, C);
-
       const repo = env.PROJECT_REPO;
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const [me, access] = await Promise.all([
-          github('/user', token),
-          repoAccess(repo, token)
-        ]);
-        return json({
-          login: me.login,
-          avatar_url: me.avatar_url,
-          role: access.role,
-          repository_permission: access.permission,
-          can_write: access.can_write,
-          can_approve: access.can_approve
-        }, 200, C);
+        const [me, access] = await Promise.all([github('/user', token), repoAccess(repo, token)]);
+        return json({ login: me.login, avatar_url: me.avatar_url, role: access.role, repository_permission: access.permission, can_write: access.can_write, can_approve: access.can_approve }, 200, C);
+      }
+
+      if (url.pathname === '/api/reports/proposals' && request.method === 'GET') {
+        return json({ proposals: await listProposals(repo, token) }, 200, C);
+      }
+
+      if (url.pathname === '/api/reports/proposals' && request.method === 'POST') {
+        const me = await github('/user', token);
+        const p = await request.json();
+        if (!p.report_date || !p.owner_team || !p.target_type || !p.target_id || p.progress === '' || p.progress == null || !p.status) {
+          return json({ error: 'missing required proposal fields' }, 400, C);
+        }
+        const progress = Number(p.progress);
+        if (!Number.isFinite(progress) || progress < 0 || progress > 100) return json({ error: 'progress must be 0-100' }, 400, C);
+        const title = `[WEEKLY][${p.report_date}][${p.owner_team}] ${p.target_type} ${p.target_id}`;
+        const issue = await github(`/repos/${repo}/issues`, token, {
+          method: 'POST',
+          body: JSON.stringify({ title, body: proposalBody(p, me.login) })
+        });
+        return json({ proposal: parseProposalIssue(issue) }, 201, C);
+      }
+
+      const approveMatch = url.pathname.match(/^\/api\/reports\/proposals\/(\d+)\/approve$/);
+      if (approveMatch && request.method === 'POST') {
+        const access = await repoAccess(repo, token);
+        if (!access.can_approve) return json({ error: 'forbidden', message: 'PM permission required' }, 403, C);
+        return json(await approveProposal(repo, Number(approveMatch[1]), token), 200, C);
+      }
+
+      const rejectMatch = url.pathname.match(/^\/api\/reports\/proposals\/(\d+)\/reject$/);
+      if (rejectMatch && request.method === 'POST') {
+        const access = await repoAccess(repo, token);
+        if (!access.can_approve) return json({ error: 'forbidden', message: 'PM permission required' }, 403, C);
+        const issueNumber = Number(rejectMatch[1]);
+        const reason = (await request.json().catch(() => ({}))).reason || '';
+        const issue = await github(`/repos/${repo}/issues/${issueNumber}`, token);
+        const p = parseProposalIssue(issue);
+        if (!p) return json({ error: 'invalid weekly proposal' }, 400, C);
+        const cleanTitle = issue.title.replace(/^\[(APPROVED|REJECTED)\]\s*/, '');
+        const body = `${issue.body || ''}\n\n## PM Review\n**Rejected:** ${reason || 'No reason provided'}`;
+        await github(`/repos/${repo}/issues/${issueNumber}`, token, { method: 'PATCH', body: JSON.stringify({ title: `[REJECTED] ${cleanTitle}`, body, state: 'closed', state_reason: 'not_planned' }) });
+        return json({ ok: true }, 200, C);
       }
 
       const isProjectWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) &&
         (url.pathname.startsWith('/api/project/') || url.pathname.startsWith('/api/safety/'));
       if (isProjectWrite) {
         const access = await repoAccess(repo, token);
-        if (!access.can_write) {
-          return json({
-            error: 'forbidden',
-            message: 'This GitHub account has read-only access to SmartPort-Project-Control.',
-            role: access.role,
-            repository_permission: access.permission
-          }, 403, C);
-        }
+        if (!access.can_write) return json({ error: 'forbidden', message: 'This GitHub account has read-only access to SmartPort-Project-Control.', role: access.role, repository_permission: access.permission }, 403, C);
       }
 
       if (url.pathname === '/api/project/snapshot' && request.method === 'GET') {
@@ -279,25 +367,17 @@ export default {
           getJsonFile(repo, 'safety/fsr.json', token),
           getJsonFile(repo, 'project/checkpoints.json', token)
         ]);
-        return json({
-          project: project.json,
-          work_packages: wp.json.work_packages || [],
-          subtasks: subtasks.json.subtasks || [],
-          functional_safety_requirements: fsr.json.functional_safety_requirements || [],
-          checkpoints: cp.json.checkpoints || []
-        }, 200, C);
+        return json({ project: project.json, work_packages: wp.json.work_packages || [], subtasks: subtasks.json.subtasks || [], functional_safety_requirements: fsr.json.functional_safety_requirements || [], checkpoints: cp.json.checkpoints || [] }, 200, C);
       }
 
       if (url.pathname === '/api/project/work-packages' && request.method === 'PUT') {
         await putJsonFile(repo, 'project/work_packages.json', await request.json(), token, 'Hub: update work packages');
         return json({ ok: true }, 200, C);
       }
-
       if (url.pathname === '/api/safety/fsr' && request.method === 'PUT') {
         await putJsonFile(repo, 'safety/fsr.json', await request.json(), token, 'Hub: update FSR baseline');
         return json({ ok: true }, 200, C);
       }
-
       if (url.pathname === '/api/project/checkpoints' && request.method === 'PUT') {
         await putJsonFile(repo, 'project/checkpoints.json', await request.json(), token, 'Hub: update checkpoints');
         return json({ ok: true }, 200, C);
@@ -305,13 +385,7 @@ export default {
 
       if (url.pathname === '/api/project/subtasks' && request.method === 'POST') {
         const item = await request.json();
-        const issue = await github(`/repos/${repo}/issues`, token, {
-          method: 'POST',
-          body: JSON.stringify({
-            title: `[${item.id}] ${item.name}`,
-            body: `## Subtask Metadata\n- **Subtask ID:** ${item.id}\n- **Parent WP:** ${item.parent_wp}\n- **Owner Team:** ${item.owner_team || ''}\n- **Schedule:** ${item.start || ''} → ${item.end || ''}\n- **Target Checkpoint:** ${item.target_cp || ''}\n- **IF:** ${(item.ifs || []).join(', ')}\n- **FSR:** ${(item.fsrs || []).join(', ')}\n`
-          })
-        });
+        const issue = await github(`/repos/${repo}/issues`, token, { method: 'POST', body: JSON.stringify({ title: `[${item.id}] ${item.name}`, body: `## Subtask Metadata\n- **Subtask ID:** ${item.id}\n- **Parent WP:** ${item.parent_wp}\n- **Owner Team:** ${item.owner_team || ''}\n- **Schedule:** ${item.start || ''} → ${item.end || ''}\n- **Target Checkpoint:** ${item.target_cp || ''}\n- **IF:** ${(item.ifs || []).join(', ')}\n- **FSR:** ${(item.fsrs || []).join(', ')}\n` }) });
         const reg = await getJsonFile(repo, 'project/subtasks.json', token);
         reg.json.subtasks = reg.json.subtasks || [];
         reg.json.subtasks.push({ ...item, github_issue: issue.number });
@@ -325,31 +399,19 @@ export default {
         const reg = await getJsonFile(repo, 'project/subtasks.json', token);
         const idx = (reg.json.subtasks || []).findIndex(x => x.id === id);
         if (idx < 0) return json({ error: 'subtask not found' }, 404, C);
-
         if (request.method === 'PUT') {
           const item = await request.json();
           const old = reg.json.subtasks[idx];
           reg.json.subtasks[idx] = { ...old, ...item };
           await putJsonFile(repo, 'project/subtasks.json', reg.json, token, `Hub: update subtask ${id}`);
-          if (old.github_issue) {
-            await github(`/repos/${repo}/issues/${old.github_issue}`, token, {
-              method: 'PATCH',
-              body: JSON.stringify({ title: `[${item.id || id}] ${item.name || old.name}` })
-            });
-          }
+          if (old.github_issue) await github(`/repos/${repo}/issues/${old.github_issue}`, token, { method: 'PATCH', body: JSON.stringify({ title: `[${item.id || id}] ${item.name || old.name}` }) });
           return json(reg.json.subtasks[idx], 200, C);
         }
-
         if (request.method === 'DELETE') {
           const old = reg.json.subtasks[idx];
           reg.json.subtasks.splice(idx, 1);
           await putJsonFile(repo, 'project/subtasks.json', reg.json, token, `Hub: archive subtask ${id}`);
-          if (old.github_issue) {
-            await github(`/repos/${repo}/issues/${old.github_issue}`, token, {
-              method: 'PATCH',
-              body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' })
-            });
-          }
+          if (old.github_issue) await github(`/repos/${repo}/issues/${old.github_issue}`, token, { method: 'PATCH', body: JSON.stringify({ state: 'closed', state_reason: 'not_planned' }) });
           return new Response(null, { status: 204, headers: C });
         }
       }
