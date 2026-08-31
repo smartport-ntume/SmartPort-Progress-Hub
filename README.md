@@ -4,8 +4,8 @@ Web dashboard for SmartPort project planning, progress tracking, PM review, chec
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260831.1654:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260831.1654
+**SmartPort Progress Hub — Build 20260831.1657:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260831.1657
 
 > This is the canonical Hub URL for the currently deployed frontend build. The same Build ID is shown in the Hub header so the deployed page can be checked against this README.
 >
