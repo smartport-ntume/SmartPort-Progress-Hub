@@ -1,7 +1,7 @@
 (() => {
   const S=window.SmartPortStore.state;
   const API=window.SmartPortAPI;
-  const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const arr=v=>Array.isArray(v)?v:[];
   let filter='ALL';
   let refMap=new Map();
@@ -68,8 +68,7 @@
     for(const w of wpList){html+=wpRow(w);for(const s of S.subtasks.filter(x=>x.parent_wp===w.id))html+=subRow(s);}
     if(!html)html='<tr><td colspan="9" class="muted" style="padding:16px">此分類目前沒有 WP / Subtask。</td></tr>';
     lastOwnRender=performance.now();
-    tbody.replaceChildren();
-    tbody.insertAdjacentHTML('afterbegin',html);
+    if(tbody.innerHTML!==html)tbody.innerHTML=html;
     const scroller=tbody.closest('div[style*="overflow"]');if(scroller)scroller.scrollTop=0;
     installFilters();
   }
@@ -77,15 +76,20 @@
   function aclFor(cp){return refMap.get(cp.id)||null;}
   function ensureCpHeader(){
     const tr=document.querySelector('#cpEditTable thead tr');if(!tr)return;
-    tr.innerHTML='<th>CP</th><th>Date</th><th>ACL</th><th>Name</th><th>車輛能力 / Capability</th><th>Review / Check</th><th>FSR Target</th><th></th>';
+    const html='<th>CP</th><th>Date</th><th>ACL</th><th>Name</th><th>車輛能力 / Capability</th><th>Review / Check</th><th>FSR Target</th><th></th>';
+    if(tr.innerHTML!==html)tr.innerHTML=html;
   }
   function roadmapHtml(value){return esc(String(value||'—')).replace(/\n/g,'<br>');}
-  function enhanceCpRows(){
-    document.querySelectorAll('#cpEditTable tbody tr[data-cp-card]').forEach(row=>{
-      const cp=S.checkpoints.find(x=>x.id===row.dataset.cpCard);if(!cp)return;
-      const ref=aclFor(cp);const capability=ref?.capability||cp.capability||'—';const review=ref?.review_checks||cp.review_checks||'—';const fsr=cp.fsrTarget||cp.fsr_target||ref?.fsr_maturity_target||'';
-      row.innerHTML=`<td><b>${esc(cp.id)}</b></td><td>${esc(cp.date||'')}</td><td>${esc(cp.acl||'')}</td><td>${esc(cp.name||'')}</td><td class="cp-capability-cell"><div class="cp-roadmap-text">${roadmapHtml(capability)}</div></td><td class="cp-review-cell"><div class="cp-roadmap-text">${roadmapHtml(review)}</div></td><td class="cp-fsr-cell">${esc(fsr)}</td><td><button class="btn smallbtn" data-edit-cp="${esc(cp.id)}">Edit</button></td>`;
-    });
+  function renderCpRows(){
+    const tbody=document.querySelector('#cpEditTable tbody');if(!tbody)return;
+    const html=S.checkpoints.map(cp=>{
+      const ref=aclFor(cp);
+      const capability=ref?.capability||cp.capability||'—';
+      const review=ref?.review_checks||cp.review_checks||'—';
+      const fsr=cp.fsrTarget||cp.fsr_target||ref?.fsr_maturity_target||'';
+      return `<tr class="clickable" data-cp-card="${esc(cp.id)}"><td><b>${esc(cp.id)}</b></td><td>${esc(cp.date||'')}</td><td>${esc(cp.acl||ref?.level||'')}</td><td>${esc(cp.name||'')}</td><td class="cp-capability-cell"><div class="cp-roadmap-text">${roadmapHtml(capability)}</div></td><td class="cp-review-cell"><div class="cp-roadmap-text">${roadmapHtml(review)}</div></td><td class="cp-fsr-cell">${esc(fsr)}</td><td><button class="btn smallbtn" data-edit-cp="${esc(cp.id)}">Edit</button></td></tr>`;
+    }).join('');
+    if(tbody.innerHTML!==html)tbody.innerHTML=html;
   }
 
   function closeDrawer(){
@@ -196,7 +200,7 @@
           refMap=new Map((referenceData.acl_levels||[]).map(x=>[x.checkpoint,x]));
         }
         closeDrawer();
-        ensureCpHeader();enhanceCpRows();
+        ensureCpHeader();renderCpRows();
         document.getElementById('btnReload')?.click();
       }catch(err){alert(err.message||String(err));}
     };
@@ -205,12 +209,13 @@
   function cpIdFromElement(el){
     if(!el)return'';
     if(el.dataset?.cpCard)return el.dataset.cpCard;
+    if(el.dataset?.cpId)return el.dataset.cpId;
     const text=String(el.textContent||'');
     const m=text.match(/\bCP\d+\b/i);
     return m?m[0].toUpperCase():'';
   }
 
-  function enhance(){scheduled=false;installFilters();ensurePlanHeader();renderPlanRows();ensureCpHeader();enhanceCpRows();}
+  function enhance(){scheduled=false;installFilters();ensurePlanHeader();renderPlanRows();ensureCpHeader();renderCpRows();}
   function schedule(){if(scheduled)return;scheduled=true;setTimeout(enhance,40);}
 
   async function loadReference(){
@@ -242,9 +247,10 @@
 
   const plan=document.getElementById('plan')||document.body;
   const obs=new MutationObserver(mutations=>{
-    if(performance.now()-lastOwnRender<180)return;
-    const tableChanged=mutations.some(m=>m.target?.closest?.('#planTable tbody,#cpEditTable tbody')||[...m.addedNodes].some(n=>n.nodeType===1&&(n.matches?.('#planTable tbody tr,#cpEditTable tbody tr')||n.querySelector?.('#planTable tbody tr,#cpEditTable tbody tr'))));
-    if(tableChanged)schedule();
+    const cpChanged=mutations.some(m=>m.target?.closest?.('#cpEditTable tbody')||[...m.addedNodes].some(n=>n.nodeType===1&&(n.matches?.('#cpEditTable tbody tr')||n.querySelector?.('#cpEditTable tbody tr'))));
+    const planChanged=mutations.some(m=>m.target?.closest?.('#planTable tbody')||[...m.addedNodes].some(n=>n.nodeType===1&&(n.matches?.('#planTable tbody tr')||n.querySelector?.('#planTable tbody tr'))));
+    if(cpChanged){schedule();return;}
+    if(planChanged&&performance.now()-lastOwnRender>=180)schedule();
   });
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{schedule();loadReference();obs.observe(plan,{childList:true,subtree:true})});else{schedule();loadReference();obs.observe(plan,{childList:true,subtree:true})}
 })();
