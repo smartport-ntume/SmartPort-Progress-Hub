@@ -1,5 +1,5 @@
 name = "smartport-progress-hub-api"
-main = "src/index.js"
+main = "src/main.js"
 compatibility_date = "2026-08-27"
 
 [vars]
