@@ -10,9 +10,10 @@
     return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
+  // Fallback only. Canonical binding uses SmartPortStore.state.checkpoints[index].id.
   function cpIdFromText(text) {
-    const m = String(text || '').match(/\bCP[\w.-]*\b/i);
-    return m ? m[0] : '';
+    const m = String(text || '').match(/CP\d+/i);
+    return m ? m[0].toUpperCase() : '';
   }
 
   function parseDate(v) {
@@ -126,11 +127,15 @@
   }
 
   function openFullCpDetail(id) {
-    // Always give immediate visual feedback first.
     const opened=renderFullCpDetail(id);
     if(!opened){
       const toast=$('#toast');
-      if(toast){toast.textContent=`找不到 ${id} 的 Checkpoint 資料`;toast.classList.add('show');}
+      if(toast){
+        toast.textContent=`找不到 ${id} 的 Checkpoint 資料`;
+        toast.classList.add('show');
+        clearTimeout(openFullCpDetail.toastTimer);
+        openFullCpDetail.toastTimer=setTimeout(()=>toast.classList.remove('show'),3500);
+      }
       return;
     }
     if(!refMap.has(id)){
@@ -138,23 +143,24 @@
     }
   }
 
-  function bindCpElement(el) {
-    const id=el.dataset.cpId||cpIdFromText(el.textContent);
+  function bindCpElement(el, canonicalId) {
+    const id=canonicalId||cpIdFromText(el.textContent);
     if(!id)return;
+
+    // Always overwrite stale/malformed IDs such as CP4ACL-4.
     el.dataset.cpId=id;
     el.classList.add('checkpoint-clickable');
     el.tabIndex=0;
     el.setAttribute('role','button');
-
-    // Disable the legacy inline onclick. The interaction is handled on mousedown.
     el.onclick=null;
+
     if(el.dataset.cpMouseBound!=='1'){
       el.dataset.cpMouseBound='1';
       el.addEventListener('mousedown',evt=>{
         if(evt.button!==0)return;
         evt.preventDefault();
         evt.stopPropagation();
-        openFullCpDetail(id);
+        openFullCpDetail(el.dataset.cpId);
       });
     }
     if(el.dataset.cpKeyboardBound!=='1'){
@@ -162,15 +168,19 @@
       el.addEventListener('keydown',evt=>{
         if(evt.key==='Enter'||evt.key===' '){
           evt.preventDefault();
-          openFullCpDetail(id);
+          openFullCpDetail(el.dataset.cpId);
         }
       });
     }
   }
 
   function refresh() {
-    $$('.cp-marker').forEach(bindCpElement);
-    $$('.cp-point').forEach(bindCpElement);
+    const S=window.SmartPortStore?.state;
+    const checkpoints=S?.checkpoints||[];
+
+    // app.js renders both collections in the same order as S.checkpoints.
+    $$('.cp-marker').forEach((el,i)=>bindCpElement(el,checkpoints[i]?.id||cpIdFromText(el.textContent)));
+    $$('.cp-point').forEach((el,i)=>bindCpElement(el,checkpoints[i]?.id||cpIdFromText(el.textContent)));
     refreshGanttCalendar();
   }
 
