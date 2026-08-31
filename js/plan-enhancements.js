@@ -83,7 +83,7 @@
   function enhanceCpRows(){
     document.querySelectorAll('#cpEditTable tbody tr[data-cp-card]').forEach(row=>{
       const cp=S.checkpoints.find(x=>x.id===row.dataset.cpCard);if(!cp)return;
-      const ref=aclFor(cp);const capability=ref?.capability||cp.capability||'—';const review=ref?.review_checks||cp.review_checks||'—';const fsr=cp.fsrTarget||cp.fsr_target||'';
+      const ref=aclFor(cp);const capability=ref?.capability||cp.capability||'—';const review=ref?.review_checks||cp.review_checks||'—';const fsr=cp.fsrTarget||cp.fsr_target||ref?.fsr_maturity_target||'';
       row.innerHTML=`<td><b>${esc(cp.id)}</b></td><td>${esc(cp.date||'')}</td><td>${esc(cp.acl||'')}</td><td>${esc(cp.name||'')}</td><td class="cp-capability-cell"><div class="cp-roadmap-text">${roadmapHtml(capability)}</div></td><td class="cp-review-cell"><div class="cp-roadmap-text">${roadmapHtml(review)}</div></td><td class="cp-fsr-cell">${esc(fsr)}</td><td><button class="btn smallbtn" data-edit-cp="${esc(cp.id)}">Edit</button></td>`;
     });
   }
@@ -92,6 +92,49 @@
     document.getElementById('drawer')?.classList.remove('open');
     document.getElementById('drawerBackdrop')?.classList.remove('open');
   }
+  function openDrawer(titleText,html){
+    const title=document.getElementById('drawerTitle');
+    const body=document.getElementById('drawerBody');
+    const drawer=document.getElementById('drawer');
+    const backdrop=document.getElementById('drawerBackdrop');
+    if(!title||!body||!drawer||!backdrop)return null;
+    title.textContent=titleText;
+    body.innerHTML=html;
+    drawer.classList.add('open');backdrop.classList.add('open');
+    return body;
+  }
+
+  function cpReadiness(cp){
+    const criteria=Array.isArray(cp?.criteria)?cp.criteria:[];
+    if(!criteria.length)return{score:0,vals:[]};
+    const vals=criteria.map(([id,req])=>{
+      const wp=S.workPackages.find(x=>x.id===id);
+      const actual=wp&&progressOf(wp)!=null?Number(progressOf(wp)):0;
+      const required=Number(req)||0;
+      return{id,req:required,act:actual,ok:actual>=required};
+    });
+    const score=Math.round(vals.reduce((sum,x)=>sum+Math.min(1,x.req?x.act/x.req:1),0)/vals.length*100);
+    return{score,vals};
+  }
+
+  function openCpDetailFull(id){
+    const cp=S.checkpoints.find(x=>x.id===id);if(!cp)return;
+    const ref=aclFor(cp);
+    const capability=ref?.capability||cp.capability||'—';
+    const review=ref?.review_checks||cp.review_checks||'—';
+    const fsr=cp.fsrTarget||cp.fsr_target||ref?.fsr_maturity_target||'—';
+    const r=cpReadiness(cp);
+    const canWrite=!!window.SMARTPORT_ACCESS?.can_write;
+    openDrawer(`${cp.id} · ${cp.name||''}`,`
+      <div class="field"><label>ACL / Date</label><div class="detail-value">${esc(cp.acl||ref?.level||'—')} · ${esc(cp.date||'—')}</div></div>
+      <div class="field"><label>Vehicle Capability / Gate</label><div class="cp-detail-roadmap">${roadmapHtml(capability)}</div></div>
+      <div class="field"><label>Review / Check</label><div class="cp-detail-roadmap">${roadmapHtml(review)}</div></div>
+      <div class="field"><label>FSR Target</label><div class="detail-value">${esc(fsr)}</div></div>
+      <div class="field"><label>Readiness</label><div class="progress"><div style="width:${r.score}%"></div></div><div>${r.score}%</div></div>
+      <div class="field"><label>Criteria</label>${r.vals.length?r.vals.map(x=>`${x.ok?'✓':'△'} ${esc(x.id)}: ${x.act}% / ${x.req}%`).join('<br>'):'<span class="muted">—</span>'}</div>
+      ${canWrite?`<div class="field"><button type="button" class="btn primary" data-edit-cp="${esc(cp.id)}">編輯 CP</button></div>`:''}`);
+  }
+
   function refDate(iso){
     const m=String(iso||'').match(/^\d{4}-(\d{2})-(\d{2})$/);
     return m?`${Number(m[1])}/${Number(m[2])}`:String(iso||'');
@@ -103,30 +146,24 @@
     });
     if(!res.ok)throw new Error(`Reference API ${res.status}: ${await res.text()}`);
   }
+
   function openCpEditor(id){
     if(!window.SMARTPORT_ACCESS?.can_write)return;
     const cp=S.checkpoints.find(x=>x.id===id);if(!cp)return;
     const ref=aclFor(cp);
     const capability=ref?.capability||cp.capability||'';
     const review=ref?.review_checks||cp.review_checks||'';
-    const title=document.getElementById('drawerTitle');
-    const body=document.getElementById('drawerBody');
-    const drawer=document.getElementById('drawer');
-    const backdrop=document.getElementById('drawerBackdrop');
-    if(!title||!body||!drawer||!backdrop)return;
-
-    title.textContent=`編輯 ${cp.id}`;
-    body.innerHTML=`
+    const body=openDrawer(`編輯 ${cp.id}`,`
       <div class="field"><label>CP ID</label><input name="cp_id" value="${esc(cp.id)}" readonly></div>
       <div class="field"><label>Date</label><input name="cp_date" type="date" value="${esc(cp.date||'')}"></div>
-      <div class="field"><label>ACL</label><input name="cp_acl" value="${esc(cp.acl||'')}"></div>
+      <div class="field"><label>ACL</label><input name="cp_acl" value="${esc(cp.acl||ref?.level||'')}"></div>
       <div class="field"><label>Name</label><input name="cp_name" value="${esc(cp.name||'')}"></div>
       <div class="field"><label>Vehicle Capability / Gate</label><textarea name="cp_capability" rows="8">${esc(capability)}</textarea></div>
       <div class="field"><label>Review / Check</label><textarea name="cp_review" rows="8">${esc(review)}</textarea></div>
       <div class="field"><label>FSR Target</label><input name="cp_fsr" value="${esc(cp.fsrTarget||cp.fsr_target||ref?.fsr_maturity_target||'')}"></div>
       <div class="field"><label>Readiness Criteria JSON</label><textarea name="cp_criteria" rows="8">${esc(JSON.stringify(cp.criteria||[],null,2))}</textarea></div>
-      <div class="field"><button type="submit" class="btn primary">儲存到 GitHub</button> <button type="button" class="btn" data-close>取消</button></div>`;
-    drawer.classList.add('open');backdrop.classList.add('open');
+      <div class="field"><button type="submit" class="btn primary">儲存到 GitHub</button> <button type="button" class="btn" data-close>取消</button></div>`);
+    if(!body)return;
 
     body.onsubmit=async e=>{
       e.preventDefault();
@@ -165,6 +202,14 @@
     };
   }
 
+  function cpIdFromElement(el){
+    if(!el)return'';
+    if(el.dataset?.cpCard)return el.dataset.cpCard;
+    const text=String(el.textContent||'');
+    const m=text.match(/\bCP\d+\b/i);
+    return m?m[0].toUpperCase():'';
+  }
+
   function enhance(){scheduled=false;installFilters();ensurePlanHeader();renderPlanRows();ensureCpHeader();enhanceCpRows();}
   function schedule(){if(scheduled)return;scheduled=true;setTimeout(enhance,40);}
 
@@ -175,8 +220,16 @@
   document.addEventListener('click',e=>{
     const family=e.target.closest?.('[data-plan-family]');
     if(family){e.preventDefault();e.stopImmediatePropagation();filter=String(family.dataset.planFamily||'ALL').toUpperCase();renderPlanRows();return;}
+
     const cpEdit=e.target.closest?.('[data-edit-cp]');
     if(cpEdit){e.preventDefault();e.stopImmediatePropagation();openCpEditor(cpEdit.dataset.editCp);return;}
+
+    if(e.target.closest?.('button,a,input,select,textarea'))return;
+    const cpTarget=e.target.closest?.('[data-cp-card],.cp-point,.cp-marker');
+    if(cpTarget){
+      const id=cpIdFromElement(cpTarget);
+      if(id){e.preventDefault();e.stopImmediatePropagation();openCpDetailFull(id);return;}
+    }
   },true);
 
   const style=document.createElement('style');style.textContent=`
@@ -184,6 +237,7 @@
     #planTable{min-width:1360px}#planTable th,#planTable td{padding-left:8px;padding-right:8px}.plan-desc-cell{min-width:260px;max-width:410px}.plan-description{font-size:12px;line-height:1.45;color:#475467;white-space:normal}
     #cpEditTable{width:100%;min-width:1180px;table-layout:fixed}#cpEditTable th,#cpEditTable td{padding:6px 6px;vertical-align:top}#cpEditTable th:nth-child(1),#cpEditTable td:nth-child(1){width:3.5%}#cpEditTable th:nth-child(2),#cpEditTable td:nth-child(2){width:6.5%}#cpEditTable th:nth-child(3),#cpEditTable td:nth-child(3){width:6%}#cpEditTable th:nth-child(4),#cpEditTable td:nth-child(4){width:13%}#cpEditTable th:nth-child(5),#cpEditTable td:nth-child(5){width:30%}#cpEditTable th:nth-child(6),#cpEditTable td:nth-child(6){width:30%}#cpEditTable th:nth-child(7),#cpEditTable td:nth-child(7){width:7%}#cpEditTable th:nth-child(8),#cpEditTable td:nth-child(8){width:4%}.cp-roadmap-text{font-size:11.5px;line-height:1.45;color:#344054;white-space:normal}.cp-roadmap-text br{content:"";display:block;margin-bottom:2px}.cp-fsr-cell{font-size:11.5px;word-break:break-word}
     #drawerBody textarea[name="cp_capability"],#drawerBody textarea[name="cp_review"]{min-height:150px;line-height:1.5}
+    .cp-detail-roadmap{font-size:13px;line-height:1.6;color:#344054;white-space:normal}.cp-detail-roadmap br{content:"";display:block;margin-bottom:4px}
   `;document.head.appendChild(style);
 
   const plan=document.getElementById('plan')||document.body;
