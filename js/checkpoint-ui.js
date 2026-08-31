@@ -50,6 +50,59 @@
     });
   }
 
+  function parseDate(v) {
+    if (!v) return null;
+    const x = new Date(String(v) + 'T12:00:00');
+    return Number.isNaN(+x) ? null : x;
+  }
+
+  function ganttBounds() {
+    const S = window.SmartPortStore?.state;
+    if (!S) return null;
+    const dates = [];
+    (S.workPackages || []).forEach(w => {
+      const a = parseDate(w.start), b = parseDate(w.end);
+      if (a) dates.push(a);
+      if (b) dates.push(b);
+    });
+    (S.checkpoints || []).forEach(cp => {
+      const x = parseDate(cp.date);
+      if (x) dates.push(x);
+    });
+    if (!dates.length) return null;
+    return {
+      start: new Date(Math.min(...dates.map(x => +x))),
+      end: new Date(Math.max(...dates.map(x => +x)))
+    };
+  }
+
+  function monthCount(start, end) {
+    return Math.max(1,
+      (end.getFullYear() - start.getFullYear()) * 12 +
+      (end.getMonth() - start.getMonth()) + 1
+    );
+  }
+
+  function refreshGanttCalendar() {
+    const bounds = ganttBounds();
+    const gantt = $('#gantt');
+    if (!bounds || !gantt) return;
+
+    // Keep roughly 135 px per month once the project becomes longer than the original view.
+    const months = monthCount(bounds.start, bounds.end);
+    const leftColumns = 410;
+    gantt.style.minWidth = Math.max(1280, leftColumns + months * 135) + 'px';
+
+    // app.js creates one .month element for each consecutive month in the project range.
+    // Replace the short labels (Aug, Sep...) with explicit month + year labels.
+    let cursor = new Date(bounds.start);
+    $$('.month-lane .month').forEach((el, i) => {
+      if (i > 0) cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12, 0, 0);
+      el.textContent = cursor.toLocaleString('en', { month: 'short', year: 'numeric' });
+      el.title = el.textContent;
+    });
+  }
+
   function refresh() {
     // Gantt CP labels: keep the original app.js onclick, but make the hit target explicit.
     $$('.cp-marker').forEach(el => {
@@ -66,6 +119,8 @@
         });
       }
     });
+
+    refreshGanttCalendar();
 
     // Dashboard summary cards.
     const currentCard = $('#currentAcl')?.closest('.card');
@@ -89,6 +144,7 @@
     .card.checkpoint-clickable,.cp-card.checkpoint-clickable{transition:box-shadow .12s ease,transform .12s ease,border-color .12s ease}
     .card.checkpoint-clickable:hover,.cp-card.checkpoint-clickable:hover{box-shadow:0 4px 14px rgba(16,24,40,.10);transform:translateY(-1px);border-color:#b9c6d8}
     .card.checkpoint-clickable:focus-visible,.cp-card.checkpoint-clickable:focus-visible{outline:2px solid #5277bb;outline-offset:2px}
+    .month-lane .month{white-space:nowrap;font-size:11px}
   `;
   document.head.appendChild(style);
 
