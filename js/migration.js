@@ -1,42 +1,78 @@
 (() => {
   const API = window.SmartPortAPI;
   const Store = window.SmartPortStore;
-  let ran = false;
 
   function toast(msg){
     const el=document.getElementById('toast');
     if(!el)return;
     el.textContent=msg;
     el.classList.add('show');
-    setTimeout(()=>el.classList.remove('show'),4200);
+    clearTimeout(toast.t);
+    toast.t=setTimeout(()=>el.classList.remove('show'),5200);
   }
 
-  async function tryRestore(){
-    if(ran) return;
-    ran = true;
+  async function currentAccess(){
+    return window.SMARTPORT_ACCESS || await API.me();
+  }
+
+  async function refreshAfterRestore(){
+    const snap=await API.loadSnapshot();
+    window.SmartPortStore.replaceSnapshot(snap);
+    document.getElementById('btnReload')?.click();
+  }
+
+  async function restoreNow(button){
+    const me=await currentAccess();
+    if(!me?.can_write){
+      toast('只有 PM / Write 以上權限可以執行 baseline restore。');
+      return;
+    }
+
+    if(button){button.disabled=true;button.textContent='恢復中...';}
     try{
-      const me = window.SMARTPORT_ACCESS || await API.me();
-      if(!me?.can_write) return;
-
-      for(let i=0;i<30;i++){
-        if(Store?.state?.connected) break;
-        await new Promise(r=>setTimeout(r,150));
+      const before=Store?.state?.subtasks?.length || 0;
+      const result=await API.restoreV041Subtasks();
+      const count=Number(result?.count||0);
+      if(result?.skipped){
+        toast(`目前 registry 已有 ${count} 個 Subtask；未重複覆寫。`);
+      }else{
+        toast(`v0.4.1 baseline 恢復完成：${before} → ${count} 個 Subtask`);
       }
-
-      const count = Store?.state?.subtasks?.length || 0;
-      if(count !== 6) return;
-
-      toast('偵測到精簡版 Subtask registry，正在恢復 v0.4.1 完整 baseline…');
-      const result = await API.restoreV041Subtasks();
-      if(result?.count > 6){
-        toast(`v0.4.1 Subtask baseline 已恢復：${result.count} 個 Subtask`);
-        setTimeout(()=>document.getElementById('btnReload')?.click(),700);
-      }
+      await refreshAfterRestore();
     }catch(e){
-      console.warn('v0.4.1 migration skipped:', e);
+      console.error('v0.4.1 restore failed',e);
+      toast(`v0.4.1 restore 失敗：${e.message||e}`);
+    }finally{
+      if(button){button.disabled=false;button.textContent='恢復 v0.4.1 完整 Subtasks';}
     }
   }
 
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(tryRestore,900));
-  else setTimeout(tryRestore,900);
+  async function init(){
+    const settings=document.querySelector('#settings .grid2 .panel:nth-child(2) > div[style]');
+    if(!settings)return;
+
+    let me;
+    try{me=await currentAccess();}catch(_){return;}
+    if(!me?.can_write)return;
+
+    if(!document.getElementById('btnRestoreV041')){
+      const wrap=document.createElement('div');
+      wrap.className='field';
+      wrap.style.marginTop='16px';
+      wrap.innerHTML=`
+        <div class="alert info">
+          <b>v0.4.1 Baseline Recovery</b><br>
+          從原始 SmartPort Progress Hub v0.4.1 baseline 恢復完整 WP Subtask registry。既有 GitHub Issue mapping 與已核准執行狀態會依 Subtask ID 保留。
+        </div>
+        <button id="btnRestoreV041" type="button" class="btn">恢復 v0.4.1 完整 Subtasks</button>
+        <div id="restoreV041State" class="muted" style="margin-top:6px">目前載入：${Store?.state?.subtasks?.length||0} 個 Subtask</div>
+      `;
+      settings.appendChild(wrap);
+      const btn=document.getElementById('btnRestoreV041');
+      btn.addEventListener('click',()=>restoreNow(btn));
+    }
+  }
+
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,1200));
+  else setTimeout(init,1200);
 })();
