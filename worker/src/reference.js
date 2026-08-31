@@ -8,9 +8,13 @@ function b64urlToBytes(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');wh
 async function sessionKey(secret){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(secret));return crypto.subtle.importKey('raw',digest,{name:'AES-GCM'},false,['decrypt'])}
 async function unseal(value,secret){try{const[ivPart,dataPart]=String(value||'').split('.');if(!ivPart||!dataPart)return null;const key=await sessionKey(secret);const decrypted=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64urlToBytes(ivPart)},key,b64urlToBytes(dataPart));const data=JSON.parse(new TextDecoder().decode(decrypted));if(!data.exp||Date.now()>data.exp)return null;return data}catch(_){return null}}
 async function tokenFromRequest(req,env){const auth=req.headers.get('Authorization')||'';if(!auth.startsWith('Bearer ')||!env.SESSION_SECRET)return null;const s=await unseal(auth.slice(7),env.SESSION_SECRET);return s?.token||null}
-async function github(path,token){const res=await fetch(GH_API+path,{headers:{'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'User-Agent':'SmartPort-Progress-Hub/0.6','X-GitHub-Api-Version':'2022-11-28'}});const text=await res.text();let body=null;try{body=text?JSON.parse(text):null}catch(_){body=text}if(!res.ok)throw new Error(`GitHub ${res.status}: ${typeof body==='string'?body:JSON.stringify(body)}`);return body}
+async function github(path,token,options={}){const res=await fetch(GH_API+path,{...options,headers:{'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'User-Agent':'SmartPort-Progress-Hub/0.6','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json',...(options.headers||{})}});const text=await res.text();let body=null;try{body=text?JSON.parse(text):null}catch(_){body=text}if(!res.ok)throw new Error(`GitHub ${res.status}: ${typeof body==='string'?body:JSON.stringify(body)}`);return body}
 function decodeUtf8Base64(v){return decodeURIComponent(escape(atob(v.replace(/\n/g,''))))}
-async function getJson(repo,path,token){const f=await github(`/repos/${repo}/contents/${path}`,token);return JSON.parse(decodeUtf8Base64(f.content))}
+function encodeUtf8Base64(v){return btoa(unescape(encodeURIComponent(v)))}
+async function getJsonFile(repo,path,token){const f=await github(`/repos/${repo}/contents/${path}`,token);return{json:JSON.parse(decodeUtf8Base64(f.content)),sha:f.sha}}
+async function getJson(repo,path,token){return(await getJsonFile(repo,path,token)).json}
+async function putJson(repo,path,payload,token,message){let sha;try{sha=(await github(`/repos/${repo}/contents/${path}`,token)).sha}catch(_){}return github(`/repos/${repo}/contents/${path}`,token,{method:'PUT',body:JSON.stringify({message,content:encodeUtf8Base64(JSON.stringify(payload,null,2)+'\n'),...(sha?{sha}:{})})})}
+async function repoAccess(repo,token){const r=await github(`/repos/${repo}`,token);const p=r.permissions||{};return{can_write:!!(p.admin||p.maintain||p.push),permission:p.admin?'admin':p.maintain?'maintain':p.push?'write':p.triage?'triage':p.pull?'read':'none'}}
 
 async function loadReference(repo,token){
   const paths=[
@@ -48,4 +52,45 @@ async function loadReference(repo,token){
   };
 }
 
-export default{async fetch(request,env,ctx){const url=new URL(request.url);if(url.pathname==='/api/project/reference'){const C=cors(request.headers.get('Origin')||'',env.FRONTEND_URL);if(request.method==='OPTIONS')return new Response(null,{status:204,headers:C});if(request.method!=='GET')return json({error:'method not allowed'},405,C);try{const token=await tokenFromRequest(request,env);if(!token)return json({error:'unauthorized'},401,C);return json(await loadReference(env.PROJECT_REPO,token),200,C)}catch(e){return json({error:e.message||String(e)},500,C)}}return app.fetch(request,env,ctx)}};
+function validateReference(v){if(!v||!Array.isArray(v.acl_levels)||!Array.isArray(v.fsr_maturity_levels))throw new Error('reference_model requires acl_levels[] and fsr_maturity_levels[]');return v}
+function groupMap(t){const m=new Map((t.groups||[]).map(g=>[String(g.group||'').toUpperCase(),g.requirements||[]]));return m}
+async function saveTechnicalRequirements(repo,t,token){
+  if(!t||!Array.isArray(t.groups))throw new Error('technical_requirements.groups[] required');
+  const m=groupMap(t);
+  const nav=m.get('NAV')||[],per=m.get('PER')||[],stm=m.get('STM')||[];
+  const writes=[
+    ['project/technical_requirements/ctl.json',{schema_version:'1.0',group:'CTL',requirements:m.get('CTL')||[]}],
+    ['project/technical_requirements/loc.json',{schema_version:'1.0',group:'LOC',requirements:m.get('LOC')||[]}],
+    ['project/technical_requirements/nav_a.json',{schema_version:'1.0',group:'NAV',requirements:nav.slice(0,4)}],
+    ['project/technical_requirements/nav_b.json',{schema_version:'1.0',group:'NAV',requirements:nav.slice(4)}],
+    ['project/technical_requirements/per.json',{schema_version:'1.0',group:'PER',requirements:per.slice(0,7)}],
+    ['project/technical_requirements/per_b.json',{schema_version:'1.0',group:'PER',requirements:per.slice(7)}],
+    ['project/technical_requirements/stm_a.json',{schema_version:'1.0',group:'STM',requirements:stm.slice(0,7)}],
+    ['project/technical_requirements/stm_b.json',{schema_version:'1.0',group:'STM',requirements:stm.slice(7)}],
+    ['project/technical_requirements/interfaces.json',{schema_version:'1.0',interfaces:t.interfaces||[]}],
+    ['project/technical_requirements/odd_allocation.json',{schema_version:'1.0',odd_allocation:t.odd_allocation||[]}],
+    ['project/technical_requirements/traceability.json',{schema_version:'1.0',fsr_traceability:t.fsr_traceability||[],open_gates:t.open_gates||[]}]
+  ];
+  for(const[path,payload]of writes)await putJson(repo,path,payload,token,'Hub: update Technical Requirements');
+  return{ok:true,requirement_count:[...m.values()].reduce((n,a)=>n+a.length,0)};
+}
+
+export default{async fetch(request,env,ctx){
+  const url=new URL(request.url);
+  if(!url.pathname.startsWith('/api/project/reference'))return app.fetch(request,env,ctx);
+  const C=cors(request.headers.get('Origin')||'',env.FRONTEND_URL);
+  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:C});
+  try{
+    const token=await tokenFromRequest(request,env);if(!token)return json({error:'unauthorized'},401,C);
+    const repo=env.PROJECT_REPO;
+    if(url.pathname==='/api/project/reference'&&request.method==='GET')return json(await loadReference(repo,token),200,C);
+    if(request.method==='PUT'){
+      const access=await repoAccess(repo,token);if(!access.can_write)return json({error:'forbidden',message:'PM / Write permission required'},403,C);
+      if(url.pathname==='/api/project/reference/reference-model'){
+        const payload=validateReference(await request.json());await putJson(repo,'project/reference_model.json',payload,token,'Hub: update ACL / FSR maturity reference');return json({ok:true},200,C);
+      }
+      if(url.pathname==='/api/project/reference/technical-requirements')return json(await saveTechnicalRequirements(repo,await request.json(),token),200,C);
+    }
+    return json({error:'not found'},404,C);
+  }catch(e){return json({error:e.message||String(e)},500,C)}
+}};
