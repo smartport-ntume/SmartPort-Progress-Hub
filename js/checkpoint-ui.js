@@ -3,6 +3,8 @@
   const $$ = s => [...document.querySelectorAll(s)];
   const API = window.SmartPortAPI;
   let refMap = new Map();
+  let referenceLoaded = false;
+  let referenceLoading = null;
 
   function esc(v='') {
     return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -79,10 +81,39 @@
     return { score, vals };
   }
 
-  function openFullCpDetail(id) {
+  async function loadReference(force=false) {
+    if (referenceLoaded && !force) return true;
+    if (referenceLoading && !force) return referenceLoading;
+
+    referenceLoading = (async () => {
+      try {
+        const token = sessionStorage.getItem('smartport.session') || '';
+        const res = await fetch(API.getBase() + '/api/project/reference', {
+          credentials: 'include',
+          headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        refMap = new Map((data?.reference?.acl_levels || []).map(x => [x.checkpoint, x]));
+        referenceLoaded = true;
+        return true;
+      } catch (_) {
+        return false;
+      } finally {
+        referenceLoading = null;
+      }
+    })();
+
+    return referenceLoading;
+  }
+
+  async function openFullCpDetail(id) {
     const S = window.SmartPortStore?.state;
     const cp = S?.checkpoints?.find(x => x.id === id);
     if (!cp) return;
+
+    if (!refMap.has(id)) await loadReference();
+
     const ref = refMap.get(id) || {};
     const capability = ref.capability || cp.capability || '—';
     const review = ref.review_checks || cp.review_checks || '—';
@@ -96,6 +127,7 @@
     if (!drawer || !backdrop || !title || !body) return;
 
     title.textContent = `${cp.id} · ${cp.name || ''}`;
+    body.onsubmit = null;
     body.innerHTML = `
       <div class="field"><label>ACL / Date</label><div class="detail-value">${esc(cp.acl||ref.level||'')} · ${esc(cp.date||'')}</div></div>
       <div class="field"><label>Vehicle Capability / Gate</label><div class="detail-value cp-detail-multiline">${esc(capability).replace(/\n/g,'<br>')}</div></div>
@@ -109,52 +141,38 @@
     backdrop.classList.add('open');
   }
 
-  async function loadReference() {
-    try {
-      const token = sessionStorage.getItem('smartport.session') || '';
-      const res = await fetch(API.getBase() + '/api/project/reference', {
-        credentials: 'include',
-        headers: { ...(token ? { 'Authorization': `Bearer ${token}` } : {}) }
+  function bindCpElement(el) {
+    const id = cpIdFromText(el.textContent);
+    if (!id) return;
+
+    el.classList.add('checkpoint-clickable');
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.dataset.cpFullDetail = id;
+
+    // Replace app.js legacy inline onclick directly. No capture-phase interception.
+    el.onclick = async evt => {
+      evt.preventDefault();
+      evt.stopPropagation();
+      await openFullCpDetail(id);
+    };
+
+    if (el.dataset.cpKeyboardBound !== '1') {
+      el.dataset.cpKeyboardBound = '1';
+      el.addEventListener('keydown', evt => {
+        if (evt.key === 'Enter' || evt.key === ' ') {
+          evt.preventDefault();
+          el.click();
+        }
       });
-      if (!res.ok) return;
-      const data = await res.json();
-      refMap = new Map((data?.reference?.acl_levels || []).map(x => [x.checkpoint, x]));
-    } catch (_) {}
+    }
   }
 
   function refresh() {
-    $$('.cp-marker').forEach(el => {
-      el.classList.add('checkpoint-clickable');
-      el.tabIndex = 0;
-      el.setAttribute('role', 'button');
-    });
+    $$('.cp-marker').forEach(bindCpElement);
+    $$('.cp-point').forEach(bindCpElement);
     refreshGanttCalendar();
   }
-
-  // Capture phase: take ownership before app.js legacy onclick runs.
-  document.addEventListener('click', e => {
-    const marker = e.target.closest?.('.cp-marker');
-    if (marker) {
-      const id = cpIdFromText(marker.textContent);
-      if (id) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        openFullCpDetail(id);
-      }
-      return;
-    }
-
-    const point = e.target.closest?.('.cp-point');
-    if (point) {
-      const id = cpIdFromText(point.textContent);
-      if (id) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        openFullCpDetail(id);
-      }
-      return;
-    }
-  }, true);
 
   const style = document.createElement('style');
   style.textContent = `
@@ -174,14 +192,12 @@
     timer = setTimeout(refresh, 30);
   });
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', async () => {
-      await loadReference();
-      refresh();
-      observer.observe(document.body, { childList: true, subtree: true });
-    });
-  } else {
-    loadReference().then(refresh);
+  async function init() {
+    await loadReference();
+    refresh();
     observer.observe(document.body, { childList: true, subtree: true });
   }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
