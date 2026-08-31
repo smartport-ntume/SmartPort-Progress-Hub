@@ -93,7 +93,6 @@
       btn.addEventListener('click',()=>restoreNow(btn,false));
     }
 
-    // PM sees only the pilot six records: repair automatically once per tab session.
     const count=Store?.state?.subtasks?.length || 0;
     if(count===6 && sessionStorage.getItem('smartport.v041AutoRestoreAttempted')!=='1'){
       sessionStorage.setItem('smartport.v041AutoRestoreAttempted','1');
@@ -107,4 +106,12 @@
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(init,1400));
   else setTimeout(init,1400);
+})();
+
+(() => {
+  if(document.querySelector('script[data-smartport-reference-pages]')) return;
+  const s=document.createElement('script');
+  s.src='js/reference-pages.js';
+  s.dataset.smartportReferencePages='1';
+  document.body.appendChild(s);
 })();
