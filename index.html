@@ -27,7 +27,6 @@
   </div>
 </header>
 <main>
-
 <section id="dashboard" class="view active">
   <div class="cards">
     <div class="card"><div class="k">Today</div><div class="v" id="todayCard">—</div><div class="small">紅線 = 今日</div></div>
@@ -36,82 +35,23 @@
     <div class="card"><div class="k">Schedule Health</div><div class="v" id="scheduleHealth">—</div><div class="small" id="scheduleSub"></div></div>
     <div class="card"><div class="k">Pending Updates</div><div class="v" id="pendingCount">0</div><div class="small">尚未 PM Approve</div></div>
   </div>
-  <div class="panel">
-    <div class="panel-title">Integrated Gantt
-      <div class="toolbar"><label class="muted"><input id="showSubs" type="checkbox"> 顯示 Subtasks</label><span class="muted"><span class="pending-dot"></span> Pending Review</span></div>
-    </div>
-    <div class="gantt-wrap"><div id="gantt" class="gantt"></div></div>
-  </div>
+  <div class="panel"><div class="panel-title">Integrated Gantt <div class="toolbar"><label class="muted"><input id="showSubs" type="checkbox"> 顯示 Subtasks</label><span class="muted"><span class="pending-dot"></span> Pending Review</span></div></div><div class="gantt-wrap"><div id="gantt" class="gantt"></div></div></div>
 </section>
-
 <section id="reports" class="view">
   <div class="grid2">
-    <div class="panel">
-      <div class="panel-title">Weekly Progress Proposal <div class="toolbar"><span class="revision-badge">GitHub-backed</span></div></div>
-      <form id="weeklyProposalForm" style="padding:14px">
-        <div class="alert info"><b>Engineer 提交的是 Proposal，不會直接改正式進度。</b><br>PM Approve 後才會更新 WP/Subtask baseline，並保留 GitHub Issue / commit history。</div>
-        <div class="form-grid">
-          <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
-          <div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div>
-          <div class="field"><label>Target Type</label><select id="weeklyTargetType" name="target_type" required><option value="WP">WP</option><option value="SUBTASK">Subtask</option></select></div>
-          <div class="field"><label>Target</label><select id="weeklyTargetId" name="target_id" required></select></div>
-          <div class="field"><label>Proposed Progress (%)</label><input name="progress" type="number" min="0" max="100" step="1" required></div>
-          <div class="field"><label>Status</label><select name="status" required><option value="On Track">On Track</option><option value="At Risk">At Risk</option><option value="Blocked">Blocked</option><option value="Delayed">Delayed</option><option value="Completed">Completed</option></select></div>
-        </div>
-        <div class="field"><label>Blocker</label><textarea name="blocker" rows="2" placeholder="沒有 blocker 可留白"></textarea></div>
-        <div class="field"><label>Evidence / Link</label><textarea name="evidence" rows="2" placeholder="測試紀錄、PR、commit、影片、log、文件路徑等"></textarea></div>
-        <div class="field"><label>Weekly Summary</label><textarea name="summary" rows="5" required placeholder="本週完成什麼、結果如何、下週做什麼"></textarea></div>
-        <button id="weeklySubmitBtn" class="btn primary" type="submit">送 PM Review</button>
-      </form>
-    </div>
-
-    <div class="panel">
-      <div class="panel-title">Proposal Status</div>
-      <div id="weeklyStatusSummary" style="padding:14px" class="muted">載入中...</div>
-    </div>
+    <div class="panel"><div class="panel-title">Weekly Progress Proposal <div class="toolbar"><span class="revision-badge">GitHub-backed</span></div></div><form id="weeklyProposalForm" style="padding:14px"><div class="alert info"><b>Engineer 提交的是 Proposal，不會直接改正式進度。</b><br>PM Approve 後才會更新 WP/Subtask baseline，並保留 GitHub Issue / commit history。</div><div class="form-grid"><div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div><div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div><div class="field"><label>Target Type</label><select id="weeklyTargetType" name="target_type" required><option value="WP">WP</option><option value="SUBTASK">Subtask</option></select></div><div class="field"><label>Target</label><select id="weeklyTargetId" name="target_id" required></select></div><div class="field"><label>Proposed Progress (%)</label><input name="progress" type="number" min="0" max="100" step="1" required></div><div class="field"><label>Status</label><select name="status" required><option value="On Track">On Track</option><option value="At Risk">At Risk</option><option value="Blocked">Blocked</option><option value="Delayed">Delayed</option><option value="Completed">Completed</option></select></div></div><div class="field"><label>Blocker</label><textarea name="blocker" rows="2" placeholder="沒有 blocker 可留白"></textarea></div><div class="field"><label>Evidence / Link</label><textarea name="evidence" rows="2" placeholder="測試紀錄、PR、commit、影片、log、文件路徑等"></textarea></div><div class="field"><label>Weekly Summary</label><textarea name="summary" rows="5" required placeholder="本週完成什麼、結果如何、下週做什麼"></textarea></div><button id="weeklySubmitBtn" class="btn primary" type="submit">送 PM Review</button></form></div>
+    <div class="panel"><div class="panel-title">Proposal Status</div><div id="weeklyStatusSummary" style="padding:14px" class="muted">載入中...</div></div>
   </div>
-
-  <div class="panel" style="margin-top:14px">
-    <div class="panel-title">Proposal Archive｜Submitted → PM Review → Approved / Rejected</div>
-    <div style="overflow:auto;max-height:520px">
-      <table id="proposalArchiveTable">
-        <thead><tr><th>Date</th><th>Author</th><th>Team</th><th>Target</th><th>Progress</th><th>Status</th><th>Review</th><th>GitHub</th></tr></thead>
-        <tbody><tr><td colspan="8" class="muted">載入中...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
+  <div class="panel" style="margin-top:14px"><div class="panel-title">Proposal Archive｜Submitted → PM Review → Approved / Rejected</div><div style="overflow:auto;max-height:520px"><table id="proposalArchiveTable"><thead><tr><th>Date</th><th>Author</th><th>Team</th><th>Target</th><th>Progress</th><th>Status</th><th>Review</th><th>GitHub</th></tr></thead><tbody><tr><td colspan="8" class="muted">載入中...</td></tr></tbody></table></div></div>
 </section>
-
 <section id="plan" class="view">
   <div class="panel"><div class="panel-title">WP / Subtask Editor <div class="toolbar"><button class="btn primary" data-action="add-wp">＋新增 WP</button><button class="btn" data-action="add-subtask">＋新增 Subtask</button></div></div><div style="overflow:auto;max-height:760px"><table id="planTable"><thead><tr><th>WP / Subtask</th><th>Owner</th><th>Start</th><th>End</th><th>Weight</th><th>Actual</th><th>IF / FSR</th><th></th></tr></thead><tbody></tbody></table></div></div>
   <div class="panel" style="margin-top:14px"><div class="panel-title">Checkpoint Editor <div class="toolbar"><button class="btn primary" data-action="add-cp">＋新增 CP</button></div></div><div style="overflow:auto;max-height:380px"><table id="cpEditTable"><thead><tr><th>CP</th><th>Date</th><th>ACL</th><th>Name</th><th>FSR Target</th><th></th></tr></thead><tbody></tbody></table></div></div>
 </section>
-
 <section id="fsr" class="view"><div class="panel"><div class="panel-title">FSR Maturity / Allocation <div class="toolbar"><button class="btn primary" data-action="add-fsr">＋新增 FSR</button></div></div><div style="overflow:auto;max-height:790px"><table id="fsrTable"><thead><tr><th>FSR</th><th>Requirement</th><th>Primary</th><th>Related IF</th><th>Linked WP</th><th>Current</th><th>12/31 Target</th><th></th></tr></thead><tbody></tbody></table></div></div></section>
-
 <section id="cp" class="view"><div class="panel"><div class="panel-title">Checkpoint / ACL / Vehicle Capability <div class="toolbar"><button class="btn primary" data-action="add-cp">＋新增 CP</button></div></div><div id="cpTimeline" class="cp-timeline"></div><div id="cpGrid" class="cp-grid"></div></div></section>
-
-<section id="review" class="view">
-  <div class="panel">
-    <div class="panel-title">PM Review Queue <div class="toolbar"><span class="revision-badge">Approve 才寫入 baseline</span></div></div>
-    <div id="reviewQueue" style="padding:14px" class="muted">載入中...</div>
-  </div>
-</section>
-
-<section id="settings" class="view">
-  <div class="grid2">
-    <div class="panel"><div class="panel-title">Project Settings</div><div style="padding:14px">
-      <div class="field"><label>Auth / API Base URL</label><input id="apiBase"></div>
-      <div class="field"><label>Project Repository</label><input id="projectRepo" value="smartport-ntume/SmartPort-Project-Control" readonly></div>
-      <div class="field"><label>GitHub User</label><input id="githubUser" value="—" readonly></div>
-      <button id="btnSaveSettings" class="btn primary">儲存 API 設定</button>
-      <button id="btnLogin" class="btn">GitHub Login</button>
-      <button id="btnLogout" class="btn danger">Logout</button>
-    </div></div>
-    <div class="panel"><div class="panel-title">備份 / Source of Truth</div><div style="padding:14px"><div class="alert info"><b>正式 Project DB = GitHub Private Repo。</b><br>WP / Subtask / CP / FSR 修改皆寫回 GitHub。</div><button id="btnExportSnapshot" class="btn primary">匯出 Project JSON</button></div></div>
-  </div>
-</section>
-
+<section id="review" class="view"><div class="panel"><div class="panel-title">PM Review Queue <div class="toolbar"><span class="revision-badge">Approve 才寫入 baseline</span></div></div><div id="reviewQueue" style="padding:14px" class="muted">載入中...</div></div></section>
+<section id="settings" class="view"><div class="grid2"><div class="panel"><div class="panel-title">Project Settings</div><div style="padding:14px"><div class="field"><label>Auth / API Base URL</label><input id="apiBase"></div><div class="field"><label>Project Repository</label><input id="projectRepo" value="smartport-ntume/SmartPort-Project-Control" readonly></div><div class="field"><label>GitHub User</label><input id="githubUser" value="—" readonly></div><button id="btnSaveSettings" class="btn primary">儲存 API 設定</button><button id="btnLogin" class="btn">GitHub Login</button><button id="btnLogout" class="btn danger">Logout</button></div></div><div class="panel"><div class="panel-title">備份 / Source of Truth</div><div style="padding:14px"><div class="alert info"><b>正式 Project DB = GitHub Private Repo。</b><br>WP / Subtask / CP / FSR 修改皆寫回 GitHub。</div><button id="btnExportSnapshot" class="btn primary">匯出 Project JSON</button></div></div></div></section>
 </main>
 <div id="drawerBackdrop" class="backdrop"></div>
 <div id="drawer" class="drawer"><div class="drawer-head"><strong id="drawerTitle"></strong><button id="drawerClose" class="btn">✕</button></div><form class="drawer-body" id="drawerBody"></form></div>
@@ -123,5 +63,6 @@
 <script src="js/role.js"></script>
 <script src="js/weekly.js"></script>
 <script src="js/checkpoint-ui.js"></script>
+<script src="js/migration.js"></script>
 </body>
 </html>
