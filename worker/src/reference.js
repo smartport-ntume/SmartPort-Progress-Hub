@@ -1,7 +1,6 @@
 import app from './main.js';
 
 const GH_API='https://api.github.com';
-
 function json(data,status=200,headers={}){return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...headers}})}
 function cors(origin,frontendUrl){const allowed=new URL(frontendUrl).origin;return{'Access-Control-Allow-Origin':origin===allowed?origin:allowed,'Access-Control-Allow-Credentials':'true','Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'GET,POST,PUT,DELETE,OPTIONS','Vary':'Origin'}}
 function b64urlToBytes(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
@@ -14,83 +13,16 @@ function encodeUtf8Base64(v){return btoa(unescape(encodeURIComponent(v)))}
 async function getJsonFile(repo,path,token){const f=await github(`/repos/${repo}/contents/${path}`,token);return{json:JSON.parse(decodeUtf8Base64(f.content)),sha:f.sha}}
 async function getJson(repo,path,token){return(await getJsonFile(repo,path,token)).json}
 async function putJson(repo,path,payload,token,message){let sha;try{sha=(await github(`/repos/${repo}/contents/${path}`,token)).sha}catch(_){}return github(`/repos/${repo}/contents/${path}`,token,{method:'PUT',body:JSON.stringify({message,content:encodeUtf8Base64(JSON.stringify(payload,null,2)+'\n'),...(sha?{sha}:{})})})}
-async function repoAccess(repo,token){const r=await github(`/repos/${repo}`,token);const p=r.permissions||{};return{can_write:!!(p.admin||p.maintain||p.push),permission:p.admin?'admin':p.maintain?'maintain':p.push?'write':p.triage?'triage':p.pull?'read':'none'}}
+async function repoAccess(repo,token){const r=await github(`/repos/${repo}`,token);const p=r.permissions||{};return{can_write:!!(p.admin||p.maintain||p.push)}}
 
 async function loadReference(repo,token){
-  const paths=[
-    'project/reference_model.json',
-    'project/technical_requirements/ctl.json',
-    'project/technical_requirements/loc.json',
-    'project/technical_requirements/nav_a.json',
-    'project/technical_requirements/nav_b.json',
-    'project/technical_requirements/per.json',
-    'project/technical_requirements/per_b.json',
-    'project/technical_requirements/stm_a.json',
-    'project/technical_requirements/stm_b.json',
-    'project/technical_requirements/interfaces.json',
-    'project/technical_requirements/odd_allocation.json',
-    'project/technical_requirements/traceability.json'
-  ];
-  const [reference,ctl,loc,navA,navB,perA,perB,stmA,stmB,interfaces,odd,trace]=await Promise.all(paths.map(p=>getJson(repo,p,token)));
-  return {
-    reference,
-    technical_requirements:{
-      source:'跨運車文件報告_v1(2).pptx slides 60-70',
-      status:'Preliminary / TBD as stated in source',
-      groups:[
-        {group:'CTL',requirements:ctl.requirements||[]},
-        {group:'LOC',requirements:loc.requirements||[]},
-        {group:'NAV',requirements:[...(navA.requirements||[]),...(navB.requirements||[])]},
-        {group:'PER',requirements:[...(perA.requirements||[]),...(perB.requirements||[])]},
-        {group:'STM',requirements:[...(stmA.requirements||[]),...(stmB.requirements||[])]}
-      ],
-      interfaces:interfaces.interfaces||[],
-      odd_allocation:odd.odd_allocation||[],
-      fsr_traceability:trace.fsr_traceability||[],
-      open_gates:trace.open_gates||[]
-    }
-  };
+  const paths=['project/reference_model.json','project/item_functions.json','project/technical_requirements/ctl.json','project/technical_requirements/loc.json','project/technical_requirements/nav_a.json','project/technical_requirements/nav_b.json','project/technical_requirements/per.json','project/technical_requirements/per_b.json','project/technical_requirements/stm_a.json','project/technical_requirements/stm_b.json','project/technical_requirements/interfaces.json','project/technical_requirements/odd_allocation.json','project/technical_requirements/traceability.json'];
+  const [reference,itemFunctions,ctl,loc,navA,navB,perA,perB,stmA,stmB,interfaces,odd,trace]=await Promise.all(paths.map(p=>getJson(repo,p,token)));
+  return {reference,item_functions:itemFunctions,technical_requirements:{source:'跨運車文件報告_v1(2).pptx slides 60-70',status:'Preliminary / TBD as stated in source',groups:[{group:'CTL',requirements:ctl.requirements||[]},{group:'LOC',requirements:loc.requirements||[]},{group:'NAV',requirements:[...(navA.requirements||[]),...(navB.requirements||[])]},{group:'PER',requirements:[...(perA.requirements||[]),...(perB.requirements||[])]},{group:'STM',requirements:[...(stmA.requirements||[]),...(stmB.requirements||[])]}],interfaces:interfaces.interfaces||[],odd_allocation:odd.odd_allocation||[],fsr_traceability:trace.fsr_traceability||[],open_gates:trace.open_gates||[]}};
 }
 
 function validateReference(v){if(!v||!Array.isArray(v.acl_levels)||!Array.isArray(v.fsr_maturity_levels))throw new Error('reference_model requires acl_levels[] and fsr_maturity_levels[]');return v}
-function groupMap(t){const m=new Map((t.groups||[]).map(g=>[String(g.group||'').toUpperCase(),g.requirements||[]]));return m}
-async function saveTechnicalRequirements(repo,t,token){
-  if(!t||!Array.isArray(t.groups))throw new Error('technical_requirements.groups[] required');
-  const m=groupMap(t);
-  const nav=m.get('NAV')||[],per=m.get('PER')||[],stm=m.get('STM')||[];
-  const writes=[
-    ['project/technical_requirements/ctl.json',{schema_version:'1.0',group:'CTL',requirements:m.get('CTL')||[]}],
-    ['project/technical_requirements/loc.json',{schema_version:'1.0',group:'LOC',requirements:m.get('LOC')||[]}],
-    ['project/technical_requirements/nav_a.json',{schema_version:'1.0',group:'NAV',requirements:nav.slice(0,4)}],
-    ['project/technical_requirements/nav_b.json',{schema_version:'1.0',group:'NAV',requirements:nav.slice(4)}],
-    ['project/technical_requirements/per.json',{schema_version:'1.0',group:'PER',requirements:per.slice(0,7)}],
-    ['project/technical_requirements/per_b.json',{schema_version:'1.0',group:'PER',requirements:per.slice(7)}],
-    ['project/technical_requirements/stm_a.json',{schema_version:'1.0',group:'STM',requirements:stm.slice(0,7)}],
-    ['project/technical_requirements/stm_b.json',{schema_version:'1.0',group:'STM',requirements:stm.slice(7)}],
-    ['project/technical_requirements/interfaces.json',{schema_version:'1.0',interfaces:t.interfaces||[]}],
-    ['project/technical_requirements/odd_allocation.json',{schema_version:'1.0',odd_allocation:t.odd_allocation||[]}],
-    ['project/technical_requirements/traceability.json',{schema_version:'1.0',fsr_traceability:t.fsr_traceability||[],open_gates:t.open_gates||[]}]
-  ];
-  for(const[path,payload]of writes)await putJson(repo,path,payload,token,'Hub: update Technical Requirements');
-  return{ok:true,requirement_count:[...m.values()].reduce((n,a)=>n+a.length,0)};
-}
+function groupMap(t){return new Map((t.groups||[]).map(g=>[String(g.group||'').toUpperCase(),g.requirements||[]]))}
+async function saveTechnicalRequirements(repo,t,token){const m=groupMap(t),nav=m.get('NAV')||[],per=m.get('PER')||[],stm=m.get('STM')||[];const writes=[['project/technical_requirements/ctl.json',{schema_version:'1.0',group:'CTL',requirements:m.get('CTL')||[]}],['project/technical_requirements/loc.json',{schema_version:'1.0',group:'LOC',requirements:m.get('LOC')||[]}],['project/technical_requirements/nav_a.json',{schema_version:'1.0',group:'NAV',requirements:nav.slice(0,4)}],['project/technical_requirements/nav_b.json',{schema_version:'1.0',group:'NAV',requirements:nav.slice(4)}],['project/technical_requirements/per.json',{schema_version:'1.0',group:'PER',requirements:per.slice(0,7)}],['project/technical_requirements/per_b.json',{schema_version:'1.0',group:'PER',requirements:per.slice(7)}],['project/technical_requirements/stm_a.json',{schema_version:'1.0',group:'STM',requirements:stm.slice(0,7)}],['project/technical_requirements/stm_b.json',{schema_version:'1.0',group:'STM',requirements:stm.slice(7)}],['project/technical_requirements/interfaces.json',{schema_version:'1.0',interfaces:t.interfaces||[]}],['project/technical_requirements/odd_allocation.json',{schema_version:'1.0',odd_allocation:t.odd_allocation||[]}],['project/technical_requirements/traceability.json',{schema_version:'1.0',fsr_traceability:t.fsr_traceability||[],open_gates:t.open_gates||[]}]];for(const[path,payload]of writes)await putJson(repo,path,payload,token,'Hub: update Technical Requirements');return{ok:true}}
 
-export default{async fetch(request,env,ctx){
-  const url=new URL(request.url);
-  if(!url.pathname.startsWith('/api/project/reference'))return app.fetch(request,env,ctx);
-  const C=cors(request.headers.get('Origin')||'',env.FRONTEND_URL);
-  if(request.method==='OPTIONS')return new Response(null,{status:204,headers:C});
-  try{
-    const token=await tokenFromRequest(request,env);if(!token)return json({error:'unauthorized'},401,C);
-    const repo=env.PROJECT_REPO;
-    if(url.pathname==='/api/project/reference'&&request.method==='GET')return json(await loadReference(repo,token),200,C);
-    if(request.method==='PUT'){
-      const access=await repoAccess(repo,token);if(!access.can_write)return json({error:'forbidden',message:'PM / Write permission required'},403,C);
-      if(url.pathname==='/api/project/reference/reference-model'){
-        const payload=validateReference(await request.json());await putJson(repo,'project/reference_model.json',payload,token,'Hub: update ACL / FSR maturity reference');return json({ok:true},200,C);
-      }
-      if(url.pathname==='/api/project/reference/technical-requirements')return json(await saveTechnicalRequirements(repo,await request.json(),token),200,C);
-    }
-    return json({error:'not found'},404,C);
-  }catch(e){return json({error:e.message||String(e)},500,C)}
-}};
+export default{async fetch(request,env,ctx){const url=new URL(request.url);if(!url.pathname.startsWith('/api/project/reference'))return app.fetch(request,env,ctx);const C=cors(request.headers.get('Origin')||'',env.FRONTEND_URL);if(request.method==='OPTIONS')return new Response(null,{status:204,headers:C});try{const token=await tokenFromRequest(request,env);if(!token)return json({error:'unauthorized'},401,C);const repo=env.PROJECT_REPO;if(url.pathname==='/api/project/reference'&&request.method==='GET')return json(await loadReference(repo,token),200,C);if(request.method==='PUT'){const access=await repoAccess(repo,token);if(!access.can_write)return json({error:'forbidden',message:'PM / Write permission required'},403,C);if(url.pathname==='/api/project/reference/reference-model'){const payload=validateReference(await request.json());await putJson(repo,'project/reference_model.json',payload,token,'Hub: update ACL / FSR maturity reference');return json({ok:true},200,C)}if(url.pathname==='/api/project/reference/item-functions'){const payload=await request.json();if(!Array.isArray(payload?.item_functions))return json({error:'item_functions[] required'},400,C);await putJson(repo,'project/item_functions.json',payload,token,'Hub: update Item Function baseline');return json({ok:true},200,C)}if(url.pathname==='/api/project/reference/technical-requirements')return json(await saveTechnicalRequirements(repo,await request.json(),token),200,C)}return json({error:'not found'},404,C)}catch(e){return json({error:e.message||String(e)},500,C)}}};
