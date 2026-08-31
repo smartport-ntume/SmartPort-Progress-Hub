@@ -6,7 +6,21 @@ function cors(origin,frontendUrl){const allowed=new URL(frontendUrl).origin;retu
 function b64urlToBytes(s){s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
 async function sessionKey(secret){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(secret));return crypto.subtle.importKey('raw',digest,{name:'AES-GCM'},false,['decrypt'])}
 async function unseal(value,secret){try{const[ivPart,dataPart]=String(value||'').split('.');if(!ivPart||!dataPart)return null;const key=await sessionKey(secret);const decrypted=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64urlToBytes(ivPart)},key,b64urlToBytes(dataPart));const data=JSON.parse(new TextDecoder().decode(decrypted));if(!data.exp||Date.now()>data.exp)return null;return data}catch(_){return null}}
-async function tokenFromRequest(req,env){const auth=req.headers.get('Authorization')||'';if(!auth.startsWith('Bearer ')||!env.SESSION_SECRET)return null;const s=await unseal(auth.slice(7),env.SESSION_SECRET);return s?.token||null}
+function parseCookies(req){const out={};for(const part of(req.headers.get('Cookie')||'').split(';')){const i=part.indexOf('=');if(i<0)continue;out[part.slice(0,i).trim()]=decodeURIComponent(part.slice(i+1).trim())}return out}
+async function tokenFromRequest(req,env){
+  if(!env.SESSION_SECRET)return null;
+  const auth=req.headers.get('Authorization')||'';
+  if(auth.startsWith('Bearer ')){
+    const s=await unseal(auth.slice(7),env.SESSION_SECRET);
+    if(s?.token)return s.token;
+  }
+  const c=parseCookies(req);
+  if(c.sp_session){
+    const s=await unseal(c.sp_session,env.SESSION_SECRET);
+    if(s?.token)return s.token;
+  }
+  return null;
+}
 async function github(path,token,options={}){const res=await fetch(GH_API+path,{...options,headers:{'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'User-Agent':'SmartPort-Progress-Hub/0.6','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json',...(options.headers||{})}});const text=await res.text();let body=null;try{body=text?JSON.parse(text):null}catch(_){body=text}if(!res.ok)throw new Error(`GitHub ${res.status}: ${typeof body==='string'?body:JSON.stringify(body)}`);return body}
 function decodeUtf8Base64(v){return decodeURIComponent(escape(atob(v.replace(/\n/g,''))))}
 function encodeUtf8Base64(v){return btoa(unescape(encodeURIComponent(v)))}
