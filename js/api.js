@@ -76,6 +76,7 @@
     async listProposals() { return request(cfg.endpoints.proposals); },
     async createProposal(payload) { return request(cfg.endpoints.proposals, { method: 'POST', body: JSON.stringify(payload) }); },
     async approveProposal(issueNumber) { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/approve`, { method: 'POST' }); },
-    async rejectProposal(issueNumber, reason='') { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); }
+    async rejectProposal(issueNumber, reason='') { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); },
+    async restoreV041Subtasks() { return request('/api/admin/restore-v041-subtasks', { method: 'POST' }); }
   };
 })();
