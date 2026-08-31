@@ -83,6 +83,10 @@
     );
   }
 
+  function monthLabel(date) {
+    return `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+  }
+
   function refreshGanttCalendar() {
     const bounds = ganttBounds();
     const gantt = $('#gantt');
@@ -94,12 +98,12 @@
     gantt.style.minWidth = Math.max(1280, leftColumns + months * 135) + 'px';
 
     // app.js creates one .month element for each consecutive month in the project range.
-    // Replace the short labels (Aug, Sep...) with explicit month + year labels.
+    // Show the month row as YYYY/MM so cross-year schedules stay unambiguous.
     let cursor = new Date(bounds.start);
     $$('.month-lane .month').forEach((el, i) => {
       if (i > 0) cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12, 0, 0);
-      el.textContent = cursor.toLocaleString('en', { month: 'short', year: 'numeric' });
-      el.title = el.textContent;
+      el.textContent = monthLabel(cursor);
+      el.title = monthLabel(cursor);
     });
   }
 
