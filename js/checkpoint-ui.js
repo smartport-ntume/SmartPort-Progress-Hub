@@ -41,7 +41,7 @@
     };
   }
 
-  function monthCount(start, end) {
+  function monthCount(start,end) {
     return Math.max(1,(end.getFullYear()-start.getFullYear())*12+(end.getMonth()-start.getMonth())+1);
   }
 
@@ -50,34 +50,35 @@
   }
 
   function refreshGanttCalendar() {
-    const bounds = ganttBounds();
-    const gantt = $('#gantt');
-    if (!bounds || !gantt) return;
-    const months = monthCount(bounds.start,bounds.end);
-    gantt.style.minWidth = Math.max(1280,410+months*135)+'px';
-    let cursor = new Date(bounds.start);
+    const bounds=ganttBounds(),gantt=$('#gantt');
+    if(!bounds||!gantt)return;
+    const months=monthCount(bounds.start,bounds.end);
+    const targetWidth=Math.max(1280,410+months*135)+'px';
+    if(gantt.style.minWidth!==targetWidth) gantt.style.minWidth=targetWidth;
+
+    let cursor=new Date(bounds.start);
     $$('.month-lane .month').forEach((el,i)=>{
-      if(i>0) cursor = new Date(cursor.getFullYear(),cursor.getMonth()+1,1,12,0,0);
-      el.textContent = monthLabel(cursor);
-      el.title = monthLabel(cursor);
+      if(i>0)cursor=new Date(cursor.getFullYear(),cursor.getMonth()+1,1,12,0,0);
+      const label=monthLabel(cursor);
+      if(el.textContent!==label)el.textContent=label;
+      if(el.title!==label)el.title=label;
     });
   }
 
   function readiness(cp) {
-    if (!cp?.criteria?.length) return {score:0,vals:[]};
-    const S = window.SmartPortStore?.state;
-    const vals = cp.criteria.map(([id,req])=>{
-      const t = S?.workPackages?.find(x=>x.id===id);
-      const act = t ? (t.actual_progress ?? t.actualProgress ?? t.progress ?? 0) : 0;
-      return {id,req,act,ok:act>=req};
+    if(!cp?.criteria?.length)return{score:0,vals:[]};
+    const S=window.SmartPortStore?.state;
+    const vals=cp.criteria.map(([id,req])=>{
+      const t=S?.workPackages?.find(x=>x.id===id);
+      const act=t?(t.actual_progress??t.actualProgress??t.progress??0):0;
+      return{id,req,act,ok:act>=req};
     });
-    const score = Math.round(vals.reduce((a,x)=>a+Math.min(1,x.req?x.act/x.req:1),0)/vals.length*100);
-    return {score,vals};
+    return{score:Math.round(vals.reduce((a,x)=>a+Math.min(1,x.req?x.act/x.req:1),0)/vals.length*100),vals};
   }
 
   async function loadReference(force=false) {
-    if(referenceLoaded&&!force) return true;
-    if(referenceLoading&&!force) return referenceLoading;
+    if(referenceLoaded&&!force)return true;
+    if(referenceLoading&&!force)return referenceLoading;
     referenceLoading=(async()=>{
       try{
         const token=sessionStorage.getItem('smartport.session')||'';
@@ -85,7 +86,7 @@
           credentials:'include',
           headers:{...(token?{'Authorization':`Bearer ${token}`}:{})}
         });
-        if(!res.ok) return false;
+        if(!res.ok)return false;
         const data=await res.json();
         refMap=new Map((data?.reference?.acl_levels||[]).map(x=>[x.checkpoint,x]));
         referenceLoaded=true;
@@ -99,14 +100,16 @@
   function renderFullCpDetail(id) {
     const S=window.SmartPortStore?.state;
     const cp=S?.checkpoints?.find(x=>x.id===id);
-    if(!cp) return false;
+    if(!cp)return false;
+
     const ref=refMap.get(id)||{};
     const capability=ref.capability||cp.capability||'—';
     const review=ref.review_checks||cp.review_checks||'—';
     const fsr=ref.fsr_maturity_target||cp.fsrTarget||cp.fsr_target||'—';
     const r=readiness(cp);
     const drawer=$('#drawer'),backdrop=$('#drawerBackdrop'),title=$('#drawerTitle'),body=$('#drawerBody');
-    if(!drawer||!backdrop||!title||!body) return false;
+    if(!drawer||!backdrop||!title||!body)return false;
+
     title.textContent=`${cp.id} · ${cp.name||''}`;
     body.onsubmit=null;
     body.innerHTML=`
@@ -122,40 +125,44 @@
     return true;
   }
 
-  async function openFullCpDetail(id) {
-    // Open immediately so the interaction always has visible feedback.
-    renderFullCpDetail(id);
-    if(!refMap.has(id)) {
-      const ok=await loadReference();
-      if(ok) renderFullCpDetail(id);
+  function openFullCpDetail(id) {
+    // Always give immediate visual feedback first.
+    const opened=renderFullCpDetail(id);
+    if(!opened){
+      const toast=$('#toast');
+      if(toast){toast.textContent=`找不到 ${id} 的 Checkpoint 資料`;toast.classList.add('show');}
+      return;
+    }
+    if(!refMap.has(id)){
+      loadReference().then(ok=>{if(ok)renderFullCpDetail(id);});
     }
   }
 
   function bindCpElement(el) {
     const id=el.dataset.cpId||cpIdFromText(el.textContent);
-    if(!id) return;
+    if(!id)return;
     el.dataset.cpId=id;
     el.classList.add('checkpoint-clickable');
     el.tabIndex=0;
     el.setAttribute('role','button');
 
-    // Remove the legacy inline click route and use pointerup for a direct interaction.
+    // Disable the legacy inline onclick. The interaction is handled on mousedown.
     el.onclick=null;
-    if(el.dataset.cpPointerBound!=='1') {
-      el.dataset.cpPointerBound='1';
-      el.addEventListener('pointerup',evt=>{
-        if(evt.button!==undefined&&evt.button!==0) return;
+    if(el.dataset.cpMouseBound!=='1'){
+      el.dataset.cpMouseBound='1';
+      el.addEventListener('mousedown',evt=>{
+        if(evt.button!==0)return;
         evt.preventDefault();
         evt.stopPropagation();
-        openFullCpDetail(el.dataset.cpId);
+        openFullCpDetail(id);
       });
     }
-    if(el.dataset.cpKeyboardBound!=='1') {
+    if(el.dataset.cpKeyboardBound!=='1'){
       el.dataset.cpKeyboardBound='1';
       el.addEventListener('keydown',evt=>{
-        if(evt.key==='Enter'||evt.key===' ') {
+        if(evt.key==='Enter'||evt.key===' '){
           evt.preventDefault();
-          openFullCpDetail(el.dataset.cpId);
+          openFullCpDetail(id);
         }
       });
     }
@@ -169,7 +176,7 @@
 
   const style=document.createElement('style');
   style.textContent=`
-    .cp-marker{cursor:pointer;z-index:20!important;pointer-events:auto!important;transition:box-shadow .12s ease,filter .12s ease}
+    .cp-marker{cursor:pointer;z-index:30!important;pointer-events:auto!important;user-select:none;transition:box-shadow .12s ease,filter .12s ease}
     .cp-marker:hover,.cp-marker:focus-visible{filter:brightness(.98);box-shadow:0 2px 8px rgba(139,91,8,.18);outline:2px solid rgba(82,119,187,.35);outline-offset:2px}
     .today-tag{pointer-events:none!important}
     .checkpoint-clickable{cursor:pointer}
@@ -182,15 +189,15 @@
   let timer=null;
   const observer=new MutationObserver(()=>{
     clearTimeout(timer);
-    timer=setTimeout(refresh,20);
+    timer=setTimeout(refresh,40);
   });
 
-  function init() {
+  function init(){
     refresh();
     loadReference().then(refresh);
     observer.observe(document.body,{childList:true,subtree:true});
   }
 
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init);
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
   else init();
 })();
