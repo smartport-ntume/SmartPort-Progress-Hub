@@ -6,7 +6,16 @@
   ];
   let installed=false;
 
+  function loadGanttRange(){
+    if(document.querySelector('script[data-smartport-gantt-range]'))return;
+    const s=document.createElement('script');
+    s.src=`js/gantt-range.js?v=${Date.now()}`;
+    s.dataset.smartportGanttRange='1';
+    document.head.appendChild(s);
+  }
+
   function install(){
+    loadGanttRange();
     if(installed)return;
     const nav=document.querySelector('.nav');if(!nav)return;
     const required=['dashboard','reports','plan','fsr','cp','review','settings','item-functions','reference','tr'];
