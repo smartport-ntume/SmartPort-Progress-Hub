@@ -1,6 +1,19 @@
 (() => {
   const $ = s => document.querySelector(s);
   const $$ = s => [...document.querySelectorAll(s)];
+  const RUNTIME_BUILD = '20260831.1543';
+
+  function installRuntimeBuild() {
+    window.SMARTPORT_BUILD = RUNTIME_BUILD;
+    const build = document.getElementById('buildId');
+    if (build) build.textContent = `Build ${RUNTIME_BUILD}`;
+    if (!document.getElementById('smartportGanttFilterScript')) {
+      const script = document.createElement('script');
+      script.id = 'smartportGanttFilterScript';
+      script.src = `js/gantt-filter.js?v=${RUNTIME_BUILD}`;
+      document.body.appendChild(script);
+    }
+  }
 
   function cpIdFromText(text) {
     const m = String(text || '').match(/\bCP[\w.-]*\b/i);
@@ -92,13 +105,10 @@
     const gantt = $('#gantt');
     if (!bounds || !gantt) return;
 
-    // Keep roughly 135 px per month once the project becomes longer than the original view.
     const months = monthCount(bounds.start, bounds.end);
     const leftColumns = 410;
     gantt.style.minWidth = Math.max(1280, leftColumns + months * 135) + 'px';
 
-    // app.js creates one .month element for each consecutive month in the project range.
-    // Show the month row as YYYY/MM so cross-year schedules stay unambiguous.
     let cursor = new Date(bounds.start);
     $$('.month-lane .month').forEach((el, i) => {
       if (i > 0) cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12, 0, 0);
@@ -108,7 +118,8 @@
   }
 
   function refresh() {
-    // Gantt CP labels: keep the original app.js onclick, but make the hit target explicit.
+    installRuntimeBuild();
+
     $$('.cp-marker').forEach(el => {
       el.classList.add('checkpoint-clickable');
       el.tabIndex = 0;
@@ -126,14 +137,12 @@
 
     refreshGanttCalendar();
 
-    // Dashboard summary cards.
     const currentCard = $('#currentAcl')?.closest('.card');
     makeKeyboardClickable(currentCard, () => cpIdFromText($('#currentCpSub')?.textContent));
 
     const nextCard = $('#nextCp')?.closest('.card');
     makeKeyboardClickable(nextCard, () => cpIdFromText($('#nextCp')?.textContent));
 
-    // CP / ACL cards.
     $$('[data-cp-card]').forEach(card => {
       makeKeyboardClickable(card, () => card.dataset.cpCard || cpIdFromText(card.textContent));
     });
