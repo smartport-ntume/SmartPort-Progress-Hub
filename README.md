@@ -4,8 +4,8 @@ Web dashboard for SmartPort project planning, progress tracking, PM review, chec
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260831.1700:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260831.1700
+**SmartPort Progress Hub — Build 20260831.1750:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260831.1750
 
 > This is the canonical Hub URL for the currently deployed frontend build. The same Build ID is shown in the Hub header so the deployed page can be checked against this README.
 >
@@ -64,6 +64,7 @@ Main Hub functions currently include:
 - Work Packages and 97 Subtasks
 - Checkpoint / ACL tracking with synchronized full Capability / Review across Gantt marker, CP timeline, table, detail drawer, and edit drawer
 - Stable 8-column Checkpoint Editor rendering directly from project data
+- Conflict-safe per-Checkpoint GitHub save with latest-SHA merge/retry
 - FSR allocation and maturity tracking
 - Item Function IF-01～IF-16 reference
 - Technical Requirements and cross-subsystem interfaces
