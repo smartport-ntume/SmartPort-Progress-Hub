@@ -22,7 +22,7 @@
             <input id="spGuestPassword" type="password" autocomplete="current-password" required placeholder="Guest password">
             <button id="spGuestSubmit" type="submit" class="sp-gate-primary">進入唯讀模式</button>
           </div>
-          <div class="sp-gate-hint">Guest 可唯讀查看 Dashboard、Project 與 Requirements；Workflow 不開放。</div>
+          <div class="sp-gate-hint">Guest 可唯讀查看 Dashboard、Project 與 Requirements；Workflow 與管理設定不開放。</div>
         </form>
         <div class="sp-gate-divider"><span>或</span></div>
         <button id="spGithubLogin" type="button" class="sp-gate-github">GitHub Organization Login</button>
@@ -88,7 +88,7 @@
         window.location.reload();
       }catch(err){
         message.hidden=false;
-        if(err?.status===401)message.textContent='訪客密碼不正確。';
+        if(err?.status===401)message.textContent='訪客密碼不正確，或目前 Guest session 已失效。';
         else if(err?.status===503)message.textContent='Guest Access 尚未完成伺服器設定，請聯絡 PM。';
         else message.textContent=`無法登入：${err?.message||String(err)}`;
       }finally{
