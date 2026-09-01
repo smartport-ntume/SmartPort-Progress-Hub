@@ -33,6 +33,14 @@
     }
   }
 
+  function cleanPublicDashboard(){
+    const conn=document.getElementById('connText');
+    if(conn)conn.textContent='Public Snapshot · Read Only';
+    const pending=document.getElementById('pendingCount')?.closest('.card');
+    if(pending)pending.style.display='none';
+    document.querySelectorAll('#dashboard .pending-dot').forEach(dot=>dot.parentElement?.style.setProperty('display','none','important'));
+  }
+
   function applyReadOnly(root = document) {
     if (access.can_write) return;
 
@@ -42,6 +50,7 @@
 
     if (access.role === 'PUBLIC') {
       hideInternalViews();
+      cleanPublicDashboard();
       const showSubs = document.getElementById('showSubs');
       if (showSubs) {
         showSubs.checked = false;
@@ -83,6 +92,7 @@
         login.addEventListener('click', () => API.login());
         box.appendChild(login);
       }
+      cleanPublicDashboard();
       return;
     }
 
