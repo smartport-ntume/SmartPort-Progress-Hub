@@ -140,7 +140,7 @@ async function verifyGuestPassword(password,policy){
   if(!policy?.enabled||policy.password_algorithm!=='PBKDF2-SHA256')return false;
   const salt=b64urlToBytes(policy.salt);
   const expected=b64urlToBytes(policy.password_hash);
-  const actual=await passwordHash(String(password||''),salt,Number(policy.iterations)||310000);
+  const actual=await passwordHash(String(password||''),salt,Number(policy.iterations)||100000);
   return constantEqual(actual,expected);
 }
 async function loadAccessPolicy(env){
@@ -262,7 +262,7 @@ async function changeGuestPassword(request,env,C,session){
   const password=String(body.password||'');
   if(password.length<12)return json({error:'password_too_short',minimum:12},400,C);
   const salt=crypto.getRandomValues(new Uint8Array(16));
-  const iterations=310000;
+  const iterations=100000;
   const hash=await passwordHash(password,salt,iterations);
   const revision=crypto.randomUUID();
   await updateJsonMerged(env.PROJECT_REPO,'project/access_control.json',session.token,'Hub: rotate guest access password',doc=>{
