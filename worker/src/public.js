@@ -208,6 +208,30 @@ async function guestReference(env){
   };
 }
 
+async function guestStatus(env,C){
+  const status={
+    guest_repo_token_configured:!!env.GUEST_REPO_TOKEN,
+    session_secret_configured:!!env.SESSION_SECRET,
+    project_repo:env.PROJECT_REPO||null,
+    repo_readable:false,
+    access_policy_readable:false,
+    github_status:null
+  };
+  if(!env.GUEST_REPO_TOKEN)return json(status,200,C);
+  try{
+    const r=await ghRaw(`/repos/${env.PROJECT_REPO}`,env.GUEST_REPO_TOKEN);
+    status.github_status=r.status;
+    status.repo_readable=r.ok;
+    if(r.ok){
+      try{
+        await getJson(env.PROJECT_REPO,'project/access_control.json',env.GUEST_REPO_TOKEN);
+        status.access_policy_readable=true;
+      }catch(_){}
+    }
+  }catch(_){status.github_status=0;}
+  return json(status,200,C);
+}
+
 async function guestLogin(request,env,C){
   if(!env.SESSION_SECRET)return json({error:'SESSION_SECRET not configured'},503,C);
   const body=await request.json().catch(()=>({}));
@@ -260,6 +284,10 @@ export default{
     if(request.method==='OPTIONS')return new Response(null,{status:204,headers:C});
 
     try{
+      if(url.pathname==='/api/guest/status'){
+        if(request.method!=='GET')return json({error:'method_not_allowed'},405,C);
+        return await guestStatus(env,C);
+      }
       if(url.pathname==='/api/guest/login'){
         if(request.method!=='POST')return json({error:'method_not_allowed'},405,C);
         return await guestLogin(request,env,C);
