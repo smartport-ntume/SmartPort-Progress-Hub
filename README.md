@@ -4,20 +4,44 @@ Web dashboard for SmartPort project planning, progress tracking, PM review, chec
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260831.1750:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260831.1750
+**SmartPort Progress Hub:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/
 
-> This is the canonical Hub URL for the currently deployed frontend build. The same Build ID is shown in the Hub header so the deployed page can be checked against this README.
->
-> Open the URL above and sign in with GitHub when prompted. Access to project data is determined by your permission on the private `SmartPort-Project-Control` repository.
+The Hub supports two access layers:
+
+- **Public / Anonymous** — no GitHub login required. Can view the public Dashboard, WP-level Gantt, and CP / ACL roadmap in read-only mode.
+- **GitHub Login** — organization/project members can sign in to access internal project data according to their repository permission.
+
+The public view reads a whitelist snapshot stored in the public frontend repository. The private `SmartPort-Project-Control` repository remains private and is not exposed to anonymous users.
 
 ## Access model
 
-- **SmartPort-PM** — Maintain permission; can review and update formal project baseline/reference data.
-- **SmartPort-Engineers** — Read permission; can view project progress and submit progress proposals through the Hub workflow.
-- Users without access to the private project-control repository cannot load the project data.
+- **Public / Anonymous** — Dashboard + WP-level Gantt + CP / ACL; read only.
+- **SmartPort-Engineers** — Read permission; can access internal project views allowed by the Hub and submit progress proposals.
+- **SmartPort-PM** — Maintain / Write permission; can review and update formal project baseline/reference data.
+- Users outside the GitHub organization can still open the public dashboard without an account.
+
+## Public-data whitelist
+
+The anonymous snapshot may contain:
+
+- WP ID / name / owner team
+- WP schedule
+- WP progress / status
+- Public work-content summary
+- CP ID / date / ACL / capability / review checks
+
+The anonymous snapshot does **not** contain internal FSR / IF / Technical Requirements, PM comments, evidence links, GitHub Issues, review history, or private repository contents.
 
 ## Navigation
+
+Public mode:
+
+- **Dashboard** — project status and WP-level Gantt
+- **CP / ACL** — public capability roadmap
+- **GitHub Login** — upgrade to authenticated project access
+
+Authenticated mode:
 
 - **Dashboard** — integrated project status and Gantt, including automatic time range, YYYY/MM labels, Owner filtering, and full Checkpoint detail
 - **Project** — Plan Editor, CP / ACL
@@ -28,10 +52,15 @@ https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260831.1750
 ## Architecture
 
 ```text
-Browser
+Anonymous Browser
   ↓
 GitHub Pages
-SmartPort Progress Hub
+  ↓
+Public whitelist snapshot
+
+Authenticated Browser
+  ↓
+GitHub Pages
   ↓
 Cloudflare Worker
 OAuth / API Gateway
@@ -42,7 +71,7 @@ Private Repository
 SmartPort-Project-Control
 ```
 
-The public repository contains the web frontend. The formal project database and engineering reference data remain in the private `SmartPort-Project-Control` repository and are treated as the Source of Truth.
+The public repository contains the web frontend and the sanitized public snapshot. The formal project database and engineering reference data remain in the private `SmartPort-Project-Control` repository and are treated as the Source of Truth.
 
 ## Main workflow
 
@@ -56,12 +85,15 @@ PM Review
 PM Approved
         ↓
 Formal GitHub Baseline
+        ↓
+Sanitized Public Snapshot
 ```
 
 Main Hub functions currently include:
 
+- Anonymous public Dashboard / Gantt / CP-ACL view
 - Dashboard and integrated Gantt with automatic project time range, YYYY/MM month labels, and Owner filtering
-- Work Packages and 97 Subtasks
+- Work Packages and 97 Subtasks in the authenticated project view
 - Checkpoint / ACL tracking with synchronized full Capability / Review across Gantt marker, CP timeline, table, detail drawer, and edit drawer
 - Stable 8-column Checkpoint Editor rendering directly from project data
 - Conflict-safe per-Checkpoint GitHub save with latest-SHA merge/retry
@@ -69,7 +101,7 @@ Main Hub functions currently include:
 - Item Function IF-01～IF-16 reference
 - Technical Requirements and cross-subsystem interfaces
 - GitHub OAuth access control
-- PM / Engineer role separation
+- Public / Engineer / PM role separation
 - Weekly Progress Proposal and PM Review workflow
 
 ## Repositories
