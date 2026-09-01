@@ -144,8 +144,14 @@ async function verifyGuestPassword(password,policy){
   return constantEqual(actual,expected);
 }
 async function loadAccessPolicy(env){
-  if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('GUEST_REPO_TOKEN is not configured'),{status:503});
-  return getJson(env.PROJECT_REPO,'project/access_control.json',env.GUEST_REPO_TOKEN);
+  if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('guest_repo_token_missing'),{status:503});
+  try{
+    return await getJson(env.PROJECT_REPO,'project/access_control.json',env.GUEST_REPO_TOKEN);
+  }catch(e){
+    if(e?.status===404)throw Object.assign(new Error('guest_repo_token_no_access'),{status:503,github_status:404});
+    if(e?.status===403)throw Object.assign(new Error('guest_repo_token_forbidden'),{status:503,github_status:403});
+    throw e;
+  }
 }
 async function validateGuestSession(session,env){
   const policyDoc=await loadAccessPolicy(env);
@@ -157,7 +163,7 @@ async function validateGuestSession(session,env){
   return policy;
 }
 async function guestSnapshot(env){
-  if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('GUEST_REPO_TOKEN is not configured'),{status:503});
+  if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('guest_repo_token_missing'),{status:503});
   const token=env.GUEST_REPO_TOKEN,repo=env.PROJECT_REPO;
   const[project,wp,subs,fsr,cp]=await Promise.all([
     getJson(repo,'project/project.json',token),
@@ -175,7 +181,7 @@ async function guestSnapshot(env){
   };
 }
 async function guestReference(env){
-  if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('GUEST_REPO_TOKEN is not configured'),{status:503});
+  if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('guest_repo_token_missing'),{status:503});
   const token=env.GUEST_REPO_TOKEN,repo=env.PROJECT_REPO;
   const paths=[
     'project/reference_model.json','project/item_functions.json',
@@ -233,7 +239,7 @@ async function guestStatus(env,C){
 }
 
 async function guestLogin(request,env,C){
-  if(!env.SESSION_SECRET)return json({error:'SESSION_SECRET not configured'},503,C);
+  if(!env.SESSION_SECRET)return json({error:'session_secret_missing'},503,C);
   const body=await request.json().catch(()=>({}));
   const policyDoc=await loadAccessPolicy(env);
   const policy=policyDoc.guest_access||{};
@@ -324,7 +330,7 @@ export default{
 
       return app.fetch(request,env,ctx);
     }catch(e){
-      return json({error:e.message||String(e)},e?.status||500,C);
+      return json({error:e.message||String(e),github_status:e?.github_status||null},e?.status||500,C);
     }
   }
 };
