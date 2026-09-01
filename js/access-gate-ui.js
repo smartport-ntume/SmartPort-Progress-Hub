@@ -48,13 +48,19 @@
     return gate;
   }
 
+  function showMessage(html){
+    const msg=document.getElementById('spGateMessage');
+    if(!msg)return;
+    msg.hidden=false;
+    msg.innerHTML=html;
+  }
+
   function showGate(me){
     const gate=createGate();
     gate.style.display='flex';
     const msg=document.getElementById('spGateMessage');
     if(me?.role==='DENIED'){
-      msg.hidden=false;
-      msg.innerHTML=`目前登入的 GitHub 帳號不是 <b>${esc(me.organization||'smartport-ntume')}</b> 的有效成員。你可以改用訪客密碼，或使用正確的 Organization GitHub 帳號登入。`;
+      showMessage(`目前登入的 GitHub 帳號不是 <b>${esc(me.organization||'smartport-ntume')}</b> 的有效成員。你可以改用訪客密碼，或使用正確的 Organization GitHub 帳號登入。`);
     }else{
       msg.hidden=true;
       msg.textContent='';
@@ -66,6 +72,31 @@
     if(gate)gate.style.display='none';
   }
 
+  async function checkGuestServer(){
+    try{
+      const s=await API.guestStatus();
+      if(!s.session_secret_configured){
+        showMessage('Guest Access 尚未完成伺服器設定：<b>SESSION_SECRET</b> 未設定。');
+        return false;
+      }
+      if(!s.guest_repo_token_configured){
+        showMessage('Guest Access 尚未完成伺服器設定：Cloudflare Worker 目前沒有讀到 <b>GUEST_REPO_TOKEN</b>。請確認 Secret 是加在 <b>smartport-progress-hub-api</b> 的 Production Worker。');
+        return false;
+      }
+      if(!s.repo_readable){
+        showMessage(`Guest Access Token 已設定，但無法讀取 Private Repo。GitHub 回應：<b>${esc(String(s.github_status??'unknown'))}</b>。請確認 Fine-grained token 已核准，且 Repository access 包含 SmartPort-Project-Control。`);
+        return false;
+      }
+      if(!s.access_policy_readable){
+        showMessage('Guest Access Token 可讀 repository，但無法讀取 <b>project/access_control.json</b>。請檢查 Contents: Read-only 權限。');
+        return false;
+      }
+      return true;
+    }catch(_){
+      return true;
+    }
+  }
+
   async function init(){
     const me=await API.me().catch(()=>({role:'UNAUTHENTICATED'}));
     if(me?.role!=='UNAUTHENTICATED'&&me?.role!=='DENIED'){
@@ -74,6 +105,7 @@
     }
 
     showGate(me);
+    await checkGuestServer();
     const form=document.getElementById('spGuestLoginForm');
     const input=document.getElementById('spGuestPassword');
     const submit=document.getElementById('spGuestSubmit');
@@ -89,7 +121,7 @@
       }catch(err){
         message.hidden=false;
         if(err?.status===401)message.textContent='訪客密碼不正確，或目前 Guest session 已失效。';
-        else if(err?.status===503)message.textContent='Guest Access 尚未完成伺服器設定，請聯絡 PM。';
+        else if(err?.status===503)await checkGuestServer();
         else message.textContent=`無法登入：${err?.message||String(err)}`;
       }finally{
         submit.disabled=false;
