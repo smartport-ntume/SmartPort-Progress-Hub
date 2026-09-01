@@ -1,0 +1,31 @@
+name: Fix Guest Plan UI 2026-09-01
+
+on:
+  push:
+    paths:
+      - ".github/workflows/fix-guest-plan-ui-20260901.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch Guest Plan UI
+        run: python tools/fix_guest_plan_ui_20260901.py
+      - name: Commit Guest Plan UI fix
+        shell: bash
+        run: |
+          if git diff --quiet -- js/plan-enhancements.js; then
+            echo "No Plan UI changes required."
+            exit 0
+          fi
+          git config user.name "smartport-ui-bot"
+          git config user.email "smartport-ui-bot@users.noreply.github.com"
+          git add js/plan-enhancements.js
+          git commit -m "Fix Guest Plan scroll and family filters [skip ci]"
+          git push
