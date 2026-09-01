@@ -1,10 +1,11 @@
 name = "smartport-progress-hub-api"
-main = "src/reference.js"
+main = "src/public.js"
 compatibility_date = "2026-08-27"
 
 [vars]
 FRONTEND_URL = "https://smartport-ntume.github.io/SmartPort-Progress-Hub/"
 PROJECT_REPO = "smartport-ntume/SmartPort-Project-Control"
+PUBLIC_REPO = "smartport-ntume/SmartPort-Progress-Hub"
 GITHUB_CLIENT_ID = "Ov23liGRrIsBDpAtXDck"
 
 # Sensitive values must stay in Cloudflare Runtime Secrets, never commit them:
