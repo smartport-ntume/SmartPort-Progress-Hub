@@ -4,8 +4,8 @@ Web dashboard for SmartPort project planning, progress tracking, checkpoints, sa
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260901.1615:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260901.1615
+**SmartPort Progress Hub — Build 20260901.1625:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260901.1625
 
 Project data is protected by an access gate. Users must use one of the following methods:
 
@@ -95,7 +95,7 @@ Formal GitHub Baseline
 
 Main Hub functions currently include:
 
-- Password / Organization access gate
+- Password / Organization access gate with safe server-side guest configuration diagnostics
 - Dashboard and integrated Gantt with automatic project time range, YYYY/MM labels, Owner filtering, and full Checkpoint detail
 - 19 Work Packages and 96 Subtasks
 - Checkpoint / ACL tracking with synchronized Capability / Review
@@ -107,6 +107,8 @@ Main Hub functions currently include:
 - Guest / Engineer / PM role separation
 - PM-managed Guest Password with immediate Guest-session revocation on rotation
 - Weekly Progress Proposal and PM Review workflow
+
+The obsolete v0.4.1 baseline recovery UI has been removed; the current GitHub baseline is authoritative.
 
 ## Repositories
 
