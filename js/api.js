@@ -59,6 +59,7 @@
     clearSession,
     hasSession() { return !!sessionToken(); },
     async health() { return request(cfg.endpoints.health); },
+    async guestStatus() { return request('/api/guest/status'); },
     async me() {
       if (!sessionToken()) { currentRole='UNAUTHENTICATED'; return unauthenticated(); }
       try {
@@ -102,7 +103,6 @@
     async listProposals() { return currentRole==='GUEST' ? {proposals:[]} : request(cfg.endpoints.proposals); },
     async createProposal(payload) { return request(cfg.endpoints.proposals, { method:'POST', body:JSON.stringify(payload) }); },
     async approveProposal(issueNumber) { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/approve`, { method:'POST' }); },
-    async rejectProposal(issueNumber, reason='') { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/reject`, { method:'POST', body:JSON.stringify({ reason }) }); },
-    async restoreV041Subtasks() { return request('/api/admin/restore-v041-subtasks', { method:'POST' }); }
+    async rejectProposal(issueNumber, reason='') { return request(`${cfg.endpoints.proposals}/${encodeURIComponent(issueNumber)}/reject`, { method:'POST', body:JSON.stringify({ reason }) }); }
   };
 })();
