@@ -17,6 +17,15 @@
     document.querySelector(`[data-nav-group="${id}"]`)?.style.setProperty('display','none','important');
   }
 
+  function hideGuestWorkflowIndicators(){
+    const pending=document.getElementById('pendingCount')?.closest('.card');
+    if(pending)pending.style.setProperty('display','none','important');
+    document.querySelectorAll('#dashboard .pending-dot').forEach(dot=>{
+      const host=dot.closest('.muted')||dot.parentElement;
+      host?.style.setProperty('display','none','important');
+    });
+  }
+
   function applyVisibility() {
     if (access.can_write) return;
 
@@ -30,6 +39,7 @@
       hideViewButton('settings');
       hideGroup('workflow');
       document.querySelector('.nav-system')?.style.setProperty('display','none','important');
+      hideGuestWorkflowIndicators();
       const active=document.querySelector('.view.active');
       if(active&&['reports','review','settings'].includes(active.id)){
         document.querySelector('.nav button[data-view="dashboard"]')?.click();
