@@ -147,6 +147,15 @@ async function loadAccessPolicy(env){
   if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('GUEST_REPO_TOKEN is not configured'),{status:503});
   return getJson(env.PROJECT_REPO,'project/access_control.json',env.GUEST_REPO_TOKEN);
 }
+async function validateGuestSession(session,env){
+  const policyDoc=await loadAccessPolicy(env);
+  const policy=policyDoc.guest_access||{};
+  const currentRevision=String(policy.revision||'');
+  if(!policy.enabled||!currentRevision||String(session?.revision||'')!==currentRevision){
+    throw Object.assign(new Error('guest_session_revoked'),{status:401});
+  }
+  return policy;
+}
 async function guestSnapshot(env){
   if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('GUEST_REPO_TOKEN is not configured'),{status:503});
   const token=env.GUEST_REPO_TOKEN,repo=env.PROJECT_REPO;
@@ -206,9 +215,11 @@ async function guestLogin(request,env,C){
   const policy=policyDoc.guest_access||{};
   const ok=await verifyGuestPassword(body.password,policy);
   if(!ok)return json({error:'invalid_password'},401,C);
+  const revision=String(policy.revision||'');
+  if(!revision)return json({error:'guest_policy_revision_missing'},503,C);
   const hours=Math.max(1,Math.min(24,Number(policy.session_hours)||8));
   const exp=Date.now()+hours*3600*1000;
-  const session=await seal({guest:true,role:'GUEST',exp},env.SESSION_SECRET);
+  const session=await seal({guest:true,role:'GUEST',revision,exp},env.SESSION_SECRET);
   return json({ok:true,session,role:'GUEST',expires_at:new Date(exp).toISOString(),allowed_views:policy.allowed_views||[]},200,C);
 }
 
@@ -223,6 +234,7 @@ async function changeGuestPassword(request,env,C,session){
   const salt=crypto.getRandomValues(new Uint8Array(16));
   const iterations=310000;
   const hash=await passwordHash(password,salt,iterations);
+  const revision=crypto.randomUUID();
   await updateJsonMerged(env.PROJECT_REPO,'project/access_control.json',session.token,'Hub: rotate guest access password',doc=>{
     doc.organization=org;
     doc.guest_access=doc.guest_access||{};
@@ -231,13 +243,14 @@ async function changeGuestPassword(request,env,C,session){
     doc.guest_access.iterations=iterations;
     doc.guest_access.salt=bytesToB64url(salt);
     doc.guest_access.password_hash=bytesToB64url(hash);
+    doc.guest_access.revision=revision;
     doc.guest_access.session_hours=Number(doc.guest_access.session_hours)||8;
     doc.guest_access.allowed_views=['dashboard','plan','fsr','cp','item-functions','reference','tr'];
     doc.guest_access.hidden_views=['reports','review','settings'];
     doc.guest_access.password_updated_at=new Date().toISOString();
     return doc;
   });
-  return json({ok:true},200,C);
+  return json({ok:true,revision},200,C);
 }
 
 export default{
@@ -260,8 +273,8 @@ export default{
       }
 
       if(session?.guest){
+        const policy=await validateGuestSession(session,env);
         if(url.pathname==='/api/me'&&request.method==='GET'){
-          const policy=(await loadAccessPolicy(env)).guest_access||{};
           return json({
             login:'Guest Viewer',role:'GUEST',repository_permission:'guest-read',
             can_write:false,can_approve:false,guest:true,
