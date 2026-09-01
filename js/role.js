@@ -9,6 +9,14 @@
     return /^(編輯|Edit|刪除|Archive|新增|儲存到 GitHub|儲存)$/i.test(text) || /^＋新增/.test(text);
   };
 
+  function loadPmHelpers(){
+    if(!access.can_write||document.querySelector('script[data-public-sync]'))return;
+    const s=document.createElement('script');
+    s.src=`js/public-sync.js?v=${window.SMARTPORT_BUILD||Date.now()}`;
+    s.dataset.publicSync='1';
+    document.body.appendChild(s);
+  }
+
   function hideInternalViews() {
     const internal = ['reports','plan','fsr','review','settings','item-functions','reference','tr'];
     internal.forEach(id => {
@@ -90,6 +98,7 @@
       window.SMARTPORT_ACCESS = me;
       showRoleBadge(me);
       applyReadOnly(document);
+      loadPmHelpers();
       document.dispatchEvent(new CustomEvent('smartport:access-changed', { detail: me }));
 
       const observer = new MutationObserver(mutations => {
