@@ -41,7 +41,8 @@
       wrap=document.createElement('div');wrap.id='planFamilyFilters';wrap.className='plan-family-filters';
       const toolbar=title.querySelector('.toolbar');title.insertBefore(wrap,toolbar||null);
     }
-    wrap.innerHTML=groups.map(g=>`<button type="button" class="btn smallbtn ${filter===g.id?'primary':''}" data-plan-family="${g.id}" aria-pressed="${filter===g.id?'true':'false'}">${g.label} · ${countFor(g.id)}</button>`).join('');
+    const filterHtml=groups.map(g=>`<button type="button" class="btn smallbtn ${filter===g.id?'primary':''}" data-plan-family="${g.id}" aria-pressed="${filter===g.id?'true':'false'}">${g.label} · ${countFor(g.id)}</button>`).join('');
+    if(wrap.innerHTML!==filterHtml)wrap.innerHTML=filterHtml;
 
     let state=document.getElementById('planFilterState');
     if(!state){state=document.createElement('div');state.id='planFilterState';state.className='plan-filter-state';title.parentElement?.insertBefore(state,title.nextSibling);}
@@ -62,14 +63,14 @@
     return `<tr class="plan-row subtask-plan-row clickable" data-open-sub="${esc(s.id)}"><td style="padding-left:28px">↳ <b>${esc(s.id)}</b> ${esc(s.name||'')}<div class="muted">Parent: ${esc(s.parent_wp||'')}</div></td><td>${esc(s.owner_team||'')}</td><td>${esc(s.start||'')}</td><td>${esc(s.end||'')}</td><td>${esc(weightOf(s))}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(s))}</div></td><td class="plan-desc-cell">${s.description?`<div class="plan-description">${esc(s.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(s.ifs)}<br>${tags(s.fsrs)}</td><td><button class="btn smallbtn" data-edit-subtask="${esc(s.id)}">Edit</button></td></tr>`;
   }
 
-  function renderPlanRows(){
+  function renderPlanRows(resetScroll=false){
     const tbody=document.querySelector('#planTable tbody');if(!tbody)return;
     const wpList=visibleWps();let html='';
     for(const w of wpList){html+=wpRow(w);for(const s of S.subtasks.filter(x=>x.parent_wp===w.id))html+=subRow(s);}
     if(!html)html='<tr><td colspan="9" class="muted" style="padding:16px">此分類目前沒有 WP / Subtask。</td></tr>';
     lastOwnRender=performance.now();
     if(tbody.innerHTML!==html)tbody.innerHTML=html;
-    const scroller=tbody.closest('div[style*="overflow"]');if(scroller)scroller.scrollTop=0;
+    const scroller=tbody.closest('div[style*="overflow"]');if(resetScroll&&scroller)scroller.scrollTop=0;
     installFilters();
   }
 
@@ -224,7 +225,7 @@
 
   document.addEventListener('click',e=>{
     const family=e.target.closest?.('[data-plan-family]');
-    if(family){e.preventDefault();e.stopImmediatePropagation();filter=String(family.dataset.planFamily||'ALL').toUpperCase();renderPlanRows();return;}
+    if(family){e.preventDefault();e.stopImmediatePropagation();filter=String(family.dataset.planFamily||'ALL').toUpperCase();renderPlanRows(true);return;}
 
     const cpEdit=e.target.closest?.('[data-edit-cp]');
     if(cpEdit){e.preventDefault();e.stopImmediatePropagation();openCpEditor(cpEdit.dataset.editCp);return;}
