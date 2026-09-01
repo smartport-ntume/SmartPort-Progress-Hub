@@ -20,7 +20,7 @@
         <div class="field"><label>Confirm Password</label><input id="guestPasswordConfirm" type="password" autocomplete="new-password"></div>
       </div>
       <button id="btnChangeGuestPassword" type="button" class="btn primary">更新 Guest Password</button>
-      <div id="guestPasswordState" class="muted" style="margin-top:8px">只有 PM 可修改。更新後，既有 Guest session 仍會在原到期時間前有效。</div>`;
+      <div id="guestPasswordState" class="muted" style="margin-top:8px">只有 PM 可修改。更新後，既有 Guest session 會立即失效，訪客需使用新密碼重新登入。</div>`;
     settings.appendChild(wrap);
 
     const btn=document.getElementById('btnChangeGuestPassword');
@@ -30,13 +30,13 @@
       const b=document.getElementById('guestPasswordConfirm').value;
       if(a.length<12){state.textContent='密碼至少需要 12 個字元。';return;}
       if(a!==b){state.textContent='兩次輸入的密碼不一致。';return;}
-      if(!confirm('確定更新 Guest Access Password？'))return;
+      if(!confirm('確定更新 Guest Access Password？現有 Guest session 將立即失效。'))return;
       btn.disabled=true;btn.textContent='更新中...';
       try{
         await API.changeGuestPassword(a);
         document.getElementById('guestPasswordNew').value='';
         document.getElementById('guestPasswordConfirm').value='';
-        state.textContent=`Guest Password 已更新 · ${new Date().toLocaleString('zh-TW')}`;
+        state.textContent=`Guest Password 已更新；舊 Guest session 已撤銷 · ${new Date().toLocaleString('zh-TW')}`;
       }catch(e){state.textContent=`更新失敗：${e.message||String(e)}`;}
       finally{btn.disabled=false;btn.textContent='更新 Guest Password';}
     };
