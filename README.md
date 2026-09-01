@@ -4,8 +4,8 @@ Web dashboard for SmartPort project planning, progress tracking, checkpoints, sa
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260901.1625:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260901.1625
+**SmartPort Progress Hub — Build 20260901.1630:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260901.1630
 
 Project data is protected by an access gate. Users must use one of the following methods:
 
@@ -24,6 +24,7 @@ The private `SmartPort-Project-Control` repository remains private. The frontend
 ## Guest password security
 
 - The plaintext password is never committed to the frontend or README.
+- The access gate provides an optional **顯示密碼** control so the user can verify what they typed locally in the browser.
 - `SmartPort-Project-Control/project/access_control.json` stores only a salted PBKDF2-SHA256 hash.
 - Guest sessions are sealed by the Cloudflare Worker and expire after the configured session period.
 - Rotating the Guest Password changes the access-policy revision, so existing Guest sessions are revoked immediately.
@@ -35,6 +36,8 @@ The private `SmartPort-Project-Control` repository remains private. The frontend
 Guest mode requires one Cloudflare Runtime Secret:
 
 - `GUEST_REPO_TOKEN` — a fine-grained GitHub token restricted to `smartport-ntume/SmartPort-Project-Control` with **Contents: Read-only** permission.
+
+If GitHub returns 404 for the private repository, verify that the fine-grained token has `smartport-ntume` as its Resource owner, includes `SmartPort-Project-Control` in Repository access, and has completed any required Organization approval.
 
 Never commit this token to GitHub or paste it into the frontend configuration.
 
@@ -95,7 +98,7 @@ Formal GitHub Baseline
 
 Main Hub functions currently include:
 
-- Password / Organization access gate with safe server-side guest configuration diagnostics
+- Password / Organization access gate
 - Dashboard and integrated Gantt with automatic project time range, YYYY/MM labels, Owner filtering, and full Checkpoint detail
 - 19 Work Packages and 96 Subtasks
 - Checkpoint / ACL tracking with synchronized Capability / Review
@@ -107,8 +110,6 @@ Main Hub functions currently include:
 - Guest / Engineer / PM role separation
 - PM-managed Guest Password with immediate Guest-session revocation on rotation
 - Weekly Progress Proposal and PM Review workflow
-
-The obsolete v0.4.1 baseline recovery UI has been removed; the current GitHub baseline is authoritative.
 
 ## Repositories
 
