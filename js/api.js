@@ -1,6 +1,5 @@
 (() => {
   const cfg = window.SMARTPORT_CONFIG;
-  let publicMode = false;
 
   function base() {
     const saved = localStorage.getItem('smartport.apiBase');
@@ -19,6 +18,10 @@
     return sessionStorage.getItem('smartport.session') || '';
   }
 
+  function clearSession() {
+    sessionStorage.removeItem('smartport.session');
+  }
+
   async function request(path, options = {}) {
     const root = base();
     if (!root) throw new Error('尚未設定 Auth/API Base URL');
@@ -33,29 +36,33 @@
       ...options
     });
 
-    if (res.status === 401) {
-      const err = new Error('unauthorized');
-      err.status = 401;
-      throw err;
-    }
-
     if (!res.ok) {
       let detail = '';
-      try { detail = await res.text(); } catch (_) {}
-      const err = new Error(`API ${res.status}${detail ? ': ' + detail : ''}`);
+      let parsed = null;
+      try {
+        detail = await res.text();
+        parsed = detail ? JSON.parse(detail) : null;
+      } catch (_) {}
+      const message = parsed?.error || parsed?.message || detail || `API ${res.status}`;
+      const err = new Error(message);
       err.status = res.status;
+      err.payload = parsed;
       throw err;
     }
     if (res.status === 204) return null;
     return res.json();
   }
 
-  async function publicSnapshot() {
-    const url = new URL('data/public_snapshot.json', window.location.href);
-    url.searchParams.set('v', window.SMARTPORT_BUILD || Date.now());
-    const res = await fetch(url.toString(), { cache: 'no-store' });
-    if (!res.ok) throw new Error(`Public snapshot ${res.status}`);
-    return res.json();
+  function unauthenticated(extra={}) {
+    return {
+      login: '',
+      role: 'UNAUTHENTICATED',
+      repository_permission: 'none',
+      can_write: false,
+      can_approve: false,
+      authenticated: false,
+      ...extra
+    };
   }
 
   captureSessionFromHash();
@@ -64,38 +71,52 @@
     getBase: base,
     setBase(url) { localStorage.setItem('smartport.apiBase', (url || '').trim().replace(/\/$/, '')); },
     login() { window.location.href = base() + cfg.endpoints.login; },
-    logout() { sessionStorage.removeItem('smartport.session'); window.location.href = base() + cfg.endpoints.logout; },
+    logout() {
+      clearSession();
+      window.location.href = base() + cfg.endpoints.logout;
+    },
+    clearSession,
     hasSession() { return !!sessionToken(); },
-    isPublicMode() { return publicMode; },
     async health() { return request(cfg.endpoints.health); },
     async me() {
+      if (!sessionToken()) return unauthenticated();
       try {
-        const me = await request(cfg.endpoints.me);
-        publicMode = false;
-        return me;
+        return await request(cfg.endpoints.me);
       } catch (e) {
-        if (e?.status !== 401) throw e;
-        sessionStorage.removeItem('smartport.session');
-        publicMode = true;
-        return {
-          login: 'Public View',
-          role: 'PUBLIC',
-          repository_permission: 'public-read',
-          can_write: false,
-          can_approve: false,
-          public: true
-        };
+        if (e?.status === 401) {
+          clearSession();
+          return unauthenticated();
+        }
+        if (e?.status === 403 && e?.payload?.error === 'organization_membership_required') {
+          clearSession();
+          return unauthenticated({
+            role: 'DENIED',
+            denied_reason: 'organization_membership_required',
+            organization: e.payload.organization || 'smartport-ntume'
+          });
+        }
+        throw e;
       }
     },
+    async guestLogin(password) {
+      const data = await request('/api/guest/login', {
+        method: 'POST',
+        body: JSON.stringify({ password })
+      });
+      if (data?.session) sessionStorage.setItem('smartport.session', data.session);
+      return data;
+    },
+    async changeGuestPassword(password) {
+      return request('/api/admin/guest-password', {
+        method: 'PUT',
+        body: JSON.stringify({ password })
+      });
+    },
     async loadSnapshot() {
-      if (publicMode) return publicSnapshot();
-      try {
-        return await request(cfg.endpoints.snapshot);
-      } catch (e) {
-        if (e?.status !== 401) throw e;
-        publicMode = true;
-        return publicSnapshot();
+      if (!sessionToken()) {
+        return { project: { name: 'SmartPort SC' }, work_packages: [], subtasks: [], functional_safety_requirements: [], checkpoints: [] };
       }
+      return request(cfg.endpoints.snapshot);
     },
     async saveWorkPackages(payload) { return request(cfg.endpoints.workPackages, { method: 'PUT', body: JSON.stringify(payload) }); },
     async saveFSR(payload) { return request(cfg.endpoints.fsr, { method: 'PUT', body: JSON.stringify(payload) }); },
