@@ -2,12 +2,40 @@
   const API = window.SmartPortAPI;
   let access = { role: 'UNAUTHENTICATED', can_write: false, repository_permission: 'none' };
 
-  const isWriteControl = el => {
-    if (!(el instanceof Element)) return false;
-    if (el.matches('[data-action],[data-edit-wp],[data-edit-subtask],[data-edit-cp],[data-edit-fsr],[data-delete-wp],[data-delete-subtask],[data-delete-cp],[data-delete-fsr]')) return true;
+  function ensureReadonlyStyle(){
+    if(document.getElementById('smartportReadonlyStyle'))return;
+    const style=document.createElement('style');
+    style.id='smartportReadonlyStyle';
+    style.textContent=`
+      body.sp-readonly [data-action],
+      body.sp-readonly [data-edit-wp],
+      body.sp-readonly [data-edit-subtask],
+      body.sp-readonly [data-edit-cp],
+      body.sp-readonly [data-edit-fsr],
+      body.sp-readonly [data-delete-wp],
+      body.sp-readonly [data-delete-subtask],
+      body.sp-readonly [data-delete-cp],
+      body.sp-readonly [data-delete-fsr],
+      body.sp-readonly .sp-write-hidden{display:none!important}
+    `;
+    document.head.appendChild(style);
+  }
+
+  const isLegacyWriteControl = el => {
+    if (!(el instanceof Element) || !el.matches('button')) return false;
+    if (el.matches('[data-plan-family],[data-view],#btnReload,#drawerClose')) return false;
+    if (el.matches('[data-action],[data-edit-wp],[data-edit-subtask],[data-edit-cp],[data-edit-fsr],[data-delete-wp],[data-delete-subtask],[data-delete-cp],[data-delete-fsr]')) return false;
     const text = (el.textContent || '').trim();
     return /^(編輯|Edit|刪除|Archive|新增|儲存到 GitHub|儲存)$/i.test(text) || /^＋新增/.test(text);
   };
+
+  function markLegacyWriteControls(root=document){
+    if(access.can_write)return;
+    const nodes=[];
+    if(root instanceof Element && root.matches('button'))nodes.push(root);
+    if(root.querySelectorAll)nodes.push(...root.querySelectorAll('button'));
+    nodes.forEach(btn=>{if(isLegacyWriteControl(btn))btn.classList.add('sp-write-hidden');});
+  }
 
   function hideViewButton(id){
     document.querySelector(`.nav button[data-view="${id}"]`)?.style.setProperty('display','none','important');
@@ -26,12 +54,8 @@
     });
   }
 
-  function applyVisibility() {
+  function applyNavigationVisibility() {
     if (access.can_write) return;
-
-    document.querySelectorAll('button').forEach(btn => {
-      if (isWriteControl(btn)) btn.style.display = 'none';
-    });
 
     if (access.role === 'GUEST') {
       hideViewButton('reports');
@@ -56,6 +80,15 @@
         document.querySelector('.nav button[data-view="dashboard"]')?.click();
       }
     }
+  }
+
+  function applyAccessClass(){
+    ensureReadonlyStyle();
+    document.body.classList.toggle('sp-readonly',!access.can_write);
+    document.body.classList.toggle('sp-guest',access.role==='GUEST');
+    document.body.classList.toggle('sp-engineer',access.role==='ENGINEER');
+    markLegacyWriteControls(document);
+    applyNavigationVisibility();
   }
 
   function showRoleBadge(me) {
@@ -102,12 +135,18 @@
       window.SMARTPORT_ACCESS = me;
       showRoleBadge(me);
       setConnectionLabel(me);
-      applyVisibility();
+      applyAccessClass();
       loadPmPasswordManager();
       document.dispatchEvent(new CustomEvent('smartport:access-changed', { detail: me }));
 
-      const observer = new MutationObserver(() => {
-        if (!access.can_write) applyVisibility();
+      const observer = new MutationObserver(mutations => {
+        if(access.can_write)return;
+        for(const m of mutations){
+          for(const node of m.addedNodes){
+            if(node.nodeType===1)markLegacyWriteControls(node);
+          }
+        }
+        applyNavigationVisibility();
       });
       observer.observe(document.body, { childList: true, subtree: true });
     } catch (_) {}
