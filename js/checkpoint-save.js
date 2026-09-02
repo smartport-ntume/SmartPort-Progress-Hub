@@ -48,6 +48,14 @@
       alert('Readiness Criteria JSON 格式錯誤');
       return;
     }
+    let fsrTargets=[];
+    try{
+      fsrTargets=JSON.parse(String(fd.get('cp_fsr_targets')||'[]'));
+      if(!Array.isArray(fsrTargets))throw new Error('not array');
+    }catch(_){
+      alert('FSR Targets JSON 格式錯誤');
+      return;
+    }
 
     const submit=form.querySelector('button[type="submit"]');
     const oldText=submit?.textContent||'';
@@ -60,6 +68,7 @@
       capability:String(fd.get('cp_capability')||'').trim(),
       review_checks:String(fd.get('cp_review')||'').trim(),
       fsrTarget:String(fd.get('cp_fsr')||'').trim(),
+      fsr_targets:fsrTargets,
       criteria
     };
 

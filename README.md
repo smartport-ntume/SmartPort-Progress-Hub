@@ -4,8 +4,8 @@ Web dashboard for SmartPort project planning, progress tracking, checkpoints, sa
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260901.1720:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260901.1720
+**SmartPort Progress Hub — Build 20260902.1410:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260902.1410
 
 Project data is protected by an access gate. Users must use one of the following methods:
 
@@ -101,6 +101,8 @@ Main Hub functions currently include:
 - Password / Organization access gate
 - Dashboard and integrated Gantt with automatic project time range, YYYY/MM labels, Owner filtering, and full Checkpoint detail
 - 19 Work Packages and 96 Subtasks
+- Machine-readable traceability backbone: FSR → WP → Subtask → Target CP, with structured CP FSR maturity targets
+- Interactive CP / FSR / WP / Subtask trace drawers and Traceability Health checks
 - Checkpoint / ACL tracking with synchronized Capability / Review
 - Conflict-safe per-Checkpoint GitHub save with latest-SHA merge/retry
 - FSR allocation and maturity tracking

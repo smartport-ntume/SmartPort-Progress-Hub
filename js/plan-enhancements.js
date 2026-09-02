@@ -33,6 +33,8 @@
     const ids=new Set(S.workPackages.filter(w=>familyOfWp(w.id)===g).map(w=>w.id));
     return ids.size+S.subtasks.filter(s=>ids.has(s.parent_wp)).length;
   }
+  function wpTargetCps(id){return S.checkpoints.filter(cp=>Array.isArray(cp.criteria)&&cp.criteria.some(c=>c?.[0]===id)).map(cp=>cp.id);}
+  function cpBadge(id){return id?`<button type="button" class="trace-chip trace-cp" data-trace-cp="${esc(id)}">${esc(id)}</button>`:'<span class="muted">—</span>';}
 
   function installFilters(){
     const title=document.querySelector('#plan .panel:first-child .panel-title');if(!title)return;
@@ -51,23 +53,23 @@
 
   function ensurePlanHeader(){
     const tr=document.querySelector('#planTable thead tr');if(!tr)return;
-    tr.innerHTML='<th>WP / Subtask</th><th>Owner</th><th>Start</th><th>End</th><th>Weight</th><th>Actual</th><th>工作內容</th><th>IF / FSR</th><th></th>';
+    tr.innerHTML='<th>WP / Subtask</th><th>Owner</th><th>Start</th><th>End</th><th>Weight</th><th>Target CP</th><th>Actual</th><th>工作內容</th><th>IF / FSR</th><th></th>';
   }
 
   function wpRow(w){
     const p=progressOf(w);
-    return `<tr class="plan-row clickable" data-open-wp="${esc(w.id)}"><td><b>${esc(w.id)}</b> ${esc(w.name||'')}<div class="muted">${esc(w.group||'')}</div></td><td>${esc(w.owner||'')}</td><td>${esc(w.start||'')}</td><td>${esc(w.end||'')}</td><td>${esc(weightOf(w))}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(w))}</div></td><td class="plan-desc-cell">${w.description?`<div class="plan-description">${esc(w.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(w.ifs)}<br>${tags(w.fsrs)}</td><td><button class="btn smallbtn" data-edit-wp="${esc(w.id)}">Edit</button></td></tr>`;
+    return `<tr class="plan-row clickable" data-open-wp="${esc(w.id)}"><td><b>${esc(w.id)}</b> ${esc(w.name||'')}<div class="muted">${esc(w.group||'')}</div></td><td>${esc(w.owner||'')}</td><td>${esc(w.start||'')}</td><td>${esc(w.end||'')}</td><td>${esc(weightOf(w))}</td><td>${wpTargetCps(w.id).map(cpBadge).join(' ')||'<span class="muted">—</span>'}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(w))}</div></td><td class="plan-desc-cell">${w.description?`<div class="plan-description">${esc(w.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(w.ifs)}<br>${tags(w.fsrs)}</td><td><button class="btn smallbtn" data-edit-wp="${esc(w.id)}">Edit</button></td></tr>`;
   }
   function subRow(s){
     const p=progressOf(s);
-    return `<tr class="plan-row subtask-plan-row clickable" data-open-sub="${esc(s.id)}"><td style="padding-left:28px">↳ <b>${esc(s.id)}</b> ${esc(s.name||'')}<div class="muted">Parent: ${esc(s.parent_wp||'')}</div></td><td>${esc(s.owner_team||'')}</td><td>${esc(s.start||'')}</td><td>${esc(s.end||'')}</td><td>${esc(weightOf(s))}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(s))}</div></td><td class="plan-desc-cell">${s.description?`<div class="plan-description">${esc(s.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(s.ifs)}<br>${tags(s.fsrs)}</td><td><button class="btn smallbtn" data-edit-subtask="${esc(s.id)}">Edit</button></td></tr>`;
+    return `<tr class="plan-row subtask-plan-row clickable" data-open-sub="${esc(s.id)}"><td style="padding-left:28px">↳ <b>${esc(s.id)}</b> ${esc(s.name||'')}<div class="muted">Parent: ${esc(s.parent_wp||'')}</div></td><td>${esc(s.owner_team||'')}</td><td>${esc(s.start||'')}</td><td>${esc(s.end||'')}</td><td>${esc(weightOf(s))}</td><td>${cpBadge(s.target_cp||'')}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(s))}</div></td><td class="plan-desc-cell">${s.description?`<div class="plan-description">${esc(s.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(s.ifs)}<br>${tags(s.fsrs)}</td><td><button class="btn smallbtn" data-edit-subtask="${esc(s.id)}">Edit</button></td></tr>`;
   }
 
   function renderPlanRows(resetScroll=false){
     const tbody=document.querySelector('#planTable tbody');if(!tbody)return;
     const wpList=visibleWps();let html='';
     for(const w of wpList){html+=wpRow(w);for(const s of S.subtasks.filter(x=>x.parent_wp===w.id))html+=subRow(s);}
-    if(!html)html='<tr><td colspan="9" class="muted" style="padding:16px">此分類目前沒有 WP / Subtask。</td></tr>';
+    if(!html)html='<tr><td colspan="10" class="muted" style="padding:16px">此分類目前沒有 WP / Subtask。</td></tr>';
     lastOwnRender=performance.now();
     if(tbody.innerHTML!==html)tbody.innerHTML=html;
     const scroller=tbody.closest('div[style*="overflow"]');if(resetScroll&&scroller)scroller.scrollTop=0;
@@ -166,6 +168,7 @@
       <div class="field"><label>Vehicle Capability / Gate</label><textarea name="cp_capability" rows="8">${esc(capability)}</textarea></div>
       <div class="field"><label>Review / Check</label><textarea name="cp_review" rows="8">${esc(review)}</textarea></div>
       <div class="field"><label>FSR Target</label><input name="cp_fsr" value="${esc(cp.fsrTarget||cp.fsr_target||ref?.fsr_maturity_target||'')}"></div>
+      <div class="field"><label>FSR Targets JSON</label><textarea name="cp_fsr_targets" rows="8">${esc(JSON.stringify(cp.fsr_targets||[],null,2))}</textarea></div>
       <div class="field"><label>Readiness Criteria JSON</label><textarea name="cp_criteria" rows="8">${esc(JSON.stringify(cp.criteria||[],null,2))}</textarea></div>
       <div class="field"><button type="submit" class="btn primary">儲存到 GitHub</button> <button type="button" class="btn" data-close>取消</button></div>`);
     if(!body)return;
@@ -240,7 +243,7 @@
 
   const style=document.createElement('style');style.textContent=`
     #plan .panel-title{gap:8px;flex-wrap:wrap}.plan-family-filters{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto}.plan-family-filters+.toolbar{margin-left:0}.plan-family-filters button{cursor:pointer;position:relative;z-index:3}.plan-filter-state{padding:4px 12px 8px;color:#667085;font-size:11px;border-bottom:1px solid var(--line)}
-    #planTable{min-width:1360px}#planTable th,#planTable td{padding-left:8px;padding-right:8px}.plan-desc-cell{min-width:260px;max-width:410px}.plan-description{font-size:12px;line-height:1.45;color:#475467;white-space:normal}
+    #planTable{min-width:1460px}#planTable th,#planTable td{padding-left:8px;padding-right:8px}.plan-desc-cell{min-width:260px;max-width:410px}.plan-description{font-size:12px;line-height:1.45;color:#475467;white-space:normal}
     #cpEditTable{width:100%;min-width:1180px;table-layout:fixed}#cpEditTable th,#cpEditTable td{padding:6px 6px;vertical-align:top}#cpEditTable th:nth-child(1),#cpEditTable td:nth-child(1){width:3.5%}#cpEditTable th:nth-child(2),#cpEditTable td:nth-child(2){width:6.5%}#cpEditTable th:nth-child(3),#cpEditTable td:nth-child(3){width:6%}#cpEditTable th:nth-child(4),#cpEditTable td:nth-child(4){width:13%}#cpEditTable th:nth-child(5),#cpEditTable td:nth-child(5){width:30%}#cpEditTable th:nth-child(6),#cpEditTable td:nth-child(6){width:30%}#cpEditTable th:nth-child(7),#cpEditTable td:nth-child(7){width:7%}#cpEditTable th:nth-child(8),#cpEditTable td:nth-child(8){width:4%}.cp-roadmap-text{font-size:11.5px;line-height:1.45;color:#344054;white-space:normal}.cp-roadmap-text br{content:"";display:block;margin-bottom:2px}.cp-fsr-cell{font-size:11.5px;word-break:break-word}
     #drawerBody textarea[name="cp_capability"],#drawerBody textarea[name="cp_review"]{min-height:150px;line-height:1.5}
     .cp-detail-roadmap{font-size:13px;line-height:1.6;color:#344054;white-space:normal}.cp-detail-roadmap br{content:"";display:block;margin-bottom:4px}

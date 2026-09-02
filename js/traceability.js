@@ -106,12 +106,13 @@
       panel=document.createElement('div');panel.id='traceabilityHealthPanel';panel.className='panel trace-health-panel';
       const ganttPanel=document.querySelector('#dashboard .panel');ganttPanel?.parentElement?.insertBefore(panel,ganttPanel);
     }
-    panel.innerHTML=`<div class="panel-title">Traceability Health <span class="revision-badge">FSR → WP → Subtask → CP</span></div><div class="trace-health-grid">
+    const healthHtml=`<div class="panel-title">Traceability Health <span class="revision-badge">FSR → WP → Subtask → CP</span></div><div class="trace-health-grid">
       <div><span>Subtask CP Mapping</span><b>${mapped}/${S.subtasks.length}</b></div>
       <div><span>CP Structured FSR</span><b>${structured}/${S.checkpoints.length}</b></div>
       <div><span>FSR Work Coverage</span><b>${linkedFsr}/${S.fsrs.length}</b></div>
       <div><span>Schedule Conflicts</span><b class="${conflicts.length?'bad-text':'ok-text'}">${conflicts.length}</b></div>
     </div>${conflicts.length?`<div class="trace-health-warning">⚠ ${conflicts.map(s=>`${esc(s.id)} → ${esc(s.target_cp)}`).join(' · ')}</div>`:''}`;
+    if(panel.innerHTML!==healthHtml)panel.innerHTML=healthHtml;
   }
 
   document.addEventListener('click',e=>{
