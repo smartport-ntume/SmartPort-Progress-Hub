@@ -4,8 +4,8 @@ Web dashboard for SmartPort project planning, progress tracking, checkpoints, sa
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260902.1410:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260902.1410
+**SmartPort Progress Hub — Build 20260902.1420:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260902.1420
 
 Project data is protected by an access gate. Users must use one of the following methods:
 

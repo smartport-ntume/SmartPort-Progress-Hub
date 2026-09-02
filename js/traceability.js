@@ -96,23 +96,7 @@
   }
 
   function renderHealth(){
-    if(!S.subtasks.length||!S.checkpoints.length)return;
-    const mapped=S.subtasks.filter(s=>s.target_cp&&cpById(s.target_cp)).length;
-    const conflicts=S.subtasks.filter(dateConflict);
-    const structured=S.checkpoints.filter(cp=>arr(cp.fsr_targets).length).length;
-    const linkedFsr=S.fsrs.filter(f=>relatedWpsForFsr(f.id).length||relatedSubsForFsr(f.id).length).length;
-    let panel=document.getElementById('traceabilityHealthPanel');
-    if(!panel){
-      panel=document.createElement('div');panel.id='traceabilityHealthPanel';panel.className='panel trace-health-panel';
-      const ganttPanel=document.querySelector('#dashboard .panel');ganttPanel?.parentElement?.insertBefore(panel,ganttPanel);
-    }
-    const healthHtml=`<div class="panel-title">Traceability Health <span class="revision-badge">FSR → WP → Subtask → CP</span></div><div class="trace-health-grid">
-      <div><span>Subtask CP Mapping</span><b>${mapped}/${S.subtasks.length}</b></div>
-      <div><span>CP Structured FSR</span><b>${structured}/${S.checkpoints.length}</b></div>
-      <div><span>FSR Work Coverage</span><b>${linkedFsr}/${S.fsrs.length}</b></div>
-      <div><span>Schedule Conflicts</span><b class="${conflicts.length?'bad-text':'ok-text'}">${conflicts.length}</b></div>
-    </div>${conflicts.length?`<div class="trace-health-warning">⚠ ${conflicts.map(s=>`${esc(s.id)} → ${esc(s.target_cp)}`).join(' · ')}</div>`:''}`;
-    if(panel.innerHTML!==healthHtml)panel.innerHTML=healthHtml;
+    document.getElementById('traceabilityHealthPanel')?.remove();
   }
 
   document.addEventListener('click',e=>{
@@ -126,11 +110,10 @@
   },true);
 
   const style=document.createElement('style');style.textContent=`
-    .trace-chip{border:1px solid #c7d7eb;background:#eef4fb;color:#315d91;border-radius:999px;padding:2px 7px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}.trace-chip:hover{background:#dfeafb}.trace-fsr{background:#f4f0fb;border-color:#d9cdef;color:#65518c}.trace-wp{background:#eef6f0;border-color:#c9ddcf;color:#42664d}.trace-subtask{background:#f7f7f8;border-color:#dddfe3;color:#475467}.trace-scope{cursor:default;background:#f2f4f7;border-color:#d0d5dd;color:#475467}.trace-field{font-size:12.5px;line-height:1.55;color:#344054}.trace-pre{white-space:pre-line}.trace-row{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #eef0f3}.trace-row:last-child{border-bottom:0}.trace-row>div:first-child{min-width:0}.trace-name{margin-left:5px}.trace-status{white-space:nowrap;font-size:11px;font-weight:700}.trace-status.ok,.ok-text{color:#176b36}.trace-status.warn{color:#9a6700}.trace-status.bad,.bad-text{color:#b42318}.trace-health-panel{margin-bottom:14px}.trace-health-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#e5e7eb}.trace-health-grid>div{background:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center}.trace-health-grid span{font-size:11px;color:#667085}.trace-health-grid b{font-size:18px}.trace-health-warning{padding:8px 14px;font-size:11px;color:#b42318;background:#fff4f2;border-top:1px solid #fecdca}@media(max-width:850px){.trace-health-grid{grid-template-columns:1fr 1fr}}
+    .trace-chip{border:1px solid #c7d7eb;background:#eef4fb;color:#315d91;border-radius:999px;padding:2px 7px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}.trace-chip:hover{background:#dfeafb}.trace-fsr{background:#f4f0fb;border-color:#d9cdef;color:#65518c}.trace-wp{background:#eef6f0;border-color:#c9ddcf;color:#42664d}.trace-subtask{background:#f7f7f8;border-color:#dddfe3;color:#475467}.trace-scope{cursor:default;background:#f2f4f7;border-color:#d0d5dd;color:#475467}.trace-field{font-size:12.5px;line-height:1.55;color:#344054}.trace-pre{white-space:pre-line}.trace-row{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;padding:5px 0;border-bottom:1px solid #eef0f3}.trace-row:last-child{border-bottom:0}.trace-row>div:first-child{min-width:0}.trace-name{margin-left:5px}.trace-status{white-space:nowrap;font-size:11px;font-weight:700}.trace-status.ok,.ok-text{color:#176b36}.trace-status.warn{color:#9a6700}.trace-status.bad,.bad-text{color:#b42318}
   `;document.head.appendChild(style);
 
-  const obs=new MutationObserver(()=>renderHealth());
-  const start=()=>{renderHealth();const main=document.querySelector('main');if(main)obs.observe(main,{childList:true,subtree:true});setTimeout(renderHealth,800);setTimeout(renderHealth,2200)};
+  const start=()=>renderHealth();
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 
   window.SmartPortTraceability={openCp:openCpTrace,openFsr:openFsrTrace,openWp:openWpTrace,openSubtask:openSubTrace,renderHealth};
