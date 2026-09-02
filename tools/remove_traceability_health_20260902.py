@@ -22,7 +22,7 @@ p.write_text(s, encoding='utf-8')
 for name in ['index.html','README.md']:
     q=Path(name)
     t=q.read_text(encoding='utf-8')
-    t=t.replace('20260902.1410','20260902.1358')
+    t=t.replace('20260902.1410','20260902.1420')
     q.write_text(t,encoding='utf-8')
 
 print('Removed Traceability Health panel and bumped build')
