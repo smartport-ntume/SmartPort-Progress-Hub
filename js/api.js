@@ -35,7 +35,7 @@
     if (!res.ok) {
       let detail = '', parsed = null;
       try { detail = await res.text(); parsed = detail ? JSON.parse(detail) : null; } catch (_) {}
-      const err = new Error(parsed?.error || parsed?.message || detail || `API ${res.status}`);
+      const err = new Error(parsed?.message || parsed?.error || detail || `API ${res.status}`);
       err.status = res.status;
       err.payload = parsed;
       throw err;
@@ -89,6 +89,12 @@
     },
     async changeGuestPassword(password) {
       return request('/api/admin/guest-password', { method:'PUT', body:JSON.stringify({ password }) });
+    },
+    async uploadWeeklyReport(payload) {
+      return request('/api/reports/upload', { method:'POST', body:JSON.stringify(payload) });
+    },
+    async analyzeWeeklyReport(payload) {
+      return request('/api/reports/analyze', { method:'POST', body:JSON.stringify(payload) });
     },
     async loadSnapshot() {
       if (!sessionToken()) return { project:{name:'SmartPort SC'}, work_packages:[], subtasks:[], functional_safety_requirements:[], checkpoints:[] };
