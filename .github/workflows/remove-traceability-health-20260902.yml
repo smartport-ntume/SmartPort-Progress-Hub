@@ -1,0 +1,27 @@
+name: Remove Traceability Health 2026-09-02
+
+on:
+  push:
+    paths:
+      - ".github/workflows/remove-traceability-health-20260902.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Remove Traceability Health
+        run: python tools/remove_traceability_health_20260902.py
+      - name: Commit UI update
+        shell: bash
+        run: |
+          git config user.name "smartport-ui-bot"
+          git config user.email "smartport-ui-bot@users.noreply.github.com"
+          git add js/traceability.js index.html README.md
+          git commit -m "Remove Traceability Health panel [skip ci]"
+          git push
