@@ -4,8 +4,8 @@ Web dashboard for SmartPort project planning, progress tracking, checkpoints, sa
 
 ## Open the Hub
 
-**SmartPort Progress Hub — Build 20260902.1420:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260902.1420
+**SmartPort Progress Hub — Build 20260902.1750:**  
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260902.1750
 
 Project data is protected by an access gate. Users must use one of the following methods:
 
@@ -81,6 +81,17 @@ Access Gate
 ```
 
 The formal project database and engineering reference data remain in the private `SmartPort-Project-Control` repository and are treated as the Source of Truth.
+
+## AI Weekly Report Intake
+
+Organization members can upload `.doc` / `.docx` weekly reports from **Workflow → Weekly Reports**. The original file is archived under `weekly_reports/<year>/<date>/<team>/` in the private Project-Control repository. The Worker then uses the OpenAI Responses API with Structured Outputs to map evidence-supported report content into WP/Subtask Proposed Updates. AI proposals never update the formal baseline directly; PM approval remains mandatory.
+
+Cloudflare Runtime Secrets required for the full workflow:
+
+- `OPENAI_API_KEY` — OpenAI API access; never expose it to the browser.
+- `REPORT_REPO_TOKEN` — required when Engineer accounts are read-only; fine-grained GitHub token with **Contents: Read/Write** restricted to `SmartPort-Project-Control`. The Worker constrains uploads to `weekly_reports/`.
+
+The Worker variable `OPENAI_MODEL` defaults to `gpt-5-mini`.
 
 ## Main workflow
 

@@ -7,8 +7,11 @@ FRONTEND_URL = "https://smartport-ntume.github.io/SmartPort-Progress-Hub/"
 PROJECT_REPO = "smartport-ntume/SmartPort-Project-Control"
 GITHUB_ORG = "smartport-ntume"
 GITHUB_CLIENT_ID = "Ov23liGRrIsBDpAtXDck"
+OPENAI_MODEL = "gpt-5-mini"
 
 # Sensitive values must stay in Cloudflare Runtime Secrets, never commit them:
 #   GITHUB_CLIENT_SECRET
 #   SESSION_SECRET
 #   GUEST_REPO_TOKEN   # fine-grained GitHub token, Contents: Read-only, SmartPort-Project-Control only
+#   OPENAI_API_KEY     # OpenAI API key used only by Worker for weekly-report mapping
+#   REPORT_REPO_TOKEN  # service token for Engineer report uploads; Contents: Read/Write on Project-Control
