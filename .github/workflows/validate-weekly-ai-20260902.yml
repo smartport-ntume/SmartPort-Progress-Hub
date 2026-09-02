@@ -1,0 +1,21 @@
+name: Validate Weekly AI 2026-09-02
+
+on:
+  push:
+    paths:
+      - ".github/workflows/validate-weekly-ai-20260902.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JavaScript syntax check
+        run: |
+          node --check worker/src/index.js
+          node --check js/api.js
+          node --check js/weekly.js
+          node --check js/app.js
