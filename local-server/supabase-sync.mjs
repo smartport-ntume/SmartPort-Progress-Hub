@@ -1,7 +1,6 @@
 import {
   buildMemberSnapshot,
-  buildReferenceSnapshot,
-  buildSanitizedSnapshot
+  buildReferenceSnapshot
 } from './snapshot.mjs';
 
 function assertResult(result, operation) {
@@ -18,26 +17,25 @@ export class SupabaseSnapshotPublisher {
   }
 
   async publishProject() {
-    const [member, guest] = await Promise.all([
-      buildMemberSnapshot(this.projectStore),
-      buildSanitizedSnapshot(this.projectStore)
-    ]);
+    // Keep the Supabase Guest view identical to the existing main Guest view.
+    // Read-only access is enforced separately by Supabase RLS and UI permissions.
+    const snapshot = await buildMemberSnapshot(this.projectStore);
     const updatedAt = new Date().toISOString();
     assertResult(await this.supabase.from('project_snapshots').upsert([
       {
-        audience: 'MEMBER', payload: member, source_commit: member.source_commit,
+        audience: 'MEMBER', payload: snapshot, source_commit: snapshot.source_commit,
         updated_by_agent: this.agentId, updated_at: updatedAt
       },
       {
-        audience: 'GUEST', payload: guest, source_commit: guest.source_commit,
+        audience: 'GUEST', payload: snapshot, source_commit: snapshot.source_commit,
         updated_by_agent: this.agentId, updated_at: updatedAt
       }
     ], { onConflict: 'audience' }), 'publish_project_snapshots');
     return {
-      source_commit: member.source_commit,
-      generated_at: member.generated_at,
-      work_packages: member.work_packages.length,
-      subtasks: member.subtasks.length
+      source_commit: snapshot.source_commit,
+      generated_at: snapshot.generated_at,
+      work_packages: snapshot.work_packages.length,
+      subtasks: snapshot.subtasks.length
     };
   }
 

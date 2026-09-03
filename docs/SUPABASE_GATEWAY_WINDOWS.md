@@ -25,6 +25,8 @@ Migration 會建立：
 | `audit_log` | 不含週報本文的操作稽核 | PM 讀取 |
 | `weekly-reports` | 10 MB 上限的 private 暫存 bucket | Vincent 上傳自己的路徑；Agent 下載／刪除 |
 
+`project_snapshots` 的 GUEST 與 MEMBER 列會發布同一份完整專案內容，讓 Supabase Guest 顯示結果與目前 `main` 的 Guest 一致。這不會提高 Guest 權限：RLS 仍只允許讀取指定 audience，前端仍隱藏 reports、review、settings，且 Guest 不能建立或修改工作。
+
 ## 2. 設定 GitHub 登入
 
 1. 在 GitHub 建立 OAuth App。

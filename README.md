@@ -16,7 +16,7 @@ flowchart TD
 ## 核心規則
 
 - Private Git 仍是正式資料來源；Supabase 不保存整份 repository 或 Git 憑證。
-- Guest 只能讀去敏感快照；Engineer 可送 Manual Proposal；PM 可改 baseline 與審核。
+- Guest 讀取與目前 `main` Guest 相同的完整唯讀專案內容；Engineer 可送 Manual Proposal；PM 可改 baseline 與審核。
 - `can_trigger_codex` 是獨立權限，預設全部關閉，只應開給 Vincent。
 - 本機 Agent 訂閱 Realtime `INSERT` 事件，不做 interval polling。啟動或斷線重連時只補查一次未處理工作。
 - Agent 離線時操作會留在 `gateway_jobs`；電腦恢復連線後再依序處理。
@@ -59,7 +59,7 @@ npm test
 npm run doctor
 ```
 
-測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限 SQL、Realtime 事件處理、週報先歸檔後刪暫存、CORS、static allowlist 與 Guest snapshot 去敏感化。
+測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限 SQL、Realtime 事件處理、週報先歸檔後刪暫存、CORS、static allowlist、公開快照去敏感化，以及 Supabase Guest 與 `main` Guest 的內容一致性。
 
 ## Repositories
 
