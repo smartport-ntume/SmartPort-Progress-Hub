@@ -147,11 +147,9 @@
     return m?`${Number(m[1])}/${Number(m[2])}`:String(iso||'');
   }
   async function saveReferenceModel(payload){
-    const token=sessionStorage.getItem('smartport.session')||'';
-    const res=await fetch(API.getBase()+'/api/project/reference/reference-model',{
-      method:'PUT',credentials:'include',headers:{'Content-Type':'application/json',...(token?{'Authorization':`Bearer ${token}`}:{})},body:JSON.stringify(payload)
+    await API.request('/api/project/reference/reference-model',{
+      method:'PUT',body:JSON.stringify(payload)
     });
-    if(!res.ok)throw new Error(`Reference API ${res.status}: ${await res.text()}`);
   }
 
   function openCpEditor(id){
@@ -223,7 +221,7 @@
   function schedule(){if(scheduled)return;scheduled=true;setTimeout(enhance,40);}
 
   async function loadReference(){
-    try{const token=sessionStorage.getItem('smartport.session')||'';const res=await fetch(API.getBase()+'/api/project/reference',{credentials:'include',headers:{...(token?{'Authorization':`Bearer ${token}`}:{})}});if(!res.ok)return;const data=await res.json();referenceData=data?.reference||null;refMap=new Map((referenceData?.acl_levels||[]).map(x=>[x.checkpoint,x]));schedule();}catch(_){}
+    try{const data=await API.request('/api/project/reference');referenceData=data?.reference||null;refMap=new Map((referenceData?.acl_levels||[]).map(x=>[x.checkpoint,x]));schedule();}catch(_){}
   }
 
   document.addEventListener('click',e=>{

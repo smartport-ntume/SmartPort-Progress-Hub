@@ -74,3 +74,46 @@ test('local GitHub adapter leaves account APIs on native GitHub fetch', async ()
   assert.equal(response.status, 200);
   assert.equal(context.nativeCalls(), 1);
 });
+
+test('managed agent token gets local repository writes but native Issues API access', async () => {
+  const calls = [];
+  const store = {
+    fullName: 'example/private-project',
+    branch: 'main',
+    async readBuffer() { return Buffer.from('{}'); },
+    async blobSha() { return 'abc'; },
+    async writeBuffer(file) {
+      calls.push(['write', file]);
+      return { changed: true, sha: 'def', commitSha: 'commit' };
+    }
+  };
+  let nativeCalls = 0;
+  const adapter = createLocalGitHubFetch({
+    store,
+    managedWriteTokens: ['agent-token'],
+    nativeFetch: async () => {
+      nativeCalls += 1;
+      return Response.json({ number: 42 });
+    }
+  });
+
+  const repository = await adapter('https://api.github.com/repos/example/private-project', {
+    headers: { Authorization: 'Bearer agent-token' }
+  });
+  assert.equal((await repository.json()).permissions.push, true);
+
+  await adapter('https://api.github.com/repos/example/private-project/contents/project/sample.json', {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer agent-token' },
+    body: JSON.stringify({ content: Buffer.from('{}').toString('base64') })
+  });
+  assert.deepEqual(calls, [['write', 'project/sample.json']]);
+
+  const issue = await adapter('https://api.github.com/repos/example/private-project/issues', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer agent-token' },
+    body: '{}'
+  });
+  assert.equal((await issue.json()).number, 42);
+  assert.equal(nativeCalls, 1);
+});

@@ -27,9 +27,9 @@
     root.innerHTML=`
       <div class="weekly-intake-grid">
         <div class="panel weekly-upload-panel">
-          <div class="panel-title"><span>Weekly Report Intake</span><span class="revision-badge">Local Codex · PM approved</span></div>
+          <div class="panel-title"><span>Weekly Report Intake</span><span class="revision-badge">Supabase Gateway · Local Codex</span></div>
           <form id="weeklyReportUploadForm" class="weekly-upload-body">
-            <div class="alert info"><b>只有 PM 按下按鈕後，本機 Codex 才會啟動。</b><br>原始 Word 檔先保存到 Private GitHub，再排入本機分析佇列。開啟頁面不會觸發 Codex，且 AI 不會直接寫入正式 baseline。</div>
+            <div class="alert info"><b>只有被授權的 PM 按下按鈕後，本機 Codex 才會啟動。</b><br>Word 檔先暫存 Supabase；本機 Agent 收到事件後保存到 Private Git 並刪除暫存檔。開啟頁面不會觸發 Codex，AI 也不會直接寫入正式 baseline。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
               <div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div>
@@ -42,7 +42,7 @@
             <div id="weeklySelectedFile" class="weekly-selected-file muted">尚未選擇檔案</div>
             <div class="weekly-upload-actions">
               <button id="weeklyAnalyzeBtn" class="btn primary" type="submit" disabled>上傳並排入本機 Codex</button>
-              <span class="muted">流程：Git Archive → Local Codex Queue → Proposal → PM Review</span>
+              <span class="muted">流程：Temporary Upload → Git Archive → Local Codex → Proposal → PM Review</span>
             </div>
           </form>
         </div>
@@ -209,6 +209,21 @@
     let job=initialJob;
     sessionStorage.setItem(ACTIVE_JOB_KEY,job.id);
     sessionStorage.setItem(ACTIVE_REPORT_KEY,JSON.stringify(report||{}));
+    if(typeof API.waitForAnalysisJob==='function'){
+      setAiState(job.status==='running'?'Local Codex running':'Queued');
+      $('#weeklyAiResult').innerHTML='<div class="weekly-empty-state"><b>'+(
+        job.status==='running'?'本機 Codex 分析中':'等待本機 Agent'
+      )+'</b><span>Job '+esc(job.id)+' · 完成時會由 Realtime 事件通知，不會定時輪詢。</span></div>';
+      job=await API.waitForAnalysisJob(job.id);
+      if(job.status==='completed'){
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
+        sessionStorage.removeItem(ACTIVE_REPORT_KEY);
+        return job.result||{analysis:{report_summary:'本機分析已完成，請查看 Proposal Archive。'},proposals:[],report};
+      }
+      sessionStorage.removeItem(ACTIVE_JOB_KEY);
+      sessionStorage.removeItem(ACTIVE_REPORT_KEY);
+      throw new Error(job.error||'local_codex_job_failed');
+    }
     for(let attempt=0;attempt<600;attempt++){
       if(job.status==='completed'){
         sessionStorage.removeItem(ACTIVE_JOB_KEY);
@@ -253,7 +268,8 @@
   async function submitReport(e){
     e.preventDefault();if(!selectedFile||!canTriggerCodex)return;
     const btn=$('#weeklyAnalyzeBtn'),date=$('#weeklyDate').value,team=$('#weeklyOwner').value;
-    btn.disabled=true;btn.textContent='上傳 GitHub...';setAiState('Uploading');
+    const gateway=API.getMode?.()==='supabase';
+    btn.disabled=true;btn.textContent=gateway?'暫存 Supabase...':'上傳 GitHub...';setAiState('Uploading');
     try{
       const base64=await fileToBase64(selectedFile);
       const upload=await API.uploadWeeklyReport({report_date:date,owner_team:team,filename:selectedFile.name,mime_type:selectedFile.type||'',size:selectedFile.size,data_base64:base64});

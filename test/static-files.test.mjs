@@ -23,10 +23,12 @@ test('static server exposes only the frontend allowlist', async t => {
     fs.rm(outside, { recursive: true, force: true })
   ]));
   await fs.mkdir(path.join(root, 'js'));
+  await fs.mkdir(path.join(root, 'vendor'));
   await fs.mkdir(path.join(root, 'data'));
   await fs.mkdir(path.join(root, 'local-server'));
   await fs.writeFile(path.join(root, 'index.html'), '<h1>SmartPort</h1>');
   await fs.writeFile(path.join(root, 'js', 'app.js'), 'window.app=true;');
+  await fs.writeFile(path.join(root, 'vendor', 'supabase.js'), 'window.supabase={};');
   await fs.writeFile(path.join(root, '.env.local'), 'SESSION_SECRET=private');
   await fs.writeFile(path.join(root, 'local-server', 'server.mjs'), 'private');
   await fs.writeFile(path.join(root, 'data', 'public-snapshot.json'), '{"public":true}\n');
@@ -39,6 +41,10 @@ test('static server exposes only the frontend allowlist', async t => {
   const jsResponse = responseRecorder();
   assert.equal(await serveStaticFile({ method: 'GET', url: '/js/app.js' }, jsResponse, root), true);
   assert.equal(jsResponse.status, 200);
+
+  const vendorResponse = responseRecorder();
+  assert.equal(await serveStaticFile({ method: 'GET', url: '/vendor/supabase.js' }, vendorResponse, root), true);
+  assert.equal(vendorResponse.status, 200);
 
   for (const url of ['/.env.local', '/local-server/server.mjs', '/package.json', '/../.env.local', '/data/public-snapshot.json']) {
     const denied = responseRecorder();

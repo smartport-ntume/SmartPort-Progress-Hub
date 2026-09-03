@@ -3,8 +3,7 @@
   const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let data=null;
 
-  function tokenHeaders(){const t=sessionStorage.getItem('smartport.session')||'';return t?{'Authorization':`Bearer ${t}`}:{}}
-  async function request(path,options={}){const res=await fetch(API.getBase()+path,{credentials:'include',headers:{'Content-Type':'application/json',...tokenHeaders(),...(options.headers||{})},...options});if(!res.ok)throw new Error(`API ${res.status}: ${await res.text()}`);return res.status===204?null:res.json()}
+  async function request(path,options={}){return API.request(path,options)}
   function canWrite(){return !!window.SMARTPORT_ACCESS?.can_write}
   function toast(msg){const el=document.getElementById('toast');if(!el)return;el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),3600)}
 

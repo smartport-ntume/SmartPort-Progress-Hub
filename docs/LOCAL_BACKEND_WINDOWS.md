@@ -1,5 +1,7 @@
 # SmartPort Local Backend — Windows Setup
 
+> Legacy rollback only：v0.8 的預設部署已改為 [Supabase Gateway + Windows Local Agent](SUPABASE_GATEWAY_WINDOWS.md)，一般使用者不需要 Tailscale。
+
 這份文件把 SmartPort Progress Hub 安裝在 Vincent 的 Windows 帳號下。完成後，其他人透過 Tailscale HTTPS 使用前端；資料由本機 Private Git clone 提供，只有 PM 的明確操作會使用 Vincent 在該 Windows 帳號登入的 Codex。
 
 > 這是「本機執行 Codex CLI」，不是離線或 on-prem 模型。分析時，抽出的週報文字與必要 project context 仍會由 Codex CLI 傳送到 OpenAI 服務，並使用 Vincent 的 Codex 帳號權益。若要求資料完全不離開內網，需要改用本機模型，這不在本方案內。

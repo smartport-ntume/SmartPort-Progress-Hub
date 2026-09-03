@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { loadConfig, configProblems } from '../local-server/config.mjs';
+import { loadConfig, configProblems, agentConfigProblems } from '../local-server/config.mjs';
 
 const root = path.join(os.tmpdir(), 'smartport-config-root');
 
@@ -36,4 +36,25 @@ test('local configuration requires loopback plus an HTTPS public origin', () => 
 
   const sharedSource = configProblems(loadConfig(validEnv({ PROJECT_REPO_PATH: '.' }), root));
   assert.ok(sharedSource.some(problem => problem.includes('dedicated Project-Control clone')));
+});
+
+test('Supabase Agent configuration does not require a public listener or OAuth app', () => {
+  const config = loadConfig({
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret-key-with-enough-length',
+    SUPABASE_AGENT_ID: 'vincent-windows-agent',
+    PROJECT_REPO_PATH: '../smartport-project-control'
+  }, root);
+  assert.deepEqual(agentConfigProblems(config), []);
+
+  const invalid = agentConfigProblems(loadConfig({
+    SUPABASE_URL: 'http://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'short',
+    SUPABASE_AGENT_ID: 'bad agent id',
+    PROJECT_REPO_PATH: '.'
+  }, root));
+  assert.ok(invalid.some(problem => problem.includes('HTTPS')));
+  assert.ok(invalid.some(problem => problem.includes('SERVICE_ROLE_KEY')));
+  assert.ok(invalid.some(problem => problem.includes('SUPABASE_AGENT_ID')));
+  assert.ok(invalid.some(problem => problem.includes('dedicated Project-Control clone')));
 });

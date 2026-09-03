@@ -1,5 +1,6 @@
 (() => {
   const API=window.SmartPortAPI;
+  const isSupabase=API.getMode?.()==='supabase';
 
   function esc(v=''){
     return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -14,7 +15,7 @@
       <div class="sp-gate-card">
         <div class="sp-gate-brand">SmartPort Progress Hub</div>
         <h2>Project Access</h2>
-        <p class="sp-gate-copy">請先連上 SmartPort 本機後端，再使用訪客密碼或 GitHub Organization 帳號登入。</p>
+        <p class="sp-gate-copy">${isSupabase?'直接使用訪客密碼或 GitHub 帳號登入；不需要安裝或連線其他軟體。':'請先連上 SmartPort 本機後端，再使用訪客密碼或 GitHub Organization 帳號登入。'}</p>
         <div id="spGateMessage" class="sp-gate-message" hidden></div>
         <div id="spBackendSetup" class="sp-gate-section sp-backend-setup" hidden>
           <label for="spBackendUrl">本機後端 URL</label>
@@ -34,8 +35,8 @@
           <div class="sp-gate-hint">Guest 可唯讀查看 Dashboard、Project 與 Requirements；Workflow 與管理設定不開放。</div>
         </form>
         <div id="spGateDivider" class="sp-gate-divider"><span>或</span></div>
-        <button id="spGithubLogin" type="button" class="sp-gate-github">GitHub Organization Login</button>
-        <div class="sp-gate-hint">GitHub 登入後會驗證 <b>smartport-ntume</b> Organization membership，再依 Engineer / PM 權限進入。</div>
+        <button id="spGithubLogin" type="button" class="sp-gate-github">GitHub Login</button>
+        <div class="sp-gate-hint">${isSupabase?'GitHub 登入後會依 Supabase 中明確設定的 Engineer / PM 權限進入；未核准帳號預設拒絕。':'GitHub 登入後會驗證 <b>smartport-ntume</b> Organization membership，再依 Engineer / PM 權限進入。'}</div>
       </div>`;
     document.body.appendChild(gate);
 
@@ -71,7 +72,9 @@
     gate.style.display='flex';
     const msg=document.getElementById('spGateMessage');
     if(me?.role==='DENIED'){
-      showMessage(`目前登入的 GitHub 帳號不是 <b>${esc(me.organization||'smartport-ntume')}</b> 的有效成員。你可以改用訪客密碼，或使用正確的 Organization GitHub 帳號登入。`);
+      showMessage(isSupabase
+        ? '此 GitHub 帳號尚未被管理員指派 SmartPort 角色。你可以先登出改用訪客密碼，或請 PM 將帳號設為 Engineer / PM。'
+        : `目前登入的 GitHub 帳號不是 <b>${esc(me.organization||'smartport-ntume')}</b> 的有效成員。你可以改用訪客密碼，或使用正確的 Organization GitHub 帳號登入。`);
     }else{
       msg.hidden=true;
       msg.textContent='';
@@ -96,6 +99,11 @@
   async function checkGuestServer(){
     try{
       const s=await API.guestStatus();
+      if(isSupabase){
+        if(!s.configured){showMessage('Supabase Gateway 尚未完成前端設定。');return false;}
+        if(!s.guest_email_configured){showMessage('尚未設定 Supabase Guest email。');return false;}
+        return true;
+      }
       if(!s.session_secret_configured){
         showMessage('Guest Access 尚未完成伺服器設定：<b>SESSION_SECRET</b> 未設定。');
         return false;
@@ -126,13 +134,19 @@
     }
 
     showGate(me);
-    if(!API.getBase()){
+    if(!API.isConfigured?.()){
       const setup=document.getElementById('spBackendSetup');
       const form=document.getElementById('spGuestLoginForm');
       const divider=document.getElementById('spGateDivider');
       const github=document.getElementById('spGithubLogin');
-      setup.hidden=false;form.hidden=true;divider.hidden=true;github.hidden=true;
-      showMessage('尚未設定本機後端。請先連上 Tailscale，再貼上本機後端的 HTTPS URL。');
+      form.hidden=true;divider.hidden=true;github.hidden=true;
+      if(isSupabase){
+        setup.hidden=true;
+        showMessage('Supabase Gateway 尚未設定。請由部署管理員填寫 <b>js/runtime-config.js</b> 後重新發布；一般使用者不需要設定任何網址。');
+        return;
+      }
+      setup.hidden=false;
+      showMessage('尚未設定本機後端。請貼上本機後端的 HTTPS URL。');
       const input=document.getElementById('spBackendUrl');
       document.getElementById('spBackendSave').onclick=()=>{
         try{
@@ -168,7 +182,7 @@
         window.location.reload();
       }catch(err){
         message.hidden=false;
-        if(err?.status===401)message.textContent='訪客密碼不正確，或目前 Guest session 已失效。';
+        if([400,401].includes(Number(err?.status)))message.textContent='訪客密碼不正確，或目前 Guest session 已失效。';
         else if([403,404,503].includes(Number(err?.status))){
           const ok=await checkGuestServer();
           if(ok){

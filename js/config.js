@@ -1,17 +1,26 @@
 (() => {
   const params = new URLSearchParams(window.location.search);
+  const runtime = window.SMARTPORT_RUNTIME_CONFIG || {};
   const supplied = params.get('apiBase') || '';
   const publicSnapshotEnabled = params.get('publicSnapshot') === '1';
+  const requestedBackend = params.get('backend') || runtime.backendMode || 'supabase';
+  const backendMode = requestedBackend === 'local' ? 'local' : 'supabase';
   const sameOriginLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) ||
     window.location.hostname.endsWith('.ts.net');
 
   window.SMARTPORT_CONFIG = {
-    version: '0.7.0',
-    backendMode: 'local',
+    version: '0.8.0',
+    backendMode,
     projectRepository: 'smartport-ntume/SmartPort-Project-Control',
-    apiBase: supplied || (sameOriginLocal ? window.location.origin : ''),
+    apiBase: backendMode === 'local' ? (supplied || (sameOriginLocal ? window.location.origin : '')) : '',
+    supabase: {
+      url: String(runtime.supabaseUrl || '').replace(/\/$/, ''),
+      anonKey: String(runtime.supabaseAnonKey || ''),
+      guestEmail: String(runtime.guestEmail || ''),
+      reportBucket: String(runtime.reportBucket || 'weekly-reports')
+    },
     publicSnapshot: {
-      enabled: publicSnapshotEnabled,
+      enabled: backendMode === 'local' && publicSnapshotEnabled,
       url: 'data/public-snapshot.json'
     },
     endpoints: {

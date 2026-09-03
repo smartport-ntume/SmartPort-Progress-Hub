@@ -110,7 +110,7 @@
       badge.textContent=me.public_snapshot?'Public Snapshot · Read Only':'Guest · Read Only';
       badge.title=me.public_snapshot?'Explicit public snapshot mode':'Password-authenticated guest viewer';
     }else{
-      badge.textContent = `${me.role === 'PM' ? 'PM' : 'Engineer'} · ${me.repository_permission}`;
+      badge.textContent = `${me.role === 'PM' ? 'PM' : 'Engineer'} · ${API.getMode?.()==='supabase'?'Gateway':me.repository_permission}`;
       badge.title = `GitHub: ${me.login}`;
     }
   }
@@ -126,7 +126,7 @@
   }
 
   function loadPmPasswordManager(){
-    if(!access.can_write||document.querySelector('script[data-guest-password-manager]'))return;
+    if(!access.can_write||API.supportsGuestPasswordChange===false||document.querySelector('script[data-guest-password-manager]'))return;
     const s=document.createElement('script');
     s.src=`js/guest-password-settings.js?v=${window.SMARTPORT_BUILD||Date.now()}`;
     s.dataset.guestPasswordManager='1';

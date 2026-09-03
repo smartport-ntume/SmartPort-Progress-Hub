@@ -42,8 +42,12 @@ function parseCookies(req){
 }
 
 async function tokenFromRequest(req,env){
-  if(!env.SESSION_SECRET)return null;
   const auth=req.headers.get('Authorization')||'';
+  if(
+    env.INTERNAL_AGENT_BEARER&&env.LOCAL_GITHUB_TOKEN&&
+    auth===`Bearer ${env.INTERNAL_AGENT_BEARER}`
+  )return env.LOCAL_GITHUB_TOKEN;
+  if(!env.SESSION_SECRET)return null;
   if(auth.startsWith('Bearer ')){
     const s=await unseal(auth.slice(7),env.SESSION_SECRET);
     if(s?.token)return s.token;

@@ -32,9 +32,10 @@ async function requestBodyText(input, init) {
   return '';
 }
 
-export function createLocalGitHubFetch({ nativeFetch, store }) {
+export function createLocalGitHubFetch({ nativeFetch, store, managedWriteTokens = [] }) {
   const repoPrefix = '/repos/' + store.fullName;
   const contentsPrefix = repoPrefix + '/contents/';
+  const writeTokens = new Set((managedWriteTokens || []).filter(Boolean));
 
   return async function localGitHubFetch(input, init = {}) {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -43,17 +44,18 @@ export function createLocalGitHubFetch({ nativeFetch, store }) {
     const headers = requestHeaders(input, init);
     const token = bearerToken(headers);
     const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
-    const serviceToken = token === LOCAL_READ_TOKEN || token === LOCAL_WRITE_TOKEN;
+    const syntheticServiceToken = token === LOCAL_READ_TOKEN || token === LOCAL_WRITE_TOKEN;
+    const managedWriteToken = token === LOCAL_WRITE_TOKEN || writeTokens.has(token);
 
-    if (url.pathname === repoPrefix && method === 'GET' && serviceToken) {
+    if (url.pathname === repoPrefix && method === 'GET' && (syntheticServiceToken || managedWriteToken)) {
       return response({
         full_name: store.fullName,
         private: true,
         default_branch: store.branch,
         permissions: {
           pull: true,
-          push: token === LOCAL_WRITE_TOKEN,
-          maintain: token === LOCAL_WRITE_TOKEN,
+          push: managedWriteToken,
+          maintain: managedWriteToken,
           admin: false,
           triage: false
         }
@@ -117,7 +119,7 @@ export function createLocalGitHubFetch({ nativeFetch, store }) {
       }
     }
 
-    if (serviceToken) {
+    if (syntheticServiceToken) {
       return response({ message: 'Local service token cannot call this GitHub endpoint' }, 403);
     }
     return nativeFetch(input, init);

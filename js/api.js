@@ -1,5 +1,12 @@
 (() => {
   const cfg = window.SMARTPORT_CONFIG;
+  if (cfg.backendMode === 'supabase') {
+    if (typeof window.createSmartPortSupabaseAPI !== 'function') {
+      throw new Error('Supabase API adapter was not loaded');
+    }
+    window.SmartPortAPI = window.createSmartPortSupabaseAPI(cfg);
+    return;
+  }
   let currentRole='UNAUTHENTICATED';
   const LEGACY_CLOUDFLARE_BASE='https://smartport-progress-hub-api.zf20000302.workers.dev';
 
@@ -88,6 +95,9 @@
   captureSessionFromHash();
 
   window.SmartPortAPI = {
+    getMode() { return 'local'; },
+    isConfigured() { return !!base(); },
+    supportsGuestPasswordChange: true,
     getBase: base,
     getRole() { return currentRole; },
     setBase(url) {
@@ -152,6 +162,7 @@
     async publishPublicSnapshot() {
       return request('/api/admin/public-snapshot', { method:'POST' });
     },
+    request,
     async loadSnapshot() {
       if(cfg.publicSnapshot.enabled)return loadPublicSnapshot();
       if (!sessionToken()) return { project:{name:'SmartPort SC'}, work_packages:[], subtasks:[], functional_safety_requirements:[], checkpoints:[] };

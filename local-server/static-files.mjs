@@ -14,7 +14,7 @@ const TYPES = {
 function isPublicFrontendPath(pathname, allowPublicSnapshot) {
   if (pathname === '/index.html') return true;
   if (allowPublicSnapshot && pathname === '/data/public-snapshot.json') return true;
-  return /^\/(?:js|css)\/[^/]+\.(?:js|css)$/.test(pathname);
+  return /^\/(?:js|css|vendor)\/[^/]+\.(?:js|css)$/.test(pathname);
 }
 
 export async function serveStaticFile(request, response, rootDir, { allowPublicSnapshot = false } = {}) {

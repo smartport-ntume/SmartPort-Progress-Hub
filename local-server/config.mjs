@@ -44,7 +44,14 @@ export function loadConfig(env = process.env, rootDir = process.cwd()) {
       clientId: String(env.GITHUB_CLIENT_ID || ''),
       clientSecret: String(env.GITHUB_CLIENT_SECRET || ''),
       sessionSecret: String(env.SESSION_SECRET || ''),
+      agentToken: String(env.GITHUB_AGENT_TOKEN || ''),
       org: String(env.GITHUB_ORG || 'smartport-ntume')
+    },
+    supabase: {
+      url: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
+      serviceRoleKey: String(env.SUPABASE_SERVICE_ROLE_KEY || ''),
+      agentId: String(env.SUPABASE_AGENT_ID || 'vincent-windows-agent'),
+      reportBucket: String(env.SUPABASE_REPORT_BUCKET || 'weekly-reports')
     },
     project: {
       fullName: String(env.PROJECT_REPO || 'smartport-ntume/SmartPort-Project-Control'),
@@ -132,5 +139,29 @@ export function configProblems(config) {
   )) {
     problems.push('PUBLIC_REPO_PATH must be a separate dedicated public clone');
   }
+  return problems;
+}
+
+export function agentConfigProblems(config) {
+  const problems = [];
+  try {
+    const url = new URL(config.supabase.url);
+    if (url.protocol !== 'https:') throw new Error();
+  } catch (_) {
+    problems.push('SUPABASE_URL must be a valid HTTPS URL');
+  }
+  if (config.supabase.serviceRoleKey.length < 20) {
+    problems.push('SUPABASE_SERVICE_ROLE_KEY is missing or invalid');
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{2,127}$/.test(config.supabase.agentId)) {
+    problems.push('SUPABASE_AGENT_ID must contain 3-128 letters, numbers, dot, underscore, or dash');
+  }
+  if (path.resolve(config.project.path) === path.resolve(config.rootDir)) {
+    problems.push('PROJECT_REPO_PATH must be a dedicated Project-Control clone, not the Hub source directory');
+  }
+  if (!/^[^/\s]+\/[^/\s]+$/.test(config.project.fullName)) {
+    problems.push('PROJECT_REPO must use owner/repository format');
+  }
+  if (!config.supabase.reportBucket) problems.push('SUPABASE_REPORT_BUCKET is missing');
   return problems;
 }

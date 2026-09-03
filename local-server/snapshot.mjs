@@ -90,6 +90,76 @@ export async function buildSanitizedSnapshot(store) {
   });
 }
 
+export async function buildMemberSnapshot(store) {
+  await store.refreshForRead();
+  const [project, workPackages, subtasks, fsrs, checkpoints, sourceCommit] = await Promise.all([
+    store.readJson('project/project.json', { refresh: false }),
+    store.readJson('project/work_packages.json', { refresh: false }),
+    store.readJson('project/subtasks.json', { refresh: false }),
+    store.readJson('safety/fsr.json', { refresh: false }),
+    store.readJson('project/checkpoints.json', { refresh: false }),
+    store.headSha()
+  ]);
+  return {
+    schema_version: '1.0',
+    kind: 'smartport_member_snapshot',
+    generated_at: new Date().toISOString(),
+    source_commit: sourceCommit,
+    project,
+    work_packages: workPackages.work_packages || [],
+    subtasks: subtasks.subtasks || [],
+    functional_safety_requirements: fsrs.functional_safety_requirements || [],
+    checkpoints: checkpoints.checkpoints || []
+  };
+}
+
+export async function buildReferenceSnapshot(store) {
+  await store.refreshForRead();
+  const paths = [
+    'project/reference_model.json',
+    'project/item_functions.json',
+    'project/technical_requirements/ctl.json',
+    'project/technical_requirements/loc.json',
+    'project/technical_requirements/nav_a.json',
+    'project/technical_requirements/nav_b.json',
+    'project/technical_requirements/per.json',
+    'project/technical_requirements/per_b.json',
+    'project/technical_requirements/stm_a.json',
+    'project/technical_requirements/stm_b.json',
+    'project/technical_requirements/interfaces.json',
+    'project/technical_requirements/odd_allocation.json',
+    'project/technical_requirements/traceability.json'
+  ];
+  const values = await Promise.all([
+    ...paths.map(file => store.readJson(file, { refresh: false })),
+    store.headSha()
+  ]);
+  const [reference, itemFunctions, ctl, loc, navA, navB, perA, perB, stmA, stmB, interfaces, odd, trace, sourceCommit] = values;
+  return {
+    schema_version: '1.0',
+    kind: 'smartport_reference_snapshot',
+    generated_at: new Date().toISOString(),
+    source_commit: sourceCommit,
+    reference,
+    item_functions: itemFunctions,
+    technical_requirements: {
+      source: 'Private SmartPort Project-Control baseline',
+      status: 'Preliminary / TBD as stated in source',
+      groups: [
+        { group: 'CTL', requirements: ctl.requirements || [] },
+        { group: 'LOC', requirements: loc.requirements || [] },
+        { group: 'NAV', requirements: [...(navA.requirements || []), ...(navB.requirements || [])] },
+        { group: 'PER', requirements: [...(perA.requirements || []), ...(perB.requirements || [])] },
+        { group: 'STM', requirements: [...(stmA.requirements || []), ...(stmB.requirements || [])] }
+      ],
+      interfaces: interfaces.interfaces || [],
+      odd_allocation: odd.odd_allocation || [],
+      fsr_traceability: trace.fsr_traceability || [],
+      open_gates: trace.open_gates || []
+    }
+  };
+}
+
 export class SnapshotPublisher {
   constructor({ enabled, projectStore, publicStore, file }) {
     this.enabled = !!enabled;

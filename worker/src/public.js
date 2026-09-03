@@ -47,8 +47,12 @@ async function unseal(value,secret){
   }catch(_){return null;}
 }
 async function sessionFromRequest(req,env){
-  if(!env.SESSION_SECRET)return null;
   const auth=req.headers.get('Authorization')||'';
+  if(
+    env.INTERNAL_AGENT_BEARER&&env.LOCAL_GITHUB_TOKEN&&
+    auth===`Bearer ${env.INTERNAL_AGENT_BEARER}`
+  )return{token:env.LOCAL_GITHUB_TOKEN,internal_agent:true};
+  if(!env.SESSION_SECRET)return null;
   if(auth.startsWith('Bearer ')){
     const s=await unseal(auth.slice(7),env.SESSION_SECRET);
     if(s)return s;
@@ -313,9 +317,11 @@ export default{
 
       if(url.pathname.startsWith('/api/')&&url.pathname!=='/api/health'){
         if(!session?.token)return json({error:'authentication_required',login:`${url.origin}/auth/login`},401,C);
-        const org=env.GITHUB_ORG||'smartport-ntume';
-        if(!(await isOrgMember(session.token,org))){
-          return json({error:'organization_membership_required',organization:org},403,C);
+        if(!session.internal_agent){
+          const org=env.GITHUB_ORG||'smartport-ntume';
+          if(!(await isOrgMember(session.token,org))){
+            return json({error:'organization_membership_required',organization:org},403,C);
+          }
         }
       }
 

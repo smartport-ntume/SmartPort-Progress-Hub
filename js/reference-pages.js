@@ -5,10 +5,8 @@
   let data=null,currentGroup='ALL';
   const canWrite=()=>!!window.SMARTPORT_ACCESS?.can_write;
 
-  function token(){return sessionStorage.getItem('smartport.session')||''}
   async function req(path,options={}){
-    const res=await fetch(API.getBase()+path,{credentials:'include',headers:{'Content-Type':'application/json',...(token()?{'Authorization':`Bearer ${token()}`}:{})},...options});
-    if(!res.ok)throw new Error(`API ${res.status}: ${await res.text()}`);return res.status===204?null:res.json();
+    return API.request(path,options);
   }
   function toast(msg){const el=document.getElementById('toast');if(!el)return;el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),4200)}
 

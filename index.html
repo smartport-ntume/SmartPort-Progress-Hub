@@ -6,15 +6,15 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>SmartPort Progress Hub v0.7</title>
+  <title>SmartPort Progress Hub v0.8</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="css/app.css?v=20260903.1147">
+  <link rel="stylesheet" href="css/app.css?v=20260903.1600">
 </head>
 <body>
 <header>
   <div>
-    <h1>SmartPort Progress Hub <span style="font-weight:400;opacity:.7">v0.7</span> <span id="buildId" style="font-size:11px;font-weight:500;opacity:.58">Build 20260903.1147</span></h1>
-    <div class="subhead">Local Backend｜Local Codex Queue｜GitHub Source of Truth｜PM Approved</div>
+    <h1>SmartPort Progress Hub <span style="font-weight:400;opacity:.7">v0.8</span> <span id="buildId" style="font-size:11px;font-weight:500;opacity:.58">Build 20260903.1600</span></h1>
+    <div class="subhead">Supabase Gateway｜Event-driven Local Agent｜GitHub Source of Truth｜PM Approved</div>
   </div>
   <div class="header-right">
     <div class="connection-box"><span id="connDot" class="conn-dot offline"></span><span id="connText">Project Store 載入中</span><button id="btnReload" class="btn smallbtn">重新整理</button></div>
@@ -54,26 +54,29 @@
 <section id="fsr" class="view"><div class="panel"><div class="panel-title">FSR Maturity / Allocation <div class="toolbar"><button class="btn primary" data-action="add-fsr">＋新增 FSR</button></div></div><div style="overflow:auto;max-height:790px"><table id="fsrTable"><thead><tr><th>FSR</th><th>Requirement</th><th>Primary</th><th>Related IF</th><th>Linked WP</th><th>Current</th><th>12/31 Target</th><th></th></tr></thead><tbody></tbody></table></div></div></section>
 <section id="cp" class="view"><div class="panel"><div class="panel-title">Checkpoint / ACL / Vehicle Capability <div class="toolbar"><button class="btn primary" data-action="add-cp">＋新增 CP</button></div></div><div id="cpTimeline" class="cp-timeline"></div><div id="cpGrid" class="cp-grid"></div></div></section>
 <section id="review" class="view"><div class="panel"><div class="panel-title">PM Review Queue <div class="toolbar"><span class="revision-badge">Approve 才寫入 baseline</span></div></div><div id="reviewQueue" style="padding:14px" class="muted">載入中...</div></div></section>
-<section id="settings" class="view"><div class="grid2"><div class="panel"><div class="panel-title">Project Settings</div><div style="padding:14px"><div class="field"><label>本機後端 URL</label><input id="apiBase"></div><div class="field"><label>Project Repository</label><input id="projectRepo" value="smartport-ntume/SmartPort-Project-Control" readonly></div><div class="field"><label>GitHub User</label><input id="githubUser" value="—" readonly></div><button id="btnSaveSettings" class="btn primary">儲存 API 設定</button><button id="btnLogin" class="btn">GitHub Login</button><button id="btnLogout" class="btn danger">Logout</button></div></div><div class="panel"><div class="panel-title">備份 / Source of Truth</div><div style="padding:14px"><div class="alert info"><b>正式 Project DB = GitHub Private Repo。</b><br>本機後端使用專用 clone；所有正式修改仍 commit / push 回 GitHub。</div><button id="btnExportSnapshot" class="btn primary">匯出 Project JSON</button></div></div></div></section>
+<section id="settings" class="view"><div class="grid2"><div class="panel"><div class="panel-title">Project Settings</div><div style="padding:14px"><div class="field"><label>本機後端 URL</label><input id="apiBase"></div><div class="field"><label>Project Repository</label><input id="projectRepo" value="smartport-ntume/SmartPort-Project-Control" readonly></div><div class="field"><label>GitHub User</label><input id="githubUser" value="—" readonly></div><button id="btnSaveSettings" class="btn primary">儲存 API 設定</button><button id="btnLogin" class="btn">GitHub Login</button><button id="btnLogout" class="btn danger">Logout</button></div></div><div class="panel"><div class="panel-title">備份 / Source of Truth</div><div style="padding:14px"><div class="alert info"><b>正式 Project DB = GitHub Private Repo。</b><br>本機 Agent 使用專用 clone；所有正式修改仍 commit / push 回 GitHub。</div><button id="btnRefreshGateway" class="btn">從 Private Git 更新 Gateway</button><button id="btnExportSnapshot" class="btn primary">匯出 Project JSON</button></div></div></div></section>
 </main>
 <div id="drawerBackdrop" class="backdrop"></div>
 <div id="drawer" class="drawer"><div class="drawer-head"><strong id="drawerTitle"></strong><button id="drawerClose" class="btn">✕</button></div><form class="drawer-body" id="drawerBody"></form></div>
 <div id="toast" class="toast"></div>
-<script>window.SMARTPORT_BUILD='20260903.1147';</script>
-<script src="js/config.js?v=20260903.1147"></script>
-<script src="js/api.js?v=20260903.1147"></script>
-<script src="js/store.js?v=20260903.1147"></script>
-<script src="js/access-gate-ui.js?v=20260903.1147"></script>
-<script src="js/app.js?v=20260903.1147"></script>
-<script src="js/role.js?v=20260903.1147"></script>
-<script src="js/weekly.js?v=20260903.1147"></script>
-<script src="js/traceability.js?v=20260903.1147"></script>
-<script src="js/checkpoint-ui.js?v=20260903.1147"></script>
-<script src="js/plan-enhancements.js?v=20260903.1147"></script>
-<script src="js/checkpoint-save.js?v=20260903.1147"></script>
-<script src="js/reference-pages.js?v=20260903.1147"></script>
-<script src="js/item-functions.js?v=20260903.1147"></script>
-<script src="js/gantt-filter.js?v=20260903.1147"></script>
-<script src="js/nav-groups.js?v=20260903.1147"></script>
+<script>window.SMARTPORT_BUILD='20260903.1600';</script>
+<script src="js/runtime-config.js?v=20260903.1600"></script>
+<script src="vendor/supabase-2.114.0.js?v=20260903.1600"></script>
+<script src="js/config.js?v=20260903.1600"></script>
+<script src="js/supabase-api.js?v=20260903.1600"></script>
+<script src="js/api.js?v=20260903.1600"></script>
+<script src="js/store.js?v=20260903.1600"></script>
+<script src="js/access-gate-ui.js?v=20260903.1600"></script>
+<script src="js/app.js?v=20260903.1600"></script>
+<script src="js/role.js?v=20260903.1600"></script>
+<script src="js/weekly.js?v=20260903.1600"></script>
+<script src="js/traceability.js?v=20260903.1600"></script>
+<script src="js/checkpoint-ui.js?v=20260903.1600"></script>
+<script src="js/plan-enhancements.js?v=20260903.1600"></script>
+<script src="js/checkpoint-save.js?v=20260903.1600"></script>
+<script src="js/reference-pages.js?v=20260903.1600"></script>
+<script src="js/item-functions.js?v=20260903.1600"></script>
+<script src="js/gantt-filter.js?v=20260903.1600"></script>
+<script src="js/nav-groups.js?v=20260903.1600"></script>
 </body>
 </html>

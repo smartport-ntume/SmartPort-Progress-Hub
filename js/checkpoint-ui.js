@@ -82,13 +82,7 @@
     if(referenceLoading&&!force)return referenceLoading;
     referenceLoading=(async()=>{
       try{
-        const token=sessionStorage.getItem('smartport.session')||'';
-        const res=await fetch(API.getBase()+'/api/project/reference',{
-          credentials:'include',
-          headers:{...(token?{'Authorization':`Bearer ${token}`}:{})}
-        });
-        if(!res.ok)return false;
-        const data=await res.json();
+        const data=await API.request('/api/project/reference');
         refMap=new Map((data?.reference?.acl_levels||[]).map(x=>[x.checkpoint,x]));
         referenceLoaded=true;
         return true;

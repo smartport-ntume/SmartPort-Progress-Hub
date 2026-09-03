@@ -155,6 +155,10 @@ async function unseal(value, secret) {
 
 async function tokenFromSession(req, env) {
   const auth = req.headers.get('Authorization') || '';
+  if (
+    env.INTERNAL_AGENT_BEARER && env.LOCAL_GITHUB_TOKEN &&
+    auth === `Bearer ${env.INTERNAL_AGENT_BEARER}`
+  ) return env.LOCAL_GITHUB_TOKEN;
   if (auth.startsWith('Bearer ') && env.SESSION_SECRET) {
     const session = await unseal(auth.slice(7), env.SESSION_SECRET);
     if (session?.token) return session.token;
@@ -163,6 +167,18 @@ async function tokenFromSession(req, env) {
   if (!c.sp_session || !env.SESSION_SECRET) return null;
   const session = await unseal(c.sp_session, env.SESSION_SECRET);
   return session?.token || null;
+}
+
+function internalActor(req, env) {
+  const auth = req.headers.get('Authorization') || '';
+  if (!env.INTERNAL_AGENT_BEARER || auth !== `Bearer ${env.INTERNAL_AGENT_BEARER}`) return '';
+  const actor = String(req.headers.get('X-SmartPort-Actor') || '').trim();
+  return /^[A-Za-z0-9][A-Za-z0-9_.@-]{0,99}$/.test(actor) ? actor : 'supabase-user';
+}
+
+async function requestActor(req, token, env) {
+  const login = internalActor(req, env);
+  return login ? { login, avatar_url: '' } : github('/user', token);
 }
 
 const OPENAI_API = 'https://api.openai.com/v1';
@@ -375,7 +391,8 @@ function parseProposalIssue(issue) {
     title: issue.title,
     state: issue.state,
     html_url: issue.html_url,
-    author: issue.user?.login || payload.submitted_by,
+    author: payload.submitted_by || issue.user?.login,
+    github_actor: issue.user?.login || '',
     created_at: issue.created_at,
     updated_at: issue.updated_at,
     review_status,
@@ -510,7 +527,7 @@ export default {
       const repo = env.PROJECT_REPO;
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
-        const [me, access] = await Promise.all([github('/user', token), repoAccess(repo, token)]);
+        const [me, access] = await Promise.all([requestActor(request, token, env), repoAccess(repo, token)]);
         return json({
           login: me.login,
           avatar_url: me.avatar_url,
@@ -532,7 +549,7 @@ export default {
       }
 
       if (url.pathname === '/api/reports/upload' && request.method === 'POST') {
-        const me=await github('/user',token);
+        const me=await requestActor(request,token,env);
         const payload=await request.json();
         try{
           const report=await uploadWeeklyReport(repo,token,env,payload,me.login);
@@ -544,7 +561,7 @@ export default {
       }
 
       if (url.pathname === '/api/reports/analyze' && request.method === 'POST') {
-        const me=await github('/user',token);
+        const me=await requestActor(request,token,env);
         if(localCodexRequiresPm(env)){
           const access=await repoAccess(repo,token);
           if(!access.can_approve){
@@ -577,7 +594,7 @@ export default {
         }
         const job=await env.LOCAL_JOB_QUEUE.get(analysisJobMatch[1]);
         if(!job)return json({error:'analysis_job_not_found'},404,C);
-        const viewer=await github('/user',token);
+        const viewer=await requestActor(request,token,env);
         if(job.submitted_by&&job.submitted_by!==viewer.login){
           const access=await repoAccess(repo,token);
           if(!access.can_approve)return json({error:'analysis_job_forbidden'},403,C);
@@ -590,7 +607,7 @@ export default {
       }
 
       if (url.pathname === '/api/reports/proposals' && request.method === 'POST') {
-        const me = await github('/user', token);
+        const me = await requestActor(request, token, env);
         const p = await request.json();
         if (!p.report_date || !p.owner_team || !p.target_type || !p.target_id || p.progress === '' || p.progress == null || !p.status) {
           return json({ error: 'missing required proposal fields' }, 400, C);
