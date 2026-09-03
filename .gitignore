@@ -1,0 +1,6 @@
+node_modules/
+.env.local
+.runtime/
+data/public-snapshot.json
+npm-debug.log*
+*.log

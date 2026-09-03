@@ -61,6 +61,11 @@
       hideViewButton('reports');
       hideViewButton('review');
       hideViewButton('settings');
+      if(access.public_snapshot){
+        hideViewButton('item-functions');
+        hideViewButton('reference');
+        hideViewButton('tr');
+      }
       hideGroup('workflow');
       document.querySelector('.nav-system')?.style.setProperty('display','none','important');
       hideGuestWorkflowIndicators();
@@ -102,8 +107,8 @@
       box.insertBefore(badge, document.getElementById('btnReload'));
     }
     if(me.role==='GUEST'){
-      badge.textContent='Guest · Read Only';
-      badge.title='Password-authenticated guest viewer';
+      badge.textContent=me.public_snapshot?'Public Snapshot · Read Only':'Guest · Read Only';
+      badge.title=me.public_snapshot?'Explicit public snapshot mode':'Password-authenticated guest viewer';
     }else{
       badge.textContent = `${me.role === 'PM' ? 'PM' : 'Engineer'} · ${me.repository_permission}`;
       badge.title = `GitHub: ${me.login}`;
@@ -115,7 +120,7 @@
     const dot=document.getElementById('connDot');
     if(!text||!dot)return;
     if(me.role==='GUEST'){
-      text.textContent='Guest Project View · Read Only';
+      text.textContent=me.public_snapshot?'Public Snapshot · Read Only':'Guest Project View · Read Only';
       dot.className='conn-dot online';
     }
   }

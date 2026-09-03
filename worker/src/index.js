@@ -1,16 +1,6 @@
-const GH_API = 'https://api.github.com';
+import { corsHeaders, safeReturnUrl } from './cors.js';
 
-function cors(requestOrigin, frontendUrl) {
-  const allowedOrigin = new URL(frontendUrl).origin;
-  const origin = requestOrigin === allowedOrigin ? requestOrigin : allowedOrigin;
-  return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Vary': 'Origin'
-  };
-}
+const GH_API = 'https://api.github.com';
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -83,6 +73,10 @@ async function repoAccess(repo, token) {
   };
 }
 
+function localCodexRequiresPm(env) {
+  return env.LOCAL_CODEX_REQUIRE_PM === true || /^(1|true|yes|on)$/i.test(String(env.LOCAL_CODEX_REQUIRE_PM || ''));
+}
+
 function cookie(name, value, maxAge) {
   const bits = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'Secure', 'SameSite=None'];
   if (maxAge != null) bits.push(`Max-Age=${maxAge}`);
@@ -109,6 +103,23 @@ function b64urlToBytes(s) {
   s = s.replace(/-/g, '+').replace(/_/g, '/');
   while (s.length % 4) s += '=';
   return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+function oauthState(returnTo) {
+  const nonce = crypto.randomUUID();
+  const target = bytesToB64url(new TextEncoder().encode(returnTo));
+  return { nonce, state: nonce + '.' + target };
+}
+
+function returnUrlFromState(state, expectedNonce, env) {
+  try {
+    const separator = String(state || '').indexOf('.');
+    if (separator < 0 || state.slice(0, separator) !== expectedNonce) return '';
+    const decoded = new TextDecoder().decode(b64urlToBytes(state.slice(separator + 1)));
+    return safeReturnUrl(decoded, env);
+  } catch (_) {
+    return '';
+  }
 }
 
 async function sessionKey(secret) {
@@ -230,7 +241,8 @@ function responseOutputText(response) {
 }
 
 async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
-  if(!env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY_not_configured');
+  const useLocalCodex=typeof env.LOCAL_CODEX_RUNNER==='function';
+  if(!useLocalCodex&&!env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY_not_configured');
   const reportPath=String(payload.report_path||'');
   if(!reportPath.startsWith('weekly_reports/'))throw new Error('invalid_weekly_report_path');
   const reportDate=String(payload.report_date||'').trim();
@@ -244,13 +256,6 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   ]);
   const filename=reportFile.name||reportPath.split('/').pop()||'weekly-report.docx';
   const fileBytes=b64ToBytes(reportFile.content||'');
-  const form=new FormData();
-  form.append('purpose','user_data');
-  form.append('file',new Blob([fileBytes],{type:reportMime(filename)}),filename);
-  const uploaded=await openAIJson(await fetch(`${OPENAI_API}/files`,{
-    method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`},body:form
-  }));
-
   const wps=wpFile.json.work_packages||[],subs=subFile.json.subtasks||[];
   const context={
     report_date:reportDate,
@@ -260,35 +265,47 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   };
   const schema={
     type:'object',additionalProperties:false,required:['report_summary','warnings','proposals'],properties:{
-      report_summary:{type:'string'},warnings:{type:'array',items:{type:'string'}},
-      proposals:{type:'array',items:{type:'object',additionalProperties:false,required:['target_type','target_id','progress','status','blocker','evidence','summary','confidence','rationale'],properties:{
-        target_type:{type:'string',enum:['WP','SUBTASK']},target_id:{type:'string'},progress:{type:'number',minimum:0,maximum:100},
-        status:{type:'string',enum:['On Track','At Risk','Blocked','Delayed','Completed']},blocker:{type:'string'},evidence:{type:'string'},summary:{type:'string'},confidence:{type:'number',minimum:0,maximum:1},rationale:{type:'string'}
+      report_summary:{type:'string',maxLength:8000},warnings:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},
+      proposals:{type:'array',maxItems:200,items:{type:'object',additionalProperties:false,required:['target_type','target_id','progress','status','blocker','evidence','summary','confidence','rationale'],properties:{
+        target_type:{type:'string',enum:['WP','SUBTASK']},target_id:{type:'string',maxLength:128},progress:{type:'number',minimum:0,maximum:100},
+        status:{type:'string',enum:['On Track','At Risk','Blocked','Delayed','Completed']},blocker:{type:'string',maxLength:4000},evidence:{type:'string',maxLength:12000},summary:{type:'string',maxLength:8000},confidence:{type:'number',minimum:0,maximum:1},rationale:{type:'string',maxLength:8000}
       }}}
     }
   };
 
-  let response=null;
-  try{
-    response=await openAIJson(await fetch(`${OPENAI_API}/responses`,{
-      method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:env.OPENAI_MODEL||'gpt-5-mini',store:false,
-        instructions:'You are the SmartPort weekly-report progress mapper. Convert only evidence supported by the uploaded weekly report into proposed project updates. Compare the report against the supplied current WP/Subtask baseline. Prefer SUBTASK updates when a specific task is identifiable. Use WP only when the report materially updates the whole work package or no specific Subtask fits. progress is the proposed absolute progress percentage after this report, not a weekly delta. Never lower an existing progress value. Do not invent evidence, blockers, tests, completion, dates, or targets. If a percentage is not stated, estimate conservatively from concrete completed deliverables relative to the task description and explain the estimate in rationale. Only map work owned by the selected Owner Team. Return an empty proposals array when evidence is insufficient.',
-        input:[{role:'user',content:[
-          {type:'input_text',text:`Map this SmartPort weekly report into proposed WP/Subtask progress updates. Project context JSON:\n${JSON.stringify(context)}`},
-          {type:'input_file',file_id:uploaded.id}
-        ]}],
-        text:{format:{type:'json_schema',name:'smartport_weekly_progress_mapping',strict:true,schema}}
-      })
+  let analysis;
+  if(useLocalCodex){
+    analysis=await env.LOCAL_CODEX_RUNNER({
+      repo,reportPath,reportDate,ownerTeam,author,filename,fileBytes,context,schema
+    });
+  }else{
+    const form=new FormData();
+    form.append('purpose','user_data');
+    form.append('file',new Blob([fileBytes],{type:reportMime(filename)}),filename);
+    const uploaded=await openAIJson(await fetch(`${OPENAI_API}/files`,{
+      method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`},body:form
     }));
-  }finally{
-    if(uploaded?.id)fetch(`${OPENAI_API}/files/${encodeURIComponent(uploaded.id)}`,{method:'DELETE',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`}}).catch(()=>{});
+    let response=null;
+    try{
+      response=await openAIJson(await fetch(`${OPENAI_API}/responses`,{
+        method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:env.OPENAI_MODEL||'gpt-5-mini',store:false,
+          instructions:'You are the SmartPort weekly-report progress mapper. Convert only evidence supported by the uploaded weekly report into proposed project updates. Compare the report against the supplied current WP/Subtask baseline. Prefer SUBTASK updates when a specific task is identifiable. Use WP only when the report materially updates the whole work package or no specific Subtask fits. progress is the proposed absolute progress percentage after this report, not a weekly delta. Never lower an existing progress value. Do not invent evidence, blockers, tests, completion, dates, or targets. If a percentage is not stated, estimate conservatively from concrete completed deliverables relative to the task description and explain the estimate in rationale. Only map work owned by the selected Owner Team. Return an empty proposals array when evidence is insufficient.',
+          input:[{role:'user',content:[
+            {type:'input_text',text:`Map this SmartPort weekly report into proposed WP/Subtask progress updates. Project context JSON:\n${JSON.stringify(context)}`},
+            {type:'input_file',file_id:uploaded.id}
+          ]}],
+          text:{format:{type:'json_schema',name:'smartport_weekly_progress_mapping',strict:true,schema}}
+        })
+      }));
+    }finally{
+      if(uploaded?.id)fetch(`${OPENAI_API}/files/${encodeURIComponent(uploaded.id)}`,{method:'DELETE',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`}}).catch(()=>{});
+    }
+    const raw=responseOutputText(response);
+    if(!raw)throw new Error('OpenAI_returned_no_structured_output');
+    try{analysis=JSON.parse(raw)}catch(_){throw new Error('OpenAI_structured_output_parse_failed')}
   }
-
-  const raw=responseOutputText(response);
-  if(!raw)throw new Error('OpenAI_returned_no_structured_output');
-  let analysis;try{analysis=JSON.parse(raw)}catch(_){throw new Error('OpenAI_structured_output_parse_failed')}
   analysis.warnings=Array.isArray(analysis.warnings)?analysis.warnings:[];
   analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals:[];
 
@@ -316,7 +333,8 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     const issue=await github(`/repos/${repo}/issues`,token,{method:'POST',body:JSON.stringify({title,body:proposalBody(p,author)})});
     created.push(parseProposalIssue(issue));
   }
-  return{analysis:{report_summary:analysis.report_summary||'',warnings:analysis.warnings,analysis_id:analysisId,model:env.OPENAI_MODEL||'gpt-5-mini'},proposals:created,report:{path:reportPath,filename}};
+  const model=useLocalCodex?(env.LOCAL_CODEX_MODEL||'Codex account'):(env.OPENAI_MODEL||'gpt-5-mini');
+  return{analysis:{report_summary:analysis.report_summary||'',warnings:analysis.warnings,analysis_id:analysisId,model},proposals:created,report:{path:reportPath,filename}};
 }
 
 function proposalBody(p, author) {
@@ -429,31 +447,45 @@ async function approveProposal(repo, issueNumber, token) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const C = cors(request.headers.get('Origin') || '', env.FRONTEND_URL);
+    const C = corsHeaders(request.headers.get('Origin') || '', env);
 
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: C });
 
     try {
-      if (url.pathname === '/api/health') return json({ ok: true, service: 'smartport-progress-hub-api' }, 200, C);
+      if (url.pathname === '/api/health') {
+        let local = null;
+        if (typeof env.LOCAL_STATUS_PROVIDER === 'function') {
+          try { local = await env.LOCAL_STATUS_PROVIDER(); }
+          catch (error) { local = { ready: false, error: error.message || String(error) }; }
+        }
+        return json({
+          ok: local ? local.ready !== false : true,
+          service: 'smartport-progress-hub-api',
+          mode: local ? 'local' : 'cloud',
+          ...(local ? { local } : {})
+        }, local?.ready === false ? 503 : 200, C);
+      }
 
       if (url.pathname === '/auth/login') {
         if (!env.GITHUB_CLIENT_ID) return json({ error: 'GITHUB_CLIENT_ID not configured' }, 500, C);
-        const state = crypto.randomUUID();
+        const returnTo = safeReturnUrl(url.searchParams.get('return_to'), env) || safeReturnUrl(env.FRONTEND_URL, env);
+        const { nonce, state } = oauthState(returnTo);
         const redirectUri = `${url.origin}/auth/callback`;
         const gh = new URL('https://github.com/login/oauth/authorize');
         gh.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
         gh.searchParams.set('redirect_uri', redirectUri);
         gh.searchParams.set('scope', 'repo read:org');
         gh.searchParams.set('state', state);
-        return new Response(null, { status: 302, headers: { Location: gh.toString(), 'Set-Cookie': cookie('sp_state', state, 600), ...C } });
+        return new Response(null, { status: 302, headers: { Location: gh.toString(), 'Set-Cookie': cookie('sp_state', nonce, 600), ...C } });
       }
 
       if (url.pathname === '/auth/callback') {
         const cookies = parseCookies(request);
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
-        if (!code || state !== cookies.sp_state) return json({ error: 'OAuth state mismatch' }, 400, C);
-        if (!env.GITHUB_CLIENT_SECRET || !env.SESSION_SECRET) return json({ error: 'Cloudflare secrets are not configured' }, 500, C);
+        const returnTo = returnUrlFromState(state, cookies.sp_state, env);
+        if (!code || !returnTo) return json({ error: 'OAuth state mismatch' }, 400, C);
+        if (!env.GITHUB_CLIENT_SECRET || !env.SESSION_SECRET) return json({ error: 'Server secrets are not configured' }, 500, C);
         const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
           method: 'POST',
           headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'SmartPort-Progress-Hub/0.6' },
@@ -463,12 +495,14 @@ export default {
         if (!t.access_token) return json({ error: 'GitHub OAuth authorization failed', detail: t }, 401, C);
         const maxAgeSec = Math.min(Number(t.expires_in || 28800), 28800);
         const sealed = await seal({ token: t.access_token, exp: Date.now() + maxAgeSec * 1000 }, env.SESSION_SECRET);
-        const target = `${env.FRONTEND_URL.replace(/\/$/, '')}/#sp_session=${encodeURIComponent(sealed)}`;
-        return new Response(null, { status: 302, headers: { Location: target, 'Set-Cookie': cookie('sp_session', sealed, maxAgeSec), ...C } });
+        const target = new URL(returnTo);
+        target.hash = 'sp_session=' + sealed;
+        return new Response(null, { status: 302, headers: { Location: target.toString(), 'Set-Cookie': cookie('sp_session', sealed, maxAgeSec), ...C } });
       }
 
       if (url.pathname === '/auth/logout') {
-        return new Response(null, { status: 302, headers: { Location: env.FRONTEND_URL, 'Set-Cookie': cookie('sp_session', '', 0), ...C } });
+        const returnTo = safeReturnUrl(url.searchParams.get('return_to'), env) || safeReturnUrl(env.FRONTEND_URL, env);
+        return new Response(null, { status: 302, headers: { Location: returnTo, 'Set-Cookie': cookie('sp_session', '', 0), ...C } });
       }
 
       const token = await tokenFromSession(request, env);
@@ -477,7 +511,24 @@ export default {
 
       if (url.pathname === '/api/me' && request.method === 'GET') {
         const [me, access] = await Promise.all([github('/user', token), repoAccess(repo, token)]);
-        return json({ login: me.login, avatar_url: me.avatar_url, role: access.role, repository_permission: access.permission, can_write: access.can_write, can_approve: access.can_approve }, 200, C);
+        return json({
+          login: me.login,
+          avatar_url: me.avatar_url,
+          role: access.role,
+          repository_permission: access.permission,
+          can_write: access.can_write,
+          can_approve: access.can_approve,
+          can_trigger_codex: !localCodexRequiresPm(env) || access.can_approve
+        }, 200, C);
+      }
+
+      if (url.pathname === '/api/admin/public-snapshot' && request.method === 'POST') {
+        const access = await repoAccess(repo, token);
+        if (!access.can_approve) return json({ error: 'forbidden', message: 'PM permission required' }, 403, C);
+        if (typeof env.LOCAL_SNAPSHOT_PUBLISHER !== 'function') {
+          return json({ error: 'public_snapshot_not_configured' }, 503, C);
+        }
+        return json(await env.LOCAL_SNAPSHOT_PUBLISHER(), 200, C);
       }
 
       if (url.pathname === '/api/reports/upload' && request.method === 'POST') {
@@ -494,13 +545,44 @@ export default {
 
       if (url.pathname === '/api/reports/analyze' && request.method === 'POST') {
         const me=await github('/user',token);
+        if(localCodexRequiresPm(env)){
+          const access=await repoAccess(repo,token);
+          if(!access.can_approve){
+            return json({error:'pm_permission_required_for_local_codex',message:'PM permission is required to trigger Local Codex'},403,C);
+          }
+        }
         const payload=await request.json();
-        try{return json(await analyzeWeeklyReportAI(repo,token,env,payload,me.login),200,C);}
+        try{
+          if(env.LOCAL_JOB_QUEUE&&typeof env.LOCAL_JOB_QUEUE.enqueue==='function'){
+            const job=await env.LOCAL_JOB_QUEUE.enqueue({
+              type:'weekly-report-analysis',
+              submitted_by:me.login,
+              report_path:payload?.report_path||''
+            },()=>analyzeWeeklyReportAI(repo,token,env,payload,me.login));
+            return json({job},202,C);
+          }
+          return json(await analyzeWeeklyReportAI(repo,token,env,payload,me.login),200,C);
+        }
         catch(e){
           const msg=e.message||String(e);
-          const status=msg.includes('OPENAI_API_KEY')?503:500;
+          const status=Number(e?.status)||(msg.includes('OPENAI_API_KEY')?503:500);
           return json({error:msg,message:msg,report_path:payload?.report_path||''},status,C);
         }
+      }
+
+      const analysisJobMatch=url.pathname.match(/^\/api\/reports\/jobs\/([A-Za-z0-9-]+)$/);
+      if(analysisJobMatch&&request.method==='GET'){
+        if(!env.LOCAL_JOB_QUEUE||typeof env.LOCAL_JOB_QUEUE.get!=='function'){
+          return json({error:'local_job_queue_not_configured'},404,C);
+        }
+        const job=await env.LOCAL_JOB_QUEUE.get(analysisJobMatch[1]);
+        if(!job)return json({error:'analysis_job_not_found'},404,C);
+        const viewer=await github('/user',token);
+        if(job.submitted_by&&job.submitted_by!==viewer.login){
+          const access=await repoAccess(repo,token);
+          if(!access.can_approve)return json({error:'analysis_job_forbidden'},403,C);
+        }
+        return json({job},200,C);
       }
 
       if (url.pathname === '/api/reports/proposals' && request.method === 'GET') {

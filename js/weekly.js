@@ -8,6 +8,9 @@
   let me = null;
   let selectedFile = null;
   let latestAnalysis = null;
+  let canTriggerCodex = false;
+  const ACTIVE_JOB_KEY='smartport.weeklyAnalysisJob';
+  const ACTIVE_REPORT_KEY='smartport.weeklyAnalysisReport';
 
   function toast(msg){
     const el=$('#toast');
@@ -24,9 +27,9 @@
     root.innerHTML=`
       <div class="weekly-intake-grid">
         <div class="panel weekly-upload-panel">
-          <div class="panel-title"><span>Weekly Report Intake</span><span class="revision-badge">AI-assisted · PM approved</span></div>
+          <div class="panel-title"><span>Weekly Report Intake</span><span class="revision-badge">Local Codex · PM approved</span></div>
           <form id="weeklyReportUploadForm" class="weekly-upload-body">
-            <div class="alert info"><b>上傳原始週報，AI 只產生 Proposed Updates。</b><br>原始 Word 檔先保存到 Private GitHub；AI 會對照目前 WP / Subtask baseline，拆成可供 PM 審核的實質進度更新。AI 不會直接寫入正式 baseline。</div>
+            <div class="alert info"><b>只有 PM 按下按鈕後，本機 Codex 才會啟動。</b><br>原始 Word 檔先保存到 Private GitHub，再排入本機分析佇列。開啟頁面不會觸發 Codex，且 AI 不會直接寫入正式 baseline。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
               <div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div>
@@ -38,8 +41,8 @@
             </label>
             <div id="weeklySelectedFile" class="weekly-selected-file muted">尚未選擇檔案</div>
             <div class="weekly-upload-actions">
-              <button id="weeklyAnalyzeBtn" class="btn primary" type="submit" disabled>上傳並由 AI 解析</button>
-              <span class="muted">流程：GitHub Archive → AI Mapping → Proposal Queue → PM Review</span>
+              <button id="weeklyAnalyzeBtn" class="btn primary" type="submit" disabled>上傳並排入本機 Codex</button>
+              <span class="muted">流程：Git Archive → Local Codex Queue → Proposal → PM Review</span>
             </div>
           </form>
         </div>
@@ -171,7 +174,7 @@
     el.innerHTML=`
       ${report.html_url?`<a class="btn weekly-report-link" href="${esc(report.html_url)}" target="_blank" rel="noopener">開啟 GitHub 原始週報</a>`:''}
       <div class="weekly-ai-summary"><b>AI Summary</b><br>${esc(analysis.report_summary||'AI 已完成 mapping。')}</div>
-      <div class="muted">產生 ${created.length} 筆 Proposed Update${analysis.warnings?.length?` · ${analysis.warnings.length} warning(s)`:''}</div>
+      <div class="muted">${analysis.model?`${esc(analysis.model)} · `:''}產生 ${created.length} 筆 Proposed Update${analysis.warnings?.length?` · ${analysis.warnings.length} warning(s)`:''}</div>
       ${(created||[]).map(p=>`<div class="weekly-ai-proposal"><div class="weekly-ai-proposal-head"><span class="weekly-ai-proposal-id">${esc(p.target_type)} ${esc(p.target_id)} → ${esc(p.progress)}%</span><span class="ai-confidence">confidence ${Math.round(Number(p.ai_confidence||0)*100)}%</span></div><div class="weekly-ai-proposal-meta">${esc(p.status||'')} · ${esc(p.summary||'')}</div></div>`).join('')||'<div class="muted" style="margin-top:12px">週報沒有足夠資訊形成可審核的進度更新。</div>'}
       ${analysis.warnings?.length?`<div class="alert" style="margin-top:12px"><b>AI warnings</b><br>${analysis.warnings.map(esc).join('<br>')}</div>`:''}`;
   }
@@ -200,6 +203,35 @@
     });
   }
 
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
+  async function waitForAnalysisJob(initialJob,report){
+    let job=initialJob;
+    sessionStorage.setItem(ACTIVE_JOB_KEY,job.id);
+    sessionStorage.setItem(ACTIVE_REPORT_KEY,JSON.stringify(report||{}));
+    for(let attempt=0;attempt<600;attempt++){
+      if(job.status==='completed'){
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
+        sessionStorage.removeItem(ACTIVE_REPORT_KEY);
+        return job.result||{analysis:{report_summary:'本機分析已完成，請查看 Proposal Archive。'},proposals:[],report};
+      }
+      if(job.status==='failed'){
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
+        sessionStorage.removeItem(ACTIVE_REPORT_KEY);
+        throw new Error(job.error||'local_codex_job_failed');
+      }
+      const queued=job.status==='queued';
+      setAiState(queued?'Queued':'Local Codex running');
+      $('#weeklyAiResult').innerHTML='<div class="weekly-empty-state"><b>'+
+        (queued?'等待本機 Codex':'本機 Codex 分析中')+
+        '</b><span>Job '+esc(job.id)+' · 可以繼續瀏覽其他頁面。</span></div>';
+      await wait(2000);
+      const data=await API.getAnalysisJob(job.id);
+      job=data.job;
+    }
+    throw new Error('local_codex_job_timeout');
+  }
+
   function bindDropzone(){
     const input=$('#weeklyReportFile'),zone=$('#weeklyDropZone'),label=$('#weeklySelectedFile'),btn=$('#weeklyAnalyzeBtn');
     if(!input||!zone)return;
@@ -210,7 +242,7 @@
       if(!['doc','docx'].includes(ext)){toast('請上傳 .doc 或 .docx');input.value='';return choose(null);}
       if(file.size>10*1024*1024){toast('週報檔案上限 10 MB');input.value='';return choose(null);}
       label.innerHTML=`<b>${esc(file.name)}</b> · ${(file.size/1024/1024).toFixed(2)} MB${ext==='doc'?'<br><span class="muted">Legacy .doc 會先保存；若 AI 端無法直接解析，系統會保留原檔並回報需轉為 .docx。</span>':''}`;
-      btn.disabled=false;
+      btn.disabled=!canTriggerCodex;
     };
     input.addEventListener('change',()=>choose(input.files?.[0]));
     ['dragenter','dragover'].forEach(type=>zone.addEventListener(type,e=>{e.preventDefault();zone.classList.add('dragover')}));
@@ -219,14 +251,15 @@
   }
 
   async function submitReport(e){
-    e.preventDefault();if(!selectedFile)return;
+    e.preventDefault();if(!selectedFile||!canTriggerCodex)return;
     const btn=$('#weeklyAnalyzeBtn'),date=$('#weeklyDate').value,team=$('#weeklyOwner').value;
     btn.disabled=true;btn.textContent='上傳 GitHub...';setAiState('Uploading');
     try{
       const base64=await fileToBase64(selectedFile);
       const upload=await API.uploadWeeklyReport({report_date:date,owner_team:team,filename:selectedFile.name,mime_type:selectedFile.type||'',size:selectedFile.size,data_base64:base64});
-      setAiState('AI analyzing');btn.textContent='AI 解析中...';
-      const result=await API.analyzeWeeklyReport({report_date:date,owner_team:team,report_path:upload.report.path});
+      setAiState('Queueing');btn.textContent='排入本機 Codex...';
+      const analysis=await API.analyzeWeeklyReport({report_date:date,owner_team:team,report_path:upload.report.path});
+      const result=analysis.job?await waitForAnalysisJob(analysis.job,upload.report):analysis;
       result.report={...(result.report||{}),...upload.report};
       renderAiResult(result);setAiState('Proposals ready');toast(`AI 已建立 ${result.proposals?.length||0} 筆 Proposed Update`);
       await reloadProposals();
@@ -235,7 +268,10 @@
       const msg=err?.message||String(err);
       $('#weeklyAiResult').innerHTML=`<div class="alert"><b>週報處理未完成</b><br>${esc(msg)}</div>`;
       toast(msg);
-    }finally{btn.disabled=!selectedFile;btn.textContent='上傳並由 AI 解析';}
+    }finally{
+      btn.disabled=!selectedFile||!canTriggerCodex;
+      btn.textContent=canTriggerCodex?'上傳並排入本機 Codex':'PM 才可啟動本機 Codex';
+    }
   }
 
   async function init(){
@@ -252,7 +288,28 @@
     targetOptions();$('#weeklyTargetType')?.addEventListener('change',targetOptions);
 
     try{me=await API.me();}catch(_){return;}
+    canTriggerCodex=me?.can_trigger_codex!==false;
+    const analyzeButton=$('#weeklyAnalyzeBtn');
+    if(!canTriggerCodex){
+      analyzeButton.disabled=true;
+      analyzeButton.textContent='PM 才可啟動本機 Codex';
+      setAiState('PM only');
+    }
     await reloadProposals();
+    const activeJobId=sessionStorage.getItem(ACTIVE_JOB_KEY);
+    if(activeJobId){
+      try{
+        const report=JSON.parse(sessionStorage.getItem(ACTIVE_REPORT_KEY)||'{}');
+        const data=await API.getAnalysisJob(activeJobId);
+        const result=await waitForAnalysisJob(data.job,report);
+        result.report={...(result.report||{}),...report};
+        renderAiResult(result);setAiState('Proposals ready');await reloadProposals();
+      }catch(error){
+        setAiState('Needs attention');
+        $('#weeklyAiResult').innerHTML='<div class="alert"><b>本機分析未完成</b><br>'+
+          esc(error.message||String(error))+'</div>';
+      }
+    }
 
     $('#weeklyProposalForm')?.addEventListener('submit',async e=>{
       e.preventDefault();const btn=$('#weeklySubmitBtn');btn.disabled=true;btn.textContent='提交中...';

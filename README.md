@@ -1,130 +1,95 @@
 # SmartPort Progress Hub
 
-Web dashboard for SmartPort project planning, progress tracking, checkpoints, safety traceability, Item Functions, Technical Requirements, and review workflow.
+SmartPort 專案的規劃、進度、Checkpoint、安全追溯與週報審核介面。
 
-## Open the Hub
+`feature/local-ai-weekly` 的 v0.7 架構以 **Windows 本機後端取代 Cloudflare Worker 部署**：正式資料直接來自本機的 Private `SmartPort-Project-Control` Git clone；週報只在 PM 明確按下按鈕後，才會呼叫同一個 Windows 帳號登入的 Codex CLI。
 
-**SmartPort Progress Hub — Build 20260902.1750:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260902.1750
+## v0.7 架構
 
-Project data is protected by an access gate. Users must use one of the following methods:
-
-- **Guest Password** — password-authenticated, read-only access to Dashboard, Project, FSR, Item Function, ACL / Maturity, Technical Requirements, and CP / ACL. Workflow and administrative Settings are hidden.
-- **GitHub Organization Login** — GitHub OAuth login followed by an active `smartport-ntume` Organization membership check. Access then follows the Engineer / PM role.
-
-The private `SmartPort-Project-Control` repository remains private. The frontend repository does not contain the guest password or an ungated project snapshot.
-
-## Access model
-
-- **Guest Viewer** — password authenticated; read only; Dashboard + Project + Requirements visible; Workflow hidden.
-- **SmartPort-Engineers** — active `smartport-ntume` member; internal read access and Weekly Progress Proposal workflow; formal baseline editing disabled.
-- **SmartPort-PM** — active `smartport-ntume` member with Maintain / Write permission; full CRUD, PM Review, approval, and Guest Password management.
-- **Unauthenticated user** — no project data is loaded until Guest Password or Organization login succeeds.
-
-## Guest password security
-
-- The plaintext password is never committed to the frontend or README.
-- The access gate provides an optional **顯示密碼** control so the user can verify what they typed locally in the browser.
-- `SmartPort-Project-Control/project/access_control.json` stores only a salted PBKDF2-SHA256 hash.
-- Guest sessions are sealed by the Cloudflare Worker and expire after the configured session period.
-- Rotating the Guest Password changes the access-policy revision, so existing Guest sessions are revoked immediately.
-- The Worker uses a separate read-only GitHub token stored only as the Cloudflare secret `GUEST_REPO_TOKEN` to serve password-authenticated Guest data from the private Project-Control repository.
-- PM can rotate the Guest Password from **設定 / 備份 → Guest Access Password**.
-
-### Required Worker secret
-
-Guest mode requires one Cloudflare Runtime Secret:
-
-- `GUEST_REPO_TOKEN` — a fine-grained GitHub token restricted to `smartport-ntume/SmartPort-Project-Control` with **Contents: Read-only** permission.
-
-If GitHub returns 404 for the private repository, verify that the fine-grained token has `smartport-ntume` as its Resource owner, includes `SmartPort-Project-Control` in Repository access, and has completed any required Organization approval.
-
-Never commit this token to GitHub or paste it into the frontend configuration.
-
-## Navigation
-
-Guest mode:
-
-- **Dashboard** — integrated project status and Gantt
-- **Project** — Plan Editor, CP / ACL
-- **Requirements** — FSR, Item Function, ACL / Maturity, Technical Requirements
-- **Workflow** — hidden
-- **Settings** — hidden
-
-Authenticated Organization mode:
-
-- **Dashboard** — integrated project status and Gantt
-- **Project** — Plan Editor, CP / ACL
-- **Requirements** — FSR, Item Function, ACL / Maturity, Technical Requirements
-- **Workflow** — Weekly Reports, PM Review according to role
-- **設定 / 備份** — PM administration and project backup
-
-## Architecture
-
-```text
-Browser
-  ↓
-Access Gate
-  ├─ Guest Password
-  │    ↓
-  │  Cloudflare Worker
-  │    ↓ read-only service token
-  │  Private SmartPort-Project-Control
-  │
-  └─ GitHub OAuth
-       ↓
-     smartport-ntume membership check
-       ↓
-     Engineer / PM permissions
-       ↓
-     Private SmartPort-Project-Control
+```mermaid
+flowchart TD
+    B["Browser / GitHub Pages"] -->|"Tailscale HTTPS"| L["Windows Local Backend"]
+    L --> G["Private Project-Control Git clone"]
+    G -->|"pull / commit / push"| GH["GitHub"]
+    L -->|"PM explicit action only"| C["Local Codex CLI"]
 ```
 
-The formal project database and engineering reference data remain in the private `SmartPort-Project-Control` repository and are treated as the Source of Truth.
+- Cloudflare 不在本機部署的 request path 中。
+- Node 後端只 listen `127.0.0.1`，由 Tailscale Serve 提供 tailnet 內的 HTTPS。
+- GitHub OAuth 繼續驗證 `smartport-ntume` membership 與 Engineer / PM 權限。
+- 開頁、換頁、讀 Dashboard、Guest 登入都不會觸發 Codex。
+- Local Codex 預設 PM-only、單工執行、同報告去重、最多保留 5 個 active jobs。
+- AI 只建立 Proposed Updates；正式 WP / Subtask baseline 仍須 PM 核准。
+- Public snapshot 預設關閉。
 
-## AI Weekly Report Intake
+> 「Local Codex」是指 Codex CLI 與登入憑證在 Vincent 的電腦上執行，不代表模型離線運算。週報文字與必要的 project context 仍會透過 Codex 送到 OpenAI 服務；本方案不需要把 `OPENAI_API_KEY` 放在後端。
 
-Organization members can upload `.doc` / `.docx` weekly reports from **Workflow → Weekly Reports**. The original file is archived under `weekly_reports/<year>/<date>/<team>/` in the private Project-Control repository. The Worker then uses the OpenAI Responses API with Structured Outputs to map evidence-supported report content into WP/Subtask Proposed Updates. AI proposals never update the formal baseline directly; PM approval remains mandatory.
+## 開始使用
 
-Cloudflare Runtime Secrets required for the full workflow:
+完整 Windows 安裝與驗證步驟請看 [Local Backend Windows Setup](docs/LOCAL_BACKEND_WINDOWS.md)。最短流程如下：
 
-- `OPENAI_API_KEY` — OpenAI API access; never expose it to the browser.
-- `REPORT_REPO_TOKEN` — required when Engineer accounts are read-only; fine-grained GitHub token with **Contents: Read/Write** restricted to `SmartPort-Project-Control`. The Worker constrains uploads to `weekly_reports/`.
+```powershell
+git clone --branch feature/local-ai-weekly https://github.com/smartport-ntume/SmartPort-Progress-Hub.git
+Set-Location SmartPort-Progress-Hub
+npm install
+Copy-Item .env.example .env.local
 
-The Worker variable `OPENAI_MODEL` defaults to `gpt-5-mini`.
+New-Item -ItemType Directory -Force .runtime | Out-Null
+git clone --branch main https://github.com/smartport-ntume/SmartPort-Project-Control.git .runtime/SmartPort-Project-Control
 
-## Main workflow
-
-```text
-Engineer Progress / Weekly Report
-        ↓
-Parsed / Proposed Update
-        ↓
-PM Review
-        ↓
-PM Approved
-        ↓
-Formal GitHub Baseline
+codex login
+tailscale serve --bg 8787
 ```
 
-Main Hub functions currently include:
+填好 `.env.local` 的 Tailscale URL、GitHub OAuth Client ID / Secret 與 `SESSION_SECRET` 後：
 
-- Password / Organization access gate
-- Dashboard and integrated Gantt with automatic project time range, YYYY/MM labels, Owner filtering, and full Checkpoint detail
-- 19 Work Packages and 96 Subtasks
-- Machine-readable traceability backbone: FSR → WP → Subtask → Target CP, with structured CP FSR maturity targets
-- Interactive CP / FSR / WP / Subtask trace drawers and Traceability Health checks
-- Checkpoint / ACL tracking with synchronized Capability / Review
-- Conflict-safe per-Checkpoint GitHub save with latest-SHA merge/retry
-- FSR allocation and maturity tracking
-- Item Function IF-01～IF-16 reference
-- Technical Requirements and cross-subsystem interfaces
-- GitHub OAuth + Organization membership validation
-- Guest / Engineer / PM role separation
-- PM-managed Guest Password with immediate Guest-session revocation on rotation
-- Weekly Progress Proposal and PM Review workflow
+```powershell
+npm run doctor
+npm test
+npm start
+```
+
+其他 tailnet 成員可直接開 `https://<computer>.<tailnet>.ts.net`。若沿用 GitHub Pages，第一次用：
+
+```text
+https://smartport-ntume.github.io/SmartPort-Progress-Hub/?apiBase=https://<computer>.<tailnet>.ts.net
+```
+
+瀏覽器會記住後端 URL；本機電腦離線時，GitHub Pages 仍可開啟，但受保護的專案資料與操作不會載入。
+
+## 權限與觸發規則
+
+| 身分 | 專案讀取 | 編輯 baseline | 週報 / Proposal | 觸發 Local Codex |
+|---|---:|---:|---:|---:|
+| Guest | 是，唯讀 | 否 | 否 | 否 |
+| Engineer | 是 | 否 | Manual Proposal | 否（預設） |
+| PM | 是 | 是 | Review / Approve | 是，需按下按鈕 |
+
+如確定要讓 Engineer 也能使用本機 Codex，可在 `.env.local` 設定 `LOCAL_CODEX_REQUIRE_PM=false`。
+
+## 資料完整性與安全邊界
+
+- `.env.local`、Codex 工作目錄、job history 與 managed clones 都在 `.gitignore` 中。
+- HTTP static server 只公開 `index.html`、`js/`、`css/` 與明確允許的 public snapshot；不會公開環境檔、Git metadata 或後端程式碼。
+- Private Project-Control 使用專用 clone。寫入前執行 fast-forward pull、檢查 clean worktree 與 Git blob SHA，再 atomic write、commit、push。
+- Codex 收到的只有抽出的週報文字與當次 project context；CLI 使用 ephemeral、read-only sandbox、JSON Schema，並移除後端 secrets 的環境變數。
+- `.docx` 在本機解析；舊 `.doc` 需安裝 LibreOffice，否則請先轉成 `.docx`。
+- Public snapshot 是固定 allowlist 的去敏感化資料，且 `PUBLIC_SNAPSHOT_ENABLED=false` 為預設值。
+
+若 PM 明確發布過 public snapshot，可用 `?publicSnapshot=1` 進入不依賴本機後端的有限唯讀模式；未加這個參數時不會自動 fallback，避免使用者誤把公開快照當成最新正式資料。
+
+## 開發驗證
+
+```powershell
+npm run check
+npm test
+```
+
+測試包含 Git commit/push、stale SHA conflict、路徑與 symlink 防護、Local GitHub adapter、PM-only Codex、單工 queue、重複工作抑制、CORS、static allowlist 與 snapshot 去敏感化。
 
 ## Repositories
 
-- Frontend: `smartport-ntume/SmartPort-Progress-Hub`
-- Project Source of Truth: `smartport-ntume/SmartPort-Project-Control` (Private)
+- Frontend / Local Backend: `smartport-ntume/SmartPort-Progress-Hub`
+- Source of Truth: `smartport-ntume/SmartPort-Project-Control`（Private）
+
+舊 Cloudflare 設定仍保留在 `worker/wrangler.toml`，只作 rollback 參考；v0.7 的預設前端與啟動流程不依賴 Cloudflare 部署。
