@@ -84,7 +84,8 @@ test('Node server starts in local mode without exposing backend files', async t 
   assert.equal(health.status, 200);
   const healthBody = await health.json();
   assert.equal(healthBody.mode, 'local');
-  assert.equal(healthBody.local.repository.ready, true);
+  assert.equal(healthBody.local.ready, true);
+  assert.equal(healthBody.local.repository, undefined);
 
   const index = await fetch(origin + '/');
   assert.equal(index.status, 200);

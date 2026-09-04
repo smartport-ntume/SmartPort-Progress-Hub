@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { loadConfig, configProblems } from './config.mjs';
 import { GitRepositoryStore } from './git-store.mjs';
 import { CodexWeeklyRunner } from './codex-runner.mjs';
@@ -50,26 +51,33 @@ add(
 );
 
 try {
-  const tailscale = await runCommand('tailscale', ['status', '--json'], {
-    timeoutMs: 15_000,
-    allowNonZero: true
-  });
-  add('Tailscale', tailscale.code === 0, tailscale.code === 0 ? 'connected' : 'not connected');
-} catch (_) {
-  add('Tailscale', false, 'not installed or not on PATH');
+  const caddy = await runCommand(config.caddy.bin, ['version'], { timeoutMs: 15_000 });
+  add('Caddy', true, caddy.stdout.trim() || caddy.stderr.trim());
+} catch (error) {
+  add('Caddy', false, error.message);
 }
 
 try {
-  const serve = await runCommand('tailscale', ['serve', 'status'], {
-    timeoutMs: 15_000,
-    allowNonZero: true
-  });
-  let expectedHost = '';
-  try { expectedHost = new URL(config.publicBaseUrl).hostname; } catch (_) {}
-  const configured = serve.code === 0 && (!expectedHost || (serve.stdout + serve.stderr).includes(expectedHost));
-  add('Tailscale Serve', configured, configured ? expectedHost : 'run tailscale serve --bg ' + config.port);
-} catch (_) {
-  add('Tailscale Serve', false, 'not configured');
+  await fs.access(config.caddy.envFile);
+  const caddyEnv = await fs.readFile(config.caddy.envFile, 'utf8');
+  const domain = caddyEnv.match(/^\s*SMARTPORT_DOMAIN\s*=\s*([^\s#]+)\s*$/m)?.[1] || '';
+  let expectedDomain = '';
+  try { expectedDomain = new URL(config.publicBaseUrl).hostname; } catch (_) {}
+  add(
+    'Caddy hostname',
+    !!domain && domain === expectedDomain && !domain.includes('.example.'),
+    domain ? `${domain}${domain === expectedDomain ? '' : `; expected ${expectedDomain}`}` : 'SMARTPORT_DOMAIN is missing'
+  );
+  const validate = await runCommand(config.caddy.bin, [
+    'validate', '--config', config.caddy.configFile, '--envfile', config.caddy.envFile
+  ], { timeoutMs: 30_000, allowNonZero: true });
+  add(
+    'Caddy configuration',
+    validate.code === 0,
+    validate.code === 0 ? config.caddy.configFile : (validate.stderr || validate.stdout).trim()
+  );
+} catch (error) {
+  add('Caddy configuration', false, error.code === 'ENOENT' ? 'copy .env.caddy.example to .env.caddy' : error.message);
 }
 
 for (const check of checks) {

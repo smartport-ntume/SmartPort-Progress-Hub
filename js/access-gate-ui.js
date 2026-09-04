@@ -1,6 +1,7 @@
 (() => {
   const API=window.SmartPortAPI;
   const isSupabase=API.getMode?.()==='supabase';
+  const isSameOriginLocal=!isSupabase&&API.getBase?.()===window.location.origin;
 
   function esc(v=''){
     return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -15,12 +16,12 @@
       <div class="sp-gate-card">
         <div class="sp-gate-brand">SmartPort Progress Hub</div>
         <h2>Project Access</h2>
-        <p class="sp-gate-copy">${isSupabase?'直接使用訪客密碼或 GitHub 帳號登入；不需要安裝或連線其他軟體。':'請先連上 SmartPort 本機後端，再使用訪客密碼或 GitHub Organization 帳號登入。'}</p>
+        <p class="sp-gate-copy">${isSupabase||isSameOriginLocal?'直接使用訪客密碼或 GitHub 帳號登入；不需要安裝或連線其他軟體。':'請先連上 SmartPort 本機後端，再使用訪客密碼或 GitHub Organization 帳號登入。'}</p>
         <div id="spGateMessage" class="sp-gate-message" hidden></div>
         <div id="spBackendSetup" class="sp-gate-section sp-backend-setup" hidden>
           <label for="spBackendUrl">本機後端 URL</label>
           <div class="sp-gate-password-row">
-            <input id="spBackendUrl" type="url" placeholder="https://computer.tailnet-name.ts.net">
+            <input id="spBackendUrl" type="url" placeholder="https://progresshub.example.ntu.edu.tw">
             <button id="spBackendSave" type="button" class="sp-gate-primary">儲存並連線</button>
           </div>
           <div class="sp-gate-hint">GitHub Pages 只保存前端；API、Git Repo 與 Codex 都在授權的本機電腦。</div>

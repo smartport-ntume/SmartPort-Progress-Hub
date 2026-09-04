@@ -1,9 +1,7 @@
-// Deployment values are public browser configuration, not secrets.
-// Never put SUPABASE_SERVICE_ROLE_KEY, GitHub tokens, or Codex credentials here.
+// Public deployment configuration. Secrets stay in the server-side .env.local.
 window.SMARTPORT_RUNTIME_CONFIG = Object.freeze({
-  backendMode: 'supabase',
-  supabaseUrl: 'https://omnevhesguhofipvfccf.supabase.co',
-  supabaseAnonKey: 'sb_publishable_yGqV5RVgSBegesB2dazjLg_f1HqnrXQ',
-  guestEmail: '',
-  reportBucket: 'weekly-reports'
+  backendMode: 'local',
+  lockBackend: true,
+  apiBase: 'same-origin',
+  lockApiBase: true
 });

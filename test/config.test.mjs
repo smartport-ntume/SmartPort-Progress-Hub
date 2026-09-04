@@ -13,6 +13,7 @@ function validEnv(overrides = {}) {
     GITHUB_CLIENT_ID: 'client',
     GITHUB_CLIENT_SECRET: 'secret',
     SESSION_SECRET: 'a-secure-random-session-secret-over-32-characters',
+    LOCAL_CODEX_ALLOWED_LOGINS: 'vincent',
     PROJECT_REPO_PATH: '../smartport-project-control',
     ...overrides
   };
@@ -36,6 +37,20 @@ test('local configuration requires loopback plus an HTTPS public origin', () => 
 
   const sharedSource = configProblems(loadConfig(validEnv({ PROJECT_REPO_PATH: '.' }), root));
   assert.ok(sharedSource.some(problem => problem.includes('dedicated Project-Control clone')));
+
+  const missingCodexAllowlist = configProblems(loadConfig(validEnv({ LOCAL_CODEX_ALLOWED_LOGINS: '' }), root));
+  assert.ok(missingCodexAllowlist.some(problem => problem.includes('LOCAL_CODEX_ALLOWED_LOGINS')));
+
+  const placeholderCodexAllowlist = configProblems(loadConfig(validEnv({
+    LOCAL_CODEX_ALLOWED_LOGINS: 'YOUR_GITHUB_LOGIN'
+  }), root));
+  assert.ok(placeholderCodexAllowlist.some(problem => problem.includes('placeholder')));
+
+  const disabledCodex = configProblems(loadConfig(validEnv({
+    LOCAL_CODEX_ENABLED: 'false',
+    LOCAL_CODEX_ALLOWED_LOGINS: ''
+  }), root));
+  assert.ok(!disabledCodex.some(problem => problem.includes('LOCAL_CODEX_ALLOWED_LOGINS')));
 });
 
 test('Supabase Agent configuration does not require a public listener or OAuth app', () => {

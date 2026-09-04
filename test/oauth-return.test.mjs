@@ -25,6 +25,8 @@ test('GitHub OAuth returns to the frontend that initiated login', async t => {
     'https://backend.example/auth/login?return_to=' + encodeURIComponent(returnTo)
   ), env, {});
   assert.equal(login.status, 302);
+  assert.match(login.headers.get('set-cookie'), /SameSite=Lax/);
+  assert.doesNotMatch(login.headers.get('set-cookie'), /SameSite=None/);
   const authorization = new URL(login.headers.get('location'));
   const state = authorization.searchParams.get('state');
   const stateCookie = login.headers.get('set-cookie').match(/^sp_state=([^;]+)/)[1];

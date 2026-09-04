@@ -159,9 +159,11 @@
   $('#showSubs').addEventListener('change',renderGantt);
   $('#btnReload').onclick=load;
   $('#apiBase').value=API.getBase();
-  if(API.getMode?.()==='supabase'){
+  if(API.getMode?.()==='supabase'||window.SMARTPORT_CONFIG?.apiBaseLocked){
     $('#apiBase').readOnly=true;
-    $('#apiBase').previousElementSibling.textContent='Supabase Project URL（部署設定）';
+    $('#apiBase').previousElementSibling.textContent=API.getMode?.()==='supabase'
+      ?'Supabase Project URL（部署設定）'
+      :'正式後端 URL（部署設定）';
     $('#btnSaveSettings').hidden=true;
   }
   $('#btnSaveSettings').onclick=()=>{try{API.setBase($('#apiBase').value);toast('本機後端 URL 已儲存')}catch(error){toast(error.message||String(error))}};

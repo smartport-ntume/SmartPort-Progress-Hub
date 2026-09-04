@@ -1,16 +1,19 @@
 {
   "name": "smartport-progress-hub",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
-  "description": "SmartPort Progress Hub with a Supabase Gateway and event-driven local Codex agent",
+  "description": "SmartPort Progress Hub with an NTU-hosted local backend and local Codex agent",
   "engines": {
     "node": ">=22.0"
   },
   "scripts": {
-    "start": "node --env-file-if-exists=.env.local local-server/supabase-agent.mjs",
-    "agent": "node --env-file-if-exists=.env.local local-server/supabase-agent.mjs",
-    "doctor": "node --env-file-if-exists=.env.local local-server/supabase-agent-doctor.mjs",
+    "start": "node --env-file-if-exists=.env.local local-server/server.mjs",
+    "start:public": "node --env-file-if-exists=.env.local local-server/server.mjs",
+    "doctor": "node --env-file-if-exists=.env.local local-server/doctor.mjs",
+    "probe": "node --env-file-if-exists=.env.local local-server/public-probe.mjs",
+    "agent:supabase": "node --env-file-if-exists=.env.local local-server/supabase-agent.mjs",
+    "doctor:supabase": "node --env-file-if-exists=.env.local local-server/supabase-agent-doctor.mjs",
     "start:local": "node --env-file-if-exists=.env.local local-server/server.mjs",
     "doctor:local": "node --env-file-if-exists=.env.local local-server/doctor.mjs",
     "snapshot": "node --env-file-if-exists=.env.local local-server/publish-snapshot.mjs",

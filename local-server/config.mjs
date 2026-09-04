@@ -37,9 +37,24 @@ export function loadConfig(env = process.env, rootDir = process.cwd()) {
     host: String(env.HOST || '127.0.0.1'),
     port: integer(env.PORT, 8787, 1),
     serveFrontend: bool(env.SERVE_FRONTEND, true),
+    publicHealthDetails: bool(env.PUBLIC_HEALTH_DETAILS, false),
     frontendUrl,
     publicBaseUrl,
     allowedOrigins: [...new Set(allowedOrigins)],
+    caddy: {
+      bin: String(env.CADDY_BIN || 'caddy'),
+      configFile: path.resolve(rootDir, env.CADDYFILE || path.join('deploy', 'Caddyfile')),
+      envFile: path.resolve(rootDir, env.CADDY_ENV_FILE || '.env.caddy')
+    },
+    rateLimit: {
+      enabled: bool(env.RATE_LIMIT_ENABLED, true),
+      windowMs: integer(env.RATE_LIMIT_WINDOW_MS, 60_000, 1_000),
+      guestLoginWindowMs: integer(env.RATE_LIMIT_GUEST_LOGIN_WINDOW_MS, 600_000, 1_000),
+      guestLoginMax: integer(env.RATE_LIMIT_GUEST_LOGIN_MAX, 10, 1),
+      authMax: integer(env.RATE_LIMIT_AUTH_MAX, 60, 1),
+      writeMax: integer(env.RATE_LIMIT_WRITE_MAX, 120, 1),
+      apiMax: integer(env.RATE_LIMIT_API_MAX, 600, 1)
+    },
     github: {
       clientId: String(env.GITHUB_CLIENT_ID || ''),
       clientSecret: String(env.GITHUB_CLIENT_SECRET || ''),
@@ -67,6 +82,7 @@ export function loadConfig(env = process.env, rootDir = process.cwd()) {
     codex: {
       enabled: bool(env.LOCAL_CODEX_ENABLED, true),
       requirePm: bool(env.LOCAL_CODEX_REQUIRE_PM, true),
+      allowedLogins: list(env.LOCAL_CODEX_ALLOWED_LOGINS).map(item => item.toLowerCase()),
       bin: String(env.CODEX_BIN || 'codex'),
       model: String(env.CODEX_MODEL || ''),
       timeoutMs: integer(env.CODEX_TIMEOUT_MS, 900_000, 10_000),
@@ -111,7 +127,13 @@ export function configProblems(config) {
     }
   }
   if (!['127.0.0.1', 'localhost', '::1'].includes(config.host)) {
-    problems.push('HOST must stay on loopback; expose the service through Tailscale Serve');
+    problems.push('HOST must stay on loopback; expose the service through a trusted HTTPS reverse proxy');
+  }
+  if (config.codex.enabled && !config.codex.allowedLogins.length) {
+    problems.push('LOCAL_CODEX_ALLOWED_LOGINS must explicitly list who may trigger Local Codex');
+  }
+  if (config.codex.enabled && config.codex.allowedLogins.some(login => login === 'your_github_login')) {
+    problems.push('LOCAL_CODEX_ALLOWED_LOGINS still contains the example placeholder');
   }
   if (path.resolve(config.project.path) === path.resolve(config.rootDir)) {
     problems.push('PROJECT_REPO_PATH must be a dedicated Project-Control clone, not the Hub source directory');

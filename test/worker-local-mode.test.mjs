@@ -22,11 +22,12 @@ test('local mode keeps Codex PM-only and never queues work during health checks'
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
   let canApprove = false;
+  let currentLogin = 'engineer';
   let enqueueCount = 0;
   globalThis.fetch = async input => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.pathname === '/user') {
-      return Response.json({ login: 'engineer' });
+      return Response.json({ login: currentLogin });
     }
     if (url.pathname === '/repos/example/private-project') {
       return Response.json({ permissions: { pull: true, push: canApprove, maintain: canApprove } });
@@ -41,6 +42,9 @@ test('local mode keeps Codex PM-only and never queues work during health checks'
     PROJECT_REPO: 'example/private-project',
     SESSION_SECRET: secret,
     LOCAL_CODEX_REQUIRE_PM: true,
+    LOCAL_CODEX_ENABLED: true,
+    LOCAL_CODEX_ALLOWED_LOGINS: 'engineer',
+    LOCAL_CODEX_RUNNER: async () => ({ proposals: [] }),
     LOCAL_JOB_QUEUE: {
       async enqueue() {
         enqueueCount += 1;
@@ -76,5 +80,11 @@ test('local mode keeps Codex PM-only and never queues work during health checks'
   const accepted = await app.fetch(request(), env, {});
   assert.equal(accepted.status, 202);
   assert.equal((await accepted.json()).job.id, 'job-1');
+  assert.equal(enqueueCount, 1);
+
+  currentLogin = 'another-pm';
+  const notAllowlisted = await app.fetch(request(), env, {});
+  assert.equal(notAllowlisted.status, 403);
+  assert.equal((await notAllowlisted.json()).error, 'local_codex_login_not_allowed');
   assert.equal(enqueueCount, 1);
 });

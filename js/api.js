@@ -16,17 +16,18 @@
     const parsed=new URL(raw,window.location.href);
     const loopback=['localhost','127.0.0.1'].includes(parsed.hostname);
     if(parsed.protocol!=='https:'&&!(parsed.protocol==='http:'&&loopback)){
-      throw new Error('本機後端請使用 Tailscale HTTPS；只有 localhost 可以使用 HTTP');
+      throw new Error('公開後端必須使用 HTTPS；只有 localhost 可以使用 HTTP');
     }
     return parsed.origin+parsed.pathname.replace(/\/$/,'');
   }
 
   try{
-    const supplied=new URLSearchParams(window.location.search).get('apiBase');
+    const supplied=cfg.apiBaseLocked?'':new URLSearchParams(window.location.search).get('apiBase');
     if(supplied)localStorage.setItem('smartport.apiBase',normalizeBase(supplied));
   }catch(_){}
 
   function base() {
+    if(cfg.apiBaseLocked)return (cfg.apiBase||'').replace(/\/$/,'');
     const saved = localStorage.getItem('smartport.apiBase');
     if(saved?.replace(/\/$/,'')===LEGACY_CLOUDFLARE_BASE){
       localStorage.removeItem('smartport.apiBase');
@@ -101,6 +102,7 @@
     getBase: base,
     getRole() { return currentRole; },
     setBase(url) {
+      if(cfg.apiBaseLocked)throw new Error('後端位址已由部署設定鎖定');
       const normalized=normalizeBase(url);
       if(normalized)localStorage.setItem('smartport.apiBase',normalized);
       else localStorage.removeItem('smartport.apiBase');

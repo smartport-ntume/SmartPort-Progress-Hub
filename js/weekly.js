@@ -9,6 +9,7 @@
   let selectedFile = null;
   let latestAnalysis = null;
   let canTriggerCodex = false;
+  const usesSupabase=API.getMode?.()==='supabase';
   const ACTIVE_JOB_KEY='smartport.weeklyAnalysisJob';
   const ACTIVE_REPORT_KEY='smartport.weeklyAnalysisReport';
 
@@ -27,9 +28,9 @@
     root.innerHTML=`
       <div class="weekly-intake-grid">
         <div class="panel weekly-upload-panel">
-          <div class="panel-title"><span>Weekly Report Intake</span><span class="revision-badge">Supabase Gateway · Local Codex</span></div>
+          <div class="panel-title"><span>Weekly Report Intake</span><span class="revision-badge">${usesSupabase?'Supabase Gateway':'Local HTTPS Backend'} · Local Codex</span></div>
           <form id="weeklyReportUploadForm" class="weekly-upload-body">
-            <div class="alert info"><b>只有被授權的 PM 按下按鈕後，本機 Codex 才會啟動。</b><br>Word 檔先暫存 Supabase；本機 Agent 收到事件後保存到 Private Git 並刪除暫存檔。開啟頁面不會觸發 Codex，AI 也不會直接寫入正式 baseline。</div>
+            <div class="alert info"><b>只有白名單中的 PM 按下按鈕後，本機 Codex 才會啟動。</b><br>${usesSupabase?'Word 檔先暫存 Supabase；本機 Agent 收到事件後保存到 Private Git 並刪除暫存檔。':'Word 檔透過 HTTPS 傳到本機後端並直接保存到 Private Git。'}開啟頁面不會觸發 Codex，AI 也不會直接寫入正式 baseline。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
               <div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div>
@@ -42,7 +43,7 @@
             <div id="weeklySelectedFile" class="weekly-selected-file muted">尚未選擇檔案</div>
             <div class="weekly-upload-actions">
               <button id="weeklyAnalyzeBtn" class="btn primary" type="submit" disabled>上傳並排入本機 Codex</button>
-              <span class="muted">流程：Temporary Upload → Git Archive → Local Codex → Proposal → PM Review</span>
+              <span class="muted">流程：${usesSupabase?'Temporary Upload → ':''}Git Archive → Local Codex → Proposal → PM Review</span>
             </div>
           </form>
         </div>

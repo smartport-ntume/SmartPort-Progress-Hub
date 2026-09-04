@@ -1,18 +1,28 @@
 (() => {
   const params = new URLSearchParams(window.location.search);
   const runtime = window.SMARTPORT_RUNTIME_CONFIG || {};
-  const supplied = params.get('apiBase') || '';
   const publicSnapshotEnabled = params.get('publicSnapshot') === '1';
-  const requestedBackend = params.get('backend') || runtime.backendMode || 'supabase';
+  const requestedBackend = runtime.lockBackend === true
+    ? (runtime.backendMode || 'local')
+    : (params.get('backend') || runtime.backendMode || 'supabase');
   const backendMode = requestedBackend === 'local' ? 'local' : 'supabase';
+  const apiBaseLocked = backendMode === 'local' && runtime.lockApiBase === true;
+  const supplied = apiBaseLocked ? '' : (params.get('apiBase') || '');
+  const runtimeApiBase = String(runtime.apiBase || '').trim();
   const sameOriginLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) ||
     window.location.hostname.endsWith('.ts.net');
+  const configuredLocalBase = runtimeApiBase === 'same-origin'
+    ? window.location.origin
+    : runtimeApiBase;
 
   window.SMARTPORT_CONFIG = {
-    version: '0.8.0',
+    version: '0.9.0-local',
     backendMode,
     projectRepository: 'smartport-ntume/SmartPort-Project-Control',
-    apiBase: backendMode === 'local' ? (supplied || (sameOriginLocal ? window.location.origin : '')) : '',
+    apiBase: backendMode === 'local'
+      ? (supplied || configuredLocalBase || (sameOriginLocal ? window.location.origin : ''))
+      : '',
+    apiBaseLocked,
     supabase: {
       url: String(runtime.supabaseUrl || '').replace(/\/$/, ''),
       anonKey: String(runtime.supabaseAnonKey || ''),

@@ -77,8 +77,22 @@ function localCodexRequiresPm(env) {
   return env.LOCAL_CODEX_REQUIRE_PM === true || /^(1|true|yes|on)$/i.test(String(env.LOCAL_CODEX_REQUIRE_PM || ''));
 }
 
+function localCodexAllowedLogins(env) {
+  return String(env.LOCAL_CODEX_ALLOWED_LOGINS || '')
+    .split(',')
+    .map(item => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function canTriggerLocalCodex(login, access, env) {
+  const enabled = typeof env.LOCAL_CODEX_RUNNER === 'function' && env.LOCAL_CODEX_ENABLED !== false;
+  if (!enabled) return false;
+  if (localCodexRequiresPm(env) && !access?.can_approve) return false;
+  return localCodexAllowedLogins(env).includes(String(login || '').toLowerCase());
+}
+
 function cookie(name, value, maxAge) {
-  const bits = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'Secure', 'SameSite=None'];
+  const bits = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax'];
   if (maxAge != null) bits.push(`Max-Age=${maxAge}`);
   return bits.join('; ');
 }
@@ -475,11 +489,12 @@ export default {
           try { local = await env.LOCAL_STATUS_PROVIDER(); }
           catch (error) { local = { ready: false, error: error.message || String(error) }; }
         }
+        const showDetails = env.PUBLIC_HEALTH_DETAILS === true || /^(1|true|yes|on)$/i.test(String(env.PUBLIC_HEALTH_DETAILS || ''));
         return json({
           ok: local ? local.ready !== false : true,
           service: 'smartport-progress-hub-api',
           mode: local ? 'local' : 'cloud',
-          ...(local ? { local } : {})
+          ...(local ? { local: showDetails ? local : { ready: local.ready !== false } } : {})
         }, local?.ready === false ? 503 : 200, C);
       }
 
@@ -535,7 +550,7 @@ export default {
           repository_permission: access.permission,
           can_write: access.can_write,
           can_approve: access.can_approve,
-          can_trigger_codex: !localCodexRequiresPm(env) || access.can_approve
+          can_trigger_codex: canTriggerLocalCodex(me.login, access, env)
         }, 200, C);
       }
 
@@ -562,10 +577,13 @@ export default {
 
       if (url.pathname === '/api/reports/analyze' && request.method === 'POST') {
         const me=await requestActor(request,token,env);
-        if(localCodexRequiresPm(env)){
+        if(typeof env.LOCAL_CODEX_RUNNER==='function'){
           const access=await repoAccess(repo,token);
-          if(!access.can_approve){
+          if(localCodexRequiresPm(env)&&!access.can_approve){
             return json({error:'pm_permission_required_for_local_codex',message:'PM permission is required to trigger Local Codex'},403,C);
+          }
+          if(!canTriggerLocalCodex(me.login,access,env)){
+            return json({error:'local_codex_login_not_allowed',message:'This account is not allowed to trigger Local Codex'},403,C);
           }
         }
         const payload=await request.json();

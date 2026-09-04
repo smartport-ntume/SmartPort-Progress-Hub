@@ -9,6 +9,7 @@ import { LocalJobQueue } from './job-queue.mjs';
 import { CodexWeeklyRunner } from './codex-runner.mjs';
 import { SnapshotPublisher } from './snapshot.mjs';
 import { serveStaticFile } from './static-files.mjs';
+import { RequestRateLimiter } from './rate-limit.mjs';
 
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 const config = loadConfig();
@@ -63,6 +64,7 @@ const jobQueue = new LocalJobQueue({
   historyFile: path.join(config.runtimeDir, 'jobs', 'history.json'),
   maxActive: config.codex.maxActiveJobs
 });
+const rateLimiter = new RequestRateLimiter(config.rateLimit);
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = createLocalGitHubFetch({ nativeFetch, store: projectStore });
@@ -78,7 +80,10 @@ const workerEnv = {
   GUEST_REPO_TOKEN: LOCAL_READ_TOKEN,
   REPORT_REPO_TOKEN: LOCAL_WRITE_TOKEN,
   LOCAL_CODEX_MODEL: config.codex.model || 'Codex account',
+  LOCAL_CODEX_ENABLED: config.codex.enabled,
   LOCAL_CODEX_REQUIRE_PM: config.codex.requirePm,
+  LOCAL_CODEX_ALLOWED_LOGINS: config.codex.allowedLogins.join(','),
+  PUBLIC_HEALTH_DETAILS: config.publicHealthDetails,
   LOCAL_CODEX_RUNNER: input => codexRunner.analyze(input),
   LOCAL_JOB_QUEUE: jobQueue,
   LOCAL_SNAPSHOT_PUBLISHER: config.snapshot.enabled
@@ -149,6 +154,16 @@ async function sendFetchResponse(nodeResponse, fetchResponse) {
 const server = http.createServer(async (request, response) => {
   try {
     const pathname = new URL(request.url || '/', 'http://local').pathname;
+    const rate = rateLimiter.consume(request, pathname);
+    if (!rate.allowed) {
+      response.writeHead(429, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Retry-After': String(rate.retryAfter),
+        'Cache-Control': 'no-store'
+      });
+      response.end(JSON.stringify({ error: 'rate_limit_exceeded', retry_after: rate.retryAfter }));
+      return;
+    }
     if (!pathname.startsWith('/api/') && !pathname.startsWith('/auth/')) {
       if (config.serveFrontend && await serveStaticFile(request, response, config.rootDir, {
         allowPublicSnapshot: config.snapshot.enabled
