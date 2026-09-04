@@ -14,4 +14,8 @@ test('Supabase migration keeps browser writes behind RLS and a role-checking RPC
   assert.match(sql, /file_size_limit[\s\S]*10485760/i);
   assert.match(sql, /alter publication supabase_realtime add table public\.gateway_jobs/i);
   assert.doesNotMatch(sql, /grant (insert|update|delete).*gateway_jobs to authenticated/i);
+  assert.match(
+    sql,
+    /grant select, insert, update, delete\s+on table[\s\S]*public\.reference_snapshots,[\s\S]*public\.agent_state,[\s\S]*to service_role/i
+  );
 });

@@ -282,6 +282,22 @@ grant select on public.gateway_jobs to authenticated;
 grant select on public.agent_state to authenticated;
 grant select on public.audit_log to authenticated;
 
+-- A Supabase secret key resolves to service_role. BYPASSRLS skips policies, but
+-- PostgreSQL table grants are still required for the local Agent's server-side
+-- reads and writes.
+grant usage on schema public to service_role;
+grant select, insert, update, delete
+on table
+  public.profiles,
+  public.project_snapshots,
+  public.reference_snapshots,
+  public.proposal_snapshots,
+  public.gateway_jobs,
+  public.agent_state,
+  public.audit_log
+to service_role;
+grant usage, select on sequence public.audit_log_id_seq to service_role;
+
 create or replace function public.enqueue_gateway_job(
   p_kind text,
   p_payload jsonb,
