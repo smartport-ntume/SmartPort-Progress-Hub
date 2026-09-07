@@ -145,7 +145,27 @@
 
   function exportSnapshot(){const blob=new Blob([JSON.stringify({project:S.project,work_packages:S.workPackages,subtasks:S.subtasks,functional_safety_requirements:S.fsrs,checkpoints:S.checkpoints},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`SmartPort_Project_Snapshot_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
   function renderAll(){renderSummary();renderGantt();renderPlan();renderFsr();renderCp()}
-  async function load(){try{const me=await API.me();window.SMARTPORT_ACCESS={...(window.SMARTPORT_ACCESS||{}),...me};$('#githubUser').value=me.login;const headerLogout=$('#btnHeaderLogout');if(headerLogout)headerLogout.hidden=!me.authenticated;const snap=await API.loadSnapshot();window.SmartPortStore.replaceSnapshot(snap);const connected=API.getMode?.()==='supabase'?`Supabase Gateway · ${me.login}`:`本機 Project Store 已連線 · ${me.login}`;setConnection(true,me.public_snapshot?`Public Snapshot · Read Only · ${String(snap.generated_at||'').slice(0,10)||'unknown date'}`:connected);renderAll()}catch(e){setConnection(false,'連線失敗');toast(e.message)}}
+  async function load(){
+    try{
+      const me=await API.me();
+      window.SMARTPORT_ACCESS={...(window.SMARTPORT_ACCESS||{}),...me};
+      $('#githubUser').value=me.login;
+      const headerLogout=$('#btnHeaderLogout');
+      if(headerLogout)headerLogout.hidden=!me.authenticated;
+      if(['UNAUTHENTICATED','DENIED'].includes(me.role)){
+        setConnection(false,me.role==='DENIED'?'帳號未授權':'等待登入');
+        return;
+      }
+      const snap=await API.loadSnapshot();
+      window.SmartPortStore.replaceSnapshot(snap);
+      const connected=API.getMode?.()==='supabase'?`Supabase Gateway · ${me.login}`:`本機 Project Store 已連線 · ${me.login}`;
+      setConnection(true,me.public_snapshot?`Public Snapshot · Read Only · ${String(snap.generated_at||'').slice(0,10)||'unknown date'}`:connected);
+      renderAll();
+    }catch(e){
+      setConnection(false,'連線失敗');
+      toast(e.message);
+    }
+  }
 
   document.addEventListener('click',e=>{
     const nav=e.target.closest('.nav button[data-view]');if(nav){switchView(nav.dataset.view);return}
