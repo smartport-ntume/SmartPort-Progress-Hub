@@ -23,9 +23,9 @@ Migration 會建立：
 | `gateway_jobs` | 耐久工作佇列與結果 | 只能經驗權 RPC 建立；本人或 PM 讀取 |
 | `agent_state` | Agent 最近連線／工作狀態 | Engineer / PM 讀取 |
 | `audit_log` | 不含週報本文的操作稽核 | PM 讀取 |
-| `weekly-reports` | 10 MB 上限的 private 暫存 bucket | Vincent 上傳自己的路徑；Agent 下載／刪除 |
+| `weekly-reports` | 10 MB 上限的 private 暫存 bucket | 授權 operator 上傳自己的路徑；Agent 下載／刪除 |
 
-`project_snapshots` 的 GUEST 與 MEMBER 列會發布同一份完整專案內容，讓 Supabase Guest 顯示結果與目前 `main` 的 Guest 一致。這不會提高 Guest 權限：RLS 仍只允許讀取指定 audience，前端仍隱藏 reports、review、settings，且 Guest 不能建立或修改工作。
+`project_snapshots` 的 GUEST 與 MEMBER 列會發布同一份完整專案內容，讓 Guest 在唯讀頁面看到完整的專案快照。這不會提高 Guest 權限：RLS 仍只允許讀取指定 audience，前端仍隱藏 reports、review、settings，且 Guest 不能建立或修改工作。
 
 ## 2. 設定 GitHub 登入
 
@@ -61,12 +61,12 @@ from auth.users u
 where p.user_id = u.id
   and lower(u.email) = lower('smartport-guest@example.com');
 
--- Vincent：先用 GitHub 登入一次，再以實際 GitHub login 取代範例。
+-- Codex operator：先用 GitHub 登入一次，再以實際 GitHub login 取代範例。
 update public.profiles
 set role = 'PM', active = true, can_trigger_codex = true
 where lower(login) = lower('YOUR_GITHUB_LOGIN');
 
--- 其他 PM 不會共用 Vincent 的 Codex。
+-- 其他 PM 不會自動共用 operator 的 Codex 權限。
 update public.profiles
 set role = 'PM', active = true, can_trigger_codex = false
 where lower(login) = lower('OTHER_PM_LOGIN');
@@ -109,8 +109,8 @@ Project URL、publishable/anon key 與 Guest email 都是 browser 設定，不�
 以平常執行 Agent 的同一個 Windows user 開 PowerShell：
 
 ```powershell
-git clone --branch feature/local-ai-weekly https://github.com/smartport-ntume/SmartPort-Progress-Hub.git
-Set-Location SmartPort-Progress-Hub
+git clone --branch main https://github.com/smartport-ntume/SmartPort-Progress-Hub.git SmartPort-Progress-Hub-Agent
+Set-Location SmartPort-Progress-Hub-Agent
 npm install
 Copy-Item .env.example .env.local
 
@@ -159,7 +159,7 @@ Mode: Realtime events + reconnect catch-up; no interval polling
 
 在 Windows Task Scheduler 建立工作：
 
-- Trigger：`At startup` 或 Vincent 登入時。
+- Trigger：`At startup` 或 Agent operator 登入時。
 - Program：`powershell.exe`
 - Arguments：`-NoProfile -ExecutionPolicy Bypass -File "C:\PATH\SmartPort-Progress-Hub\scripts\start-agent.ps1"`
 - 勾選失敗後重新啟動，並限制同一時間只執行一個 instance。
@@ -170,7 +170,7 @@ Mode: Realtime events + reconnect catch-up; no interval polling
 - 開啟網頁、切頁、讀 Dashboard：只讀 Supabase snapshot，不觸發本機 Agent 或 Codex。
 - Engineer 送 Manual Proposal：建立一個 job；Agent 建 GitHub Issue，再更新 Proposal snapshot。
 - PM 編輯／核准：建立一個 job；Agent pull、檢查 clean worktree、commit、push，再更新 snapshot。
-- Vincent 上傳週報並按下分析：暫存 Storage → Realtime job → Private Git archive → 刪除暫存 → Local Codex → Proposal。
+- Codex operator 上傳週報並按下分析：暫存 Storage → Realtime job → Private Git archive → 刪除暫存 → Local Codex → Proposal。
 - Agent 離線：job 保持 `queued`。重新上線訂閱成功時補查一次，不使用 interval polling。
 
 ## 8. 免費與資料量護欄

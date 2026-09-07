@@ -2,9 +2,9 @@
 
 > Legacy rollback only：v0.8 的預設部署已改為 [Supabase Gateway + Windows Local Agent](SUPABASE_GATEWAY_WINDOWS.md)，一般使用者不需要 Tailscale。
 
-這份文件把 SmartPort Progress Hub 安裝在 Vincent 的 Windows 帳號下。完成後，其他人透過 Tailscale HTTPS 使用前端；資料由本機 Private Git clone 提供，只有 PM 的明確操作會使用 Vincent 在該 Windows 帳號登入的 Codex。
+這份文件把 SmartPort Progress Hub 安裝在授權 operator 的 Windows 帳號下。完成後，其他人透過 Tailscale HTTPS 使用前端；資料由本機 Private Git clone 提供，只有 PM 的明確操作會使用該 Windows 帳號登入的 Codex。
 
-> 這是「本機執行 Codex CLI」，不是離線或 on-prem 模型。分析時，抽出的週報文字與必要 project context 仍會由 Codex CLI 傳送到 OpenAI 服務，並使用 Vincent 的 Codex 帳號權益。若要求資料完全不離開內網，需要改用本機模型，這不在本方案內。
+> 這是「本機執行 Codex CLI」，不是離線或 on-prem 模型。分析時，抽出的週報文字與必要 project context 仍會由 Codex CLI 傳送到 OpenAI 服務，並使用 operator 的 Codex 帳號權益。若要求資料完全不離開內網，需要改用本機模型，這不在本方案內。
 
 ## 1. 先準備工具
 
@@ -41,8 +41,8 @@ codex login status
 ## 2. Clone Hub 與 Private Project-Control
 
 ```powershell
-git clone --branch feature/local-ai-weekly https://github.com/smartport-ntume/SmartPort-Progress-Hub.git
-Set-Location SmartPort-Progress-Hub
+git clone --branch main https://github.com/smartport-ntume/SmartPort-Progress-Hub.git SmartPort-Progress-Hub-Agent
+Set-Location SmartPort-Progress-Hub-Agent
 npm install
 
 New-Item -ItemType Directory -Force .runtime | Out-Null
@@ -204,7 +204,7 @@ Local Codex 不會在這些動作執行：
 Tailscale Serve 已使用 `--bg` 保存設定，但 Node 後端仍要啟動。若用 Windows Task Scheduler：
 
 1. Trigger 選 **At log on**。
-2. 使用 Vincent 登入 Codex 的同一個 Windows user。
+2. 使用已登入 Codex 的同一個 Windows user。
 3. Action program 設 `powershell.exe`。
 4. Arguments 設：
 
@@ -212,7 +212,7 @@ Tailscale Serve 已使用 `--bg` 保存設定，但 Node 後端仍要啟動。�
    -NoProfile -ExecutionPolicy Bypass -Command "Set-Location 'C:\path\to\SmartPort-Progress-Hub'; npm start"
    ```
 
-5. 不要改成 `SYSTEM`；SYSTEM 看不到 Vincent 的 Codex login cache 與 Git Credential Manager credential。
+5. 不要改成 `SYSTEM`；SYSTEM 看不到 operator 的 Codex login cache 與 Git Credential Manager credential。
 
 正式啟用 Task Scheduler 前，先手動連續跑過一次 `npm run doctor` 與 `npm start`。
 
