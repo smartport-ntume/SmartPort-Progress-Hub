@@ -1,4 +1,5 @@
 import app from './main.js';
+import { corsHeaders } from './cors.js';
 
 const GH_API='https://api.github.com';
 
@@ -6,16 +7,6 @@ function json(data,status=200,headers={}){
   return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...headers}});
 }
 
-function cors(origin,frontendUrl){
-  const allowed=new URL(frontendUrl).origin;
-  return {
-    'Access-Control-Allow-Origin':origin===allowed?origin:allowed,
-    'Access-Control-Allow-Credentials':'true',
-    'Access-Control-Allow-Headers':'Content-Type, Authorization',
-    'Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    'Vary':'Origin'
-  };
-}
 
 function b64urlToBytes(s){
   s=String(s||'').replace(/-/g,'+').replace(/_/g,'/');
@@ -51,8 +42,12 @@ function parseCookies(req){
 }
 
 async function tokenFromRequest(req,env){
-  if(!env.SESSION_SECRET)return null;
   const auth=req.headers.get('Authorization')||'';
+  if(
+    env.INTERNAL_AGENT_BEARER&&env.LOCAL_GITHUB_TOKEN&&
+    auth===`Bearer ${env.INTERNAL_AGENT_BEARER}`
+  )return env.LOCAL_GITHUB_TOKEN;
+  if(!env.SESSION_SECRET)return null;
   if(auth.startsWith('Bearer ')){
     const s=await unseal(auth.slice(7),env.SESSION_SECRET);
     if(s?.token)return s.token;
@@ -266,7 +261,7 @@ export default{
 
     if(!cpMatch&&!isReference)return app.fetch(request,env,ctx);
 
-    const C=cors(request.headers.get('Origin')||'',env.FRONTEND_URL);
+    const C=corsHeaders(request.headers.get('Origin')||'',env);
     if(request.method==='OPTIONS')return new Response(null,{status:204,headers:C});
 
     try{

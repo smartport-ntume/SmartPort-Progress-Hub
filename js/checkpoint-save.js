@@ -2,31 +2,16 @@
   const API=window.SmartPortAPI;
   const S=window.SmartPortStore.state;
 
-  function tokenHeaders(){
-    const token=sessionStorage.getItem('smartport.session')||'';
-    return token?{'Authorization':`Bearer ${token}`} : {};
-  }
-
   function closeDrawer(){
     document.getElementById('drawer')?.classList.remove('open');
     document.getElementById('drawerBackdrop')?.classList.remove('open');
   }
 
   async function patchCheckpoint(id,patch){
-    const res=await fetch(`${API.getBase()}/api/project/checkpoints/${encodeURIComponent(id)}`,{
+    return API.request(`/api/project/checkpoints/${encodeURIComponent(id)}`,{
       method:'PATCH',
-      credentials:'include',
-      headers:{'Content-Type':'application/json',...tokenHeaders()},
       body:JSON.stringify(patch)
     });
-    const text=await res.text();
-    let body=null;
-    try{body=text?JSON.parse(text):null}catch(_){body=text}
-    if(!res.ok){
-      const detail=typeof body==='string'?body:(body?.error||JSON.stringify(body));
-      throw new Error(`API ${res.status}: ${detail}`);
-    }
-    return body;
   }
 
   document.addEventListener('submit',async e=>{

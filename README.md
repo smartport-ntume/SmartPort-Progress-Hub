@@ -1,130 +1,67 @@
 # SmartPort Progress Hub
 
-Web dashboard for SmartPort project planning, progress tracking, checkpoints, safety traceability, Item Functions, Technical Requirements, and review workflow.
+SmartPort 專案的規劃、進度、Checkpoint、安全追溯與週報審核介面。
 
-## Open the Hub
+v0.8 使用 **Supabase Free 作為公開 Gateway**，Windows 本機只執行事件驅動 Agent。訪客、Engineer 與 PM 都只需開啟 GitHub Pages；不必安裝 Tailscale，也不會直接連入 Vincent 的電腦。
 
-**SmartPort Progress Hub — Build 20260902.1750:**  
-https://smartport-ntume.github.io/SmartPort-Progress-Hub/?build=20260902.1750
-
-Project data is protected by an access gate. Users must use one of the following methods:
-
-- **Guest Password** — password-authenticated, read-only access to Dashboard, Project, FSR, Item Function, ACL / Maturity, Technical Requirements, and CP / ACL. Workflow and administrative Settings are hidden.
-- **GitHub Organization Login** — GitHub OAuth login followed by an active `smartport-ntume` Organization membership check. Access then follows the Engineer / PM role.
-
-The private `SmartPort-Project-Control` repository remains private. The frontend repository does not contain the guest password or an ungated project snapshot.
-
-## Access model
-
-- **Guest Viewer** — password authenticated; read only; Dashboard + Project + Requirements visible; Workflow hidden.
-- **SmartPort-Engineers** — active `smartport-ntume` member; internal read access and Weekly Progress Proposal workflow; formal baseline editing disabled.
-- **SmartPort-PM** — active `smartport-ntume` member with Maintain / Write permission; full CRUD, PM Review, approval, and Guest Password management.
-- **Unauthenticated user** — no project data is loaded until Guest Password or Organization login succeeds.
-
-## Guest password security
-
-- The plaintext password is never committed to the frontend or README.
-- The access gate provides an optional **顯示密碼** control so the user can verify what they typed locally in the browser.
-- `SmartPort-Project-Control/project/access_control.json` stores only a salted PBKDF2-SHA256 hash.
-- Guest sessions are sealed by the Cloudflare Worker and expire after the configured session period.
-- Rotating the Guest Password changes the access-policy revision, so existing Guest sessions are revoked immediately.
-- The Worker uses a separate read-only GitHub token stored only as the Cloudflare secret `GUEST_REPO_TOKEN` to serve password-authenticated Guest data from the private Project-Control repository.
-- PM can rotate the Guest Password from **設定 / 備份 → Guest Access Password**.
-
-### Required Worker secret
-
-Guest mode requires one Cloudflare Runtime Secret:
-
-- `GUEST_REPO_TOKEN` — a fine-grained GitHub token restricted to `smartport-ntume/SmartPort-Project-Control` with **Contents: Read-only** permission.
-
-If GitHub returns 404 for the private repository, verify that the fine-grained token has `smartport-ntume` as its Resource owner, includes `SmartPort-Project-Control` in Repository access, and has completed any required Organization approval.
-
-Never commit this token to GitHub or paste it into the frontend configuration.
-
-## Navigation
-
-Guest mode:
-
-- **Dashboard** — integrated project status and Gantt
-- **Project** — Plan Editor, CP / ACL
-- **Requirements** — FSR, Item Function, ACL / Maturity, Technical Requirements
-- **Workflow** — hidden
-- **Settings** — hidden
-
-Authenticated Organization mode:
-
-- **Dashboard** — integrated project status and Gantt
-- **Project** — Plan Editor, CP / ACL
-- **Requirements** — FSR, Item Function, ACL / Maturity, Technical Requirements
-- **Workflow** — Weekly Reports, PM Review according to role
-- **設定 / 備份** — PM administration and project backup
-
-## Architecture
-
-```text
-Browser
-  ↓
-Access Gate
-  ├─ Guest Password
-  │    ↓
-  │  Cloudflare Worker
-  │    ↓ read-only service token
-  │  Private SmartPort-Project-Control
-  │
-  └─ GitHub OAuth
-       ↓
-     smartport-ntume membership check
-       ↓
-     Engineer / PM permissions
-       ↓
-     Private SmartPort-Project-Control
+```mermaid
+flowchart TD
+    U["Guest / Engineer / PM"] --> S["GitHub Pages + Supabase Auth"]
+    S --> D["RLS snapshots + durable jobs"]
+    D -->|"Realtime event"| A["Vincent Windows Agent"]
+    A --> G["Private Project-Control Git"]
+    A -->|"explicit authorized job only"| C["Local Codex CLI"]
 ```
 
-The formal project database and engineering reference data remain in the private `SmartPort-Project-Control` repository and are treated as the Source of Truth.
+## 核心規則
 
-## AI Weekly Report Intake
+- Private Git 仍是正式資料來源；Supabase 不保存整份 repository 或 Git 憑證。
+- Guest 讀取與目前 `main` Guest 相同的完整唯讀專案內容；Engineer 可送 Manual Proposal；PM 可改 baseline 與審核。
+- `can_trigger_codex` 是獨立權限，預設全部關閉，只應開給 Vincent。
+- 本機 Agent 訂閱 Realtime `INSERT` 事件，不做 interval polling。啟動或斷線重連時只補查一次未處理工作。
+- Agent 離線時操作會留在 `gateway_jobs`；電腦恢復連線後再依序處理。
+- 週報暫存限制 10 MB。Agent 先寫入 Private Git，再刪除 Supabase Storage 暫存檔，之後才交給 Codex。
+- Codex 只產生 Proposal；正式進度仍須 PM Approve。
 
-Organization members can upload `.doc` / `.docx` weekly reports from **Workflow → Weekly Reports**. The original file is archived under `weekly_reports/<year>/<date>/<team>/` in the private Project-Control repository. The Worker then uses the OpenAI Responses API with Structured Outputs to map evidence-supported report content into WP/Subtask Proposed Updates. AI proposals never update the formal baseline directly; PM approval remains mandatory.
+## 開始使用
 
-Cloudflare Runtime Secrets required for the full workflow:
+完整步驟請看 [Supabase Gateway Windows Setup](docs/SUPABASE_GATEWAY_WINDOWS.md)。摘要：
 
-- `OPENAI_API_KEY` — OpenAI API access; never expose it to the browser.
-- `REPORT_REPO_TOKEN` — required when Engineer accounts are read-only; fine-grained GitHub token with **Contents: Read/Write** restricted to `SmartPort-Project-Control`. The Worker constrains uploads to `weekly_reports/`.
+1. 建立 Supabase Free project，執行 `supabase/migrations/202609030001_gateway.sql`。
+2. 設定 Supabase GitHub Auth、Guest user、PM / Engineer 角色與 Vincent 的 Codex 權限。
+3. 將 public Project URL、publishable/anon key、Guest email 填入 `js/runtime-config.js` 後發布 GitHub Pages。
+4. Windows 本機執行 `gh auth login`、`codex login`，填好 `.env.local`。
+5. 執行：
 
-The Worker variable `OPENAI_MODEL` defaults to `gpt-5-mini`.
-
-## Main workflow
-
-```text
-Engineer Progress / Weekly Report
-        ↓
-Parsed / Proposed Update
-        ↓
-PM Review
-        ↓
-PM Approved
-        ↓
-Formal GitHub Baseline
+```powershell
+npm install
+npm run check
+npm test
+npm run doctor
+npm start
 ```
 
-Main Hub functions currently include:
+`npm start` 只建立對外的 Supabase WebSocket/HTTPS 連線，不開公開 port。舊的 loopback HTTP 後端仍可用 `npm run start:local` 啟動，僅作 rollback。
 
-- Password / Organization access gate
-- Dashboard and integrated Gantt with automatic project time range, YYYY/MM labels, Owner filtering, and full Checkpoint detail
-- 19 Work Packages and 96 Subtasks
-- Machine-readable traceability backbone: FSR → WP → Subtask → Target CP, with structured CP FSR maturity targets
-- Interactive CP / FSR / WP / Subtask trace drawers and Traceability Health checks
-- Checkpoint / ACL tracking with synchronized Capability / Review
-- Conflict-safe per-Checkpoint GitHub save with latest-SHA merge/retry
-- FSR allocation and maturity tracking
-- Item Function IF-01～IF-16 reference
-- Technical Requirements and cross-subsystem interfaces
-- GitHub OAuth + Organization membership validation
-- Guest / Engineer / PM role separation
-- PM-managed Guest Password with immediate Guest-session revocation on rotation
-- Weekly Progress Proposal and PM Review workflow
+## 免費額度護欄
+
+- 不使用 Edge Functions、VPS、自訂網域或付費 add-on。
+- migration 同時限制 job payload/result 4 MB、snapshot 5 MB、週報單檔 10 MB。
+- 已完成 job 保留 30 天、audit metadata 保留 90 天；Agent 啟動與每次操作完成後清理。
+- 週報完成 Git archive 後立即刪除暫存，避免 Storage 持續累積。
+- 請保持 Supabase project 在 Free plan，不升級、不啟用付費功能。Free plan 達限額時應受限制，而不是讓系統自行升級。
+
+## 驗證
+
+```powershell
+npm run check
+npm test
+npm run doctor
+```
+
+測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限 SQL、Realtime 事件處理、週報先歸檔後刪暫存、CORS、static allowlist、公開快照去敏感化，以及 Supabase Guest 與 `main` Guest 的內容一致性。
 
 ## Repositories
 
-- Frontend: `smartport-ntume/SmartPort-Progress-Hub`
-- Project Source of Truth: `smartport-ntume/SmartPort-Project-Control` (Private)
+- Frontend / Local Agent: `smartport-ntume/SmartPort-Progress-Hub`
+- Source of Truth: `smartport-ntume/SmartPort-Project-Control`（Private）

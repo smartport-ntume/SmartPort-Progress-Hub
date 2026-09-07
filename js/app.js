@@ -17,7 +17,7 @@
   const statusOptions=['Not Updated','Planned','In Progress','On Track','At Risk','Blocked','Delayed','Done','Completed'];
 
   function toast(msg){const el=$('#toast');if(!el)return;el.textContent=msg;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),3400)}
-  function setConnection(ok,text){S.connected=!!ok;$('#connDot').className='conn-dot '+(ok?'online':'offline');$('#connText').textContent=text||(ok?'GitHub Project Store 已連線':'GitHub Project Store 未連線')}
+  function setConnection(ok,text){S.connected=!!ok;$('#connDot').className='conn-dot '+(ok?'online':'offline');$('#connText').textContent=text||(ok?'本機 Project Store 已連線':'本機 Project Store 未連線')}
   function switchView(name){$$('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));$$('.view').forEach(v=>v.classList.toggle('active',v.id===name))}
   function projectBounds(){const dates=[...S.workPackages.flatMap(t=>[d(t.start),d(t.end)]),...S.checkpoints.map(c=>d(c.date))].filter(x=>!Number.isNaN(+x));if(!dates.length){const now=new Date();return{start:now,end:new Date(+now+86400000)}}return{start:new Date(Math.min(...dates)),end:new Date(Math.max(...dates))}}
   function pos(dt){const b=projectBounds();return clamp((dt-b.start)/(b.end-b.start),0,1)*100}
@@ -145,7 +145,7 @@
 
   function exportSnapshot(){const blob=new Blob([JSON.stringify({project:S.project,work_packages:S.workPackages,subtasks:S.subtasks,functional_safety_requirements:S.fsrs,checkpoints:S.checkpoints},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`SmartPort_Project_Snapshot_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
   function renderAll(){renderSummary();renderGantt();renderPlan();renderFsr();renderCp()}
-  async function load(){try{const me=await API.me();window.SMARTPORT_ACCESS={...(window.SMARTPORT_ACCESS||{}),...me};setConnection(true,`GitHub Project Store 已連線 · ${me.login}`);$('#githubUser').value=me.login;const snap=await API.loadSnapshot();window.SmartPortStore.replaceSnapshot(snap);renderAll()}catch(e){setConnection(false,'連線失敗');toast(e.message)}}
+  async function load(){try{const me=await API.me();window.SMARTPORT_ACCESS={...(window.SMARTPORT_ACCESS||{}),...me};$('#githubUser').value=me.login;const headerLogout=$('#btnHeaderLogout');if(headerLogout)headerLogout.hidden=!me.authenticated;const snap=await API.loadSnapshot();window.SmartPortStore.replaceSnapshot(snap);const connected=API.getMode?.()==='supabase'?`Supabase Gateway · ${me.login}`:`本機 Project Store 已連線 · ${me.login}`;setConnection(true,me.public_snapshot?`Public Snapshot · Read Only · ${String(snap.generated_at||'').slice(0,10)||'unknown date'}`:connected);renderAll()}catch(e){setConnection(false,'連線失敗');toast(e.message)}}
 
   document.addEventListener('click',e=>{
     const nav=e.target.closest('.nav button[data-view]');if(nav){switchView(nav.dataset.view);return}
@@ -159,9 +159,17 @@
   $('#showSubs').addEventListener('change',renderGantt);
   $('#btnReload').onclick=load;
   $('#apiBase').value=API.getBase();
-  $('#btnSaveSettings').onclick=()=>{API.setBase($('#apiBase').value);toast('API URL 已儲存')};
+  if(API.getMode?.()==='supabase'){
+    $('#apiBase').readOnly=true;
+    $('#apiBase').previousElementSibling.textContent='Supabase Project URL（部署設定）';
+    $('#btnSaveSettings').hidden=true;
+  }
+  $('#btnSaveSettings').onclick=()=>{try{API.setBase($('#apiBase').value);toast('本機後端 URL 已儲存')}catch(error){toast(error.message||String(error))}};
   $('#btnLogin').onclick=()=>API.login();
   $('#btnLogout').onclick=()=>API.logout();
+  $('#btnHeaderLogout').onclick=()=>API.logout();
+  $('#btnRefreshGateway').hidden=API.getMode?.()!=='supabase';
+  $('#btnRefreshGateway').onclick=async()=>{const btn=$('#btnRefreshGateway');btn.disabled=true;btn.textContent='等待本機 Agent...';try{await API.publishPublicSnapshot();toast('Gateway Snapshot 已從 Private Git 更新');await load()}catch(error){toast(error.message||String(error))}finally{btn.disabled=false;btn.textContent='從 Private Git 更新 Gateway'}};
   $('#btnExportSnapshot').onclick=exportSnapshot;
   load();
 })();

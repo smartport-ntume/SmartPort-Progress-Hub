@@ -1,19 +1,10 @@
 import app from './reference.js';
+import { corsHeaders } from './cors.js';
 
 const GH_API='https://api.github.com';
 
 function json(data,status=200,headers={}){
   return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8',...headers}});
-}
-function cors(origin,frontendUrl){
-  const allowed=new URL(frontendUrl).origin;
-  return{
-    'Access-Control-Allow-Origin':origin===allowed?origin:allowed,
-    'Access-Control-Allow-Credentials':'true',
-    'Access-Control-Allow-Headers':'Content-Type, Authorization',
-    'Access-Control-Allow-Methods':'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    'Vary':'Origin'
-  };
 }
 function parseCookies(req){
   const out={};
@@ -56,8 +47,12 @@ async function unseal(value,secret){
   }catch(_){return null;}
 }
 async function sessionFromRequest(req,env){
-  if(!env.SESSION_SECRET)return null;
   const auth=req.headers.get('Authorization')||'';
+  if(
+    env.INTERNAL_AGENT_BEARER&&env.LOCAL_GITHUB_TOKEN&&
+    auth===`Bearer ${env.INTERNAL_AGENT_BEARER}`
+  )return{token:env.LOCAL_GITHUB_TOKEN,internal_agent:true};
+  if(!env.SESSION_SECRET)return null;
   if(auth.startsWith('Bearer ')){
     const s=await unseal(auth.slice(7),env.SESSION_SECRET);
     if(s)return s;
@@ -286,7 +281,7 @@ async function changeGuestPassword(request,env,C,session){
 export default{
   async fetch(request,env,ctx){
     const url=new URL(request.url);
-    const C=cors(request.headers.get('Origin')||'',env.FRONTEND_URL);
+    const C=corsHeaders(request.headers.get('Origin')||'',env);
     if(request.method==='OPTIONS')return new Response(null,{status:204,headers:C});
 
     try{
@@ -311,7 +306,7 @@ export default{
         if(url.pathname==='/api/me'&&request.method==='GET'){
           return json({
             login:'Guest Viewer',role:'GUEST',repository_permission:'guest-read',
-            can_write:false,can_approve:false,guest:true,
+            can_write:false,can_approve:false,can_trigger_codex:false,guest:true,
             allowed_views:policy.allowed_views||[]
           },200,C);
         }
@@ -322,9 +317,11 @@ export default{
 
       if(url.pathname.startsWith('/api/')&&url.pathname!=='/api/health'){
         if(!session?.token)return json({error:'authentication_required',login:`${url.origin}/auth/login`},401,C);
-        const org=env.GITHUB_ORG||'smartport-ntume';
-        if(!(await isOrgMember(session.token,org))){
-          return json({error:'organization_membership_required',organization:org},403,C);
+        if(!session.internal_agent){
+          const org=env.GITHUB_ORG||'smartport-ntume';
+          if(!(await isOrgMember(session.token,org))){
+            return json({error:'organization_membership_required',organization:org},403,C);
+          }
         }
       }
 
