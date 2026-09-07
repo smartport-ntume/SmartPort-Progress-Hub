@@ -49,3 +49,37 @@ test('browser Supabase adapter derives UI permissions only from the protected pr
   assert.equal(access.can_trigger_codex, true);
   assert.equal(access.repository_permission, 'write-via-local-agent');
 });
+
+test('browser Supabase adapter never queries protected snapshots before login', async t => {
+  const previousWindow = globalThis.window;
+  t.after(() => { globalThis.window = previousWindow; });
+  let tableQueries = 0;
+  const client = {
+    auth: {
+      async getSession() { return { data: { session: null }, error: null }; },
+      onAuthStateChange() { return { data: { subscription: { unsubscribe() {} } } }; }
+    },
+    from() {
+      tableQueries += 1;
+      throw new Error('anonymous table query must not run');
+    }
+  };
+  globalThis.window = {
+    supabase: { createClient: () => client },
+    location: { href: 'https://example.test/' }
+  };
+
+  await import('../js/supabase-api.js?test=anonymous-guard');
+  const api = globalThis.window.createSmartPortSupabaseAPI({
+    supabase: {
+      url: 'https://example.supabase.co',
+      anonKey: 'publishable-key-with-enough-length',
+      guestEmail: 'guest@example.com'
+    }
+  });
+
+  assert.equal((await api.me()).role, 'UNAUTHENTICATED');
+  assert.deepEqual(await api.listProposals(), { proposals: [] });
+  await assert.rejects(api.loadSnapshot(), error => error?.status === 401);
+  assert.equal(tableQueries, 0);
+});

@@ -98,6 +98,9 @@
     async function snapshotRow(table) {
       const db = requireClient();
       if (currentRole === 'UNAUTHENTICATED') await me();
+      if (currentRole === 'UNAUTHENTICATED' || currentRole === 'DENIED') {
+        throw Object.assign(new Error('authentication_required'), { status: 401 });
+      }
       const audience = currentRole === 'GUEST' ? 'GUEST' : 'MEMBER';
       const { data, error } = await db
         .from(table)
@@ -389,7 +392,7 @@
       async updateSubtask(id, payload) { return enqueueAndWait('update_subtask', { id, item: payload }); },
       async archiveSubtask(id) { return enqueueAndWait('archive_subtask', { id }); },
       async listProposals() {
-        if (currentRole === 'GUEST') return { proposals: [] };
+        if (['GUEST', 'UNAUTHENTICATED', 'DENIED'].includes(currentRole)) return { proposals: [] };
         const { data, error } = await requireClient()
           .from('proposal_snapshots')
           .select('payload')
