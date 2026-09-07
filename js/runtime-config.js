@@ -4,6 +4,6 @@ window.SMARTPORT_RUNTIME_CONFIG = Object.freeze({
   backendMode: 'supabase',
   supabaseUrl: 'https://omnevhesguhofipvfccf.supabase.co',
   supabaseAnonKey: 'sb_publishable_yGqV5RVgSBegesB2dazjLg_f1HqnrXQ',
-  guestEmail: '',
+  guestEmail: 'smartport@solab.me.ntu.edu.tw',
   reportBucket: 'weekly-reports'
 });
