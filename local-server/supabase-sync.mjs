@@ -20,7 +20,7 @@ export class SupabaseSnapshotPublisher {
   async publishProject() {
     const snapshot = await buildMemberSnapshot(this.projectStore);
     // Project planning content stays identical for Guest. The private roster and
-    // person-to-task assignments are removed while category labels remain usable.
+    // category-owner mappings are removed while category labels remain usable.
     const guestSnapshot = {
       ...snapshot,
       team_config: guestTeamConfig(snapshot.team_config, {

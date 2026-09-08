@@ -133,7 +133,8 @@ export async function buildMemberSnapshot(store) {
     functional_safety_requirements: fsrs.functional_safety_requirements || [],
     checkpoints: checkpoints.checkpoints || [],
     team_config: normalizeTeamConfig(teamConfig, {
-      referencedCategoryIds: referencedTeamIds(wpItems, subtaskItems)
+      referencedCategoryIds: referencedTeamIds(wpItems, subtaskItems),
+      subtasks: subtaskItems
     })
   };
 }

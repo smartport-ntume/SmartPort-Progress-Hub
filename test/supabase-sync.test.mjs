@@ -31,8 +31,8 @@ test('Supabase Guest keeps full project content but not the private team roster'
     'project/team_config.json': {
       schema_version: '1.0',
       categories: [{ id: 'CTL', name: '控制', color: '#5277bb', active: true, order: 1 }],
-      members: [{ id: 'member-1', name: '王小明', category_id: 'CTL', active: true }],
-      assignments: { 'ST-01': 'member-1' }
+      members: [{ id: 'member-1', name: '王小明', active: true }],
+      category_owners: { CTL: 'member-1' }
     }
   };
   const projectStore = {
@@ -73,9 +73,9 @@ test('Supabase Guest keeps full project content but not the private team roster'
   assert.deepEqual(guest.payload.checkpoints[0].review_checks, ['Evidence complete']);
   assert.equal(guest.payload.team_config.categories[0].name, '控制');
   assert.deepEqual(guest.payload.team_config.members, []);
-  assert.deepEqual(guest.payload.team_config.assignments, {});
+  assert.deepEqual(guest.payload.team_config.category_owners, {});
   assert.equal(member.payload.team_config.members[0].name, '王小明');
-  assert.equal(member.payload.team_config.assignments['ST-01'], 'member-1');
+  assert.equal(member.payload.team_config.category_owners.CTL, 'member-1');
   assert.deepEqual(result, {
     source_commit: 'abc123',
     generated_at: guest.payload.generated_at,

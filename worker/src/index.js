@@ -688,7 +688,8 @@ export default {
           functional_safety_requirements: fsr.json.functional_safety_requirements || [],
           checkpoints: cp.json.checkpoints || [],
           team_config: normalizeTeamConfig(teamConfig?.json, {
-            referencedCategoryIds: referencedTeamIds(workPackages, subtaskItems)
+            referencedCategoryIds: referencedTeamIds(workPackages, subtaskItems),
+            subtasks: subtaskItems
           })
         }, 200, C);
       }

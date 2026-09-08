@@ -5,7 +5,7 @@
     subtasks: [],
     fsrs: [],
     checkpoints: [],
-    teamConfig: window.SmartPortTeam?.defaults?.() || { schema_version: '1.0', categories: [], members: [], assignments: {} },
+    teamConfig: window.SmartPortTeam?.defaults?.() || { schema_version: '1.0', categories: [], members: [], category_owners: {} },
     connected: false,
     dirty: false
   };

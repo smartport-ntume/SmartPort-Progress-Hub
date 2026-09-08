@@ -12,7 +12,6 @@ const KNOWN_CATEGORIES = {
 const FALLBACK_COLORS = ['#456990', '#5b8e7d', '#7d5ba6', '#b36a5e', '#6b7280'];
 const CATEGORY_ID = /^[A-Z][A-Z0-9/_-]{0,31}$/;
 const MEMBER_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
-const SUBTASK_ID = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
 function text(value, maxLength) {
@@ -58,11 +57,14 @@ export function defaultTeamConfig(referencedCategoryIds = []) {
     schema_version: '1.0',
     categories,
     members: [],
-    assignments: {}
+    category_owners: {}
   };
 }
 
-export function normalizeTeamConfig(value, { referencedCategoryIds = [] } = {}) {
+export function normalizeTeamConfig(value, {
+  referencedCategoryIds = [],
+  subtasks = []
+} = {}) {
   const supplied = value && typeof value === 'object' ? value : null;
   const fallback = defaultTeamConfig(referencedCategoryIds);
   const rawCategories = Array.isArray(supplied?.categories) && supplied.categories.length
@@ -98,25 +100,45 @@ export function normalizeTeamConfig(value, { referencedCategoryIds = [] } = {}) 
 
   const members = [];
   const seenMembers = new Set();
-  for (const raw of Array.isArray(supplied?.members) ? supplied.members : []) {
+  const rawMembers = Array.isArray(supplied?.members) ? supplied.members : [];
+  for (const raw of rawMembers) {
     const id = text(raw?.id, 100);
-    const categoryId = text(raw?.category_id, 32);
-    if (!id || seenMembers.has(id) || !seenCategories.has(categoryId)) continue;
+    if (!id || seenMembers.has(id)) continue;
     seenMembers.add(id);
     members.push({
       id,
       name: text(raw?.name, 80),
-      category_id: categoryId,
       weekly_report_required: raw?.weekly_report_required !== false,
       active: raw?.active !== false
     });
   }
 
-  const assignments = {};
-  if (supplied?.assignments && typeof supplied.assignments === 'object' && !Array.isArray(supplied.assignments)) {
-    for (const [subtaskId, memberIdValue] of Object.entries(supplied.assignments)) {
+  const categoryOwners = {};
+  if (supplied?.category_owners && typeof supplied.category_owners === 'object' && !Array.isArray(supplied.category_owners)) {
+    for (const [categoryIdValue, memberIdValue] of Object.entries(supplied.category_owners)) {
+      const categoryId = text(categoryIdValue, 32);
       const memberId = text(memberIdValue, 100);
-      if (memberId && seenMembers.has(memberId)) assignments[text(subtaskId, 200)] = memberId;
+      if (seenCategories.has(categoryId) && seenMembers.has(memberId)) categoryOwners[categoryId] = memberId;
+    }
+  }
+
+  // Compatibility with the first preview version: infer one category owner from
+  // the former member.category_id or per-Subtask assignments when possible.
+  for (const raw of rawMembers) {
+    const categoryId = text(raw?.category_id, 32);
+    const memberId = text(raw?.id, 100);
+    if (seenCategories.has(categoryId) && seenMembers.has(memberId) && !categoryOwners[categoryId]) {
+      categoryOwners[categoryId] = memberId;
+    }
+  }
+  if (supplied?.assignments && typeof supplied.assignments === 'object' && !Array.isArray(supplied.assignments)) {
+    const categoryBySubtask = new Map(subtasks.map(item => [String(item?.id || ''), text(item?.owner_team, 32)]));
+    for (const [subtaskId, memberIdValue] of Object.entries(supplied.assignments)) {
+      const categoryId = categoryBySubtask.get(subtaskId);
+      const memberId = text(memberIdValue, 100);
+      if (seenCategories.has(categoryId) && seenMembers.has(memberId) && !categoryOwners[categoryId]) {
+        categoryOwners[categoryId] = memberId;
+      }
     }
   }
 
@@ -124,7 +146,7 @@ export function normalizeTeamConfig(value, { referencedCategoryIds = [] } = {}) 
     schema_version: '1.0',
     categories,
     members,
-    assignments,
+    category_owners: categoryOwners,
     ...(supplied?.updated_at ? { updated_at: text(supplied.updated_at, 40) } : {}),
     ...(supplied?.updated_by ? { updated_by: text(supplied.updated_by, 100) } : {})
   };
@@ -142,8 +164,8 @@ export function validateTeamConfig(value, { workPackages = [], subtasks = [] } =
     invalid('team_categories_must_contain_1_to_30_items');
   }
   if (!Array.isArray(value.members) || value.members.length > 300) invalid('team_members_array_required');
-  if (!value.assignments || typeof value.assignments !== 'object' || Array.isArray(value.assignments)) {
-    invalid('team_assignments_object_required');
+  if (!value.category_owners || typeof value.category_owners !== 'object' || Array.isArray(value.category_owners)) {
+    invalid('team_category_owners_object_required');
   }
 
   const categoryIds = new Set();
@@ -166,33 +188,25 @@ export function validateTeamConfig(value, { workPackages = [], subtasks = [] } =
   for (const member of value.members) {
     const id = text(member?.id, 100);
     const name = text(member?.name, 80);
-    const categoryId = text(member?.category_id, 32);
     if (!MEMBER_ID.test(id)) invalid('invalid_team_member_id');
     if (!name) invalid('team_member_name_required');
     if (memberIds.has(id)) invalid('duplicate_team_member_id');
-    if (!categoryIds.has(categoryId)) invalid(`unknown_team_member_category:${categoryId}`);
     memberIds.add(id);
     memberById.set(id, member);
   }
 
-  const subtaskById = new Map(subtasks.map(item => [String(item?.id || ''), item]));
-  const entries = Object.entries(value.assignments);
-  if (entries.length > 5000) invalid('too_many_team_assignments');
-  for (const [subtaskId, memberIdValue] of entries) {
+  const ownerEntries = Object.entries(value.category_owners);
+  if (ownerEntries.length > 30) invalid('too_many_team_category_owners');
+  for (const [categoryId, memberIdValue] of ownerEntries) {
     const memberId = text(memberIdValue, 100);
-    if (!SUBTASK_ID.test(subtaskId)) invalid('invalid_assignment_subtask_id');
-    if (!memberIds.has(memberId)) invalid(`unknown_assignment_member:${memberId}`);
-    const subtask = subtaskById.get(subtaskId);
-    if (!subtask) invalid(`unknown_assignment_subtask:${subtaskId}`);
-    const member = memberById.get(memberId);
-    if (member?.active === false) invalid(`inactive_assignment_member:${memberId}`);
-    if (String(subtask.owner_team || '') !== String(member?.category_id || '')) {
-      invalid(`assignment_category_mismatch:${subtaskId}`);
-    }
+    if (!categoryIds.has(categoryId)) invalid(`unknown_team_owner_category:${categoryId}`);
+    if (!memberIds.has(memberId)) invalid(`unknown_team_owner_member:${memberId}`);
+    if (memberById.get(memberId)?.active === false) invalid(`inactive_team_owner_member:${memberId}`);
   }
 
   return normalizeTeamConfig(value, {
-    referencedCategoryIds: referencedTeamIds(workPackages, subtasks)
+    referencedCategoryIds: referencedTeamIds(workPackages, subtasks),
+    subtasks
   });
 }
 
@@ -202,6 +216,6 @@ export function guestTeamConfig(value, context = {}) {
     schema_version: normalized.schema_version,
     categories: normalized.categories,
     members: [],
-    assignments: {}
+    category_owners: {}
   };
 }

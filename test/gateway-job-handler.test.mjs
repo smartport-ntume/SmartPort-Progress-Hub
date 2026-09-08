@@ -43,7 +43,7 @@ test('GatewayJobHandler maps PM team configuration writes to the managed project
     internalBearer: 'internal-secret',
     supabase: {}
   });
-  const payload = { categories: [], members: [], assignments: {} };
+  const payload = { categories: [], members: [], category_owners: {} };
   const result = await handler.handle({ kind: 'write_team_config', actor_login: 'vincent', payload });
   assert.equal(new URL(captured.url).pathname, '/api/project/team-config');
   assert.equal(captured.method, 'PUT');

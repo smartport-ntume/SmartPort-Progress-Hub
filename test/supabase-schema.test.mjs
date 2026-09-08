@@ -27,7 +27,7 @@ test('team configuration jobs stay PM-only and validate bounded structured paylo
   assert.match(sql, /v_pm_only[\s\S]*'write_team_config'/i);
   assert.match(sql, /p_kind = 'write_team_config'[\s\S]*jsonb_typeof\(v_payload -> 'categories'\)[\s\S]*jsonb_array_length/i);
   assert.match(sql, /jsonb_typeof\(v_payload -> 'members'\)[\s\S]*300/i);
-  assert.match(sql, /jsonb_typeof\(v_payload -> 'assignments'\)[\s\S]*5000/i);
+  assert.match(sql, /jsonb_typeof\(v_payload -> 'category_owners'\)[\s\S]*30/i);
   assert.match(sql, /p_kind = any\(v_pm_only\) and v_profile\.role <> 'PM'/i);
   assert.doesNotMatch(sql, /grant (insert|update|delete).*gateway_jobs to authenticated/i);
 });

@@ -36,7 +36,7 @@
         ids.add(id);
       }
     });
-    return { schema_version: '1.0', categories, members: [], assignments: {} };
+    return { schema_version: '1.0', categories, members: [], category_owners: {} };
   }
 
   function normalize(value, workPackages = [], subtasks = []) {
@@ -72,31 +72,50 @@
     categories.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
     categories.forEach((item, index) => { item.order = index + 1; });
 
+    const rawMembers = Array.isArray(source.members) ? source.members : [];
     const members = [];
     const memberIds = new Set();
-    (Array.isArray(source.members) ? source.members : []).forEach(item => {
+    rawMembers.forEach(item => {
       const id = clean(item?.id, 100);
-      const categoryId = clean(item?.category_id, 32);
-      if (!id || memberIds.has(id) || !categoryIds.has(categoryId)) return;
+      if (!id || memberIds.has(id)) return;
       memberIds.add(id);
       members.push({
         id,
         name: clean(item?.name, 80),
-        category_id: categoryId,
         weekly_report_required: item?.weekly_report_required !== false,
         active: item?.active !== false
       });
     });
 
-    const assignments = {};
-    if (source.assignments && typeof source.assignments === 'object' && !Array.isArray(source.assignments)) {
-      Object.entries(source.assignments).forEach(([subtaskId, memberId]) => {
+    const categoryOwners = {};
+    if (source.category_owners && typeof source.category_owners === 'object' && !Array.isArray(source.category_owners)) {
+      Object.entries(source.category_owners).forEach(([categoryId, memberId]) => {
         const id = clean(memberId, 100);
-        if (id && memberIds.has(id)) assignments[clean(subtaskId, 200)] = id;
+        if (categoryIds.has(categoryId) && memberIds.has(id)) categoryOwners[categoryId] = id;
       });
     }
+
+    // Read the first preview schema without making users re-enter responsibility data.
+    rawMembers.forEach(item => {
+      const categoryId = clean(item?.category_id, 32);
+      const memberId = clean(item?.id, 100);
+      if (categoryIds.has(categoryId) && memberIds.has(memberId) && !categoryOwners[categoryId]) {
+        categoryOwners[categoryId] = memberId;
+      }
+    });
+    if (source.assignments && typeof source.assignments === 'object' && !Array.isArray(source.assignments)) {
+      const categoryBySubtask = new Map(subtasks.map(item => [String(item?.id || ''), clean(item?.owner_team, 32)]));
+      Object.entries(source.assignments).forEach(([subtaskId, memberId]) => {
+        const categoryId = categoryBySubtask.get(subtaskId);
+        const id = clean(memberId, 100);
+        if (categoryIds.has(categoryId) && memberIds.has(id) && !categoryOwners[categoryId]) {
+          categoryOwners[categoryId] = id;
+        }
+      });
+    }
+
     return {
-      schema_version: '1.0', categories, members, assignments,
+      schema_version: '1.0', categories, members, category_owners: categoryOwners,
       ...(source.updated_at ? { updated_at: clean(source.updated_at, 40) } : {}),
       ...(source.updated_by ? { updated_by: clean(source.updated_by, 100) } : {})
     };
@@ -106,8 +125,20 @@
     return config?.categories?.find(item => item.id === id) || null;
   }
 
+  function member(config, id) {
+    return config?.members?.find(item => item.id === id) || null;
+  }
+
   function activeCategories(config) {
     return (config?.categories || []).filter(item => item.active !== false);
+  }
+
+  function responsibleMember(config, categoryId) {
+    return member(config, config?.category_owners?.[categoryId]);
+  }
+
+  function memberCategories(config, memberId) {
+    return (config?.categories || []).filter(item => config?.category_owners?.[item.id] === memberId);
   }
 
   function reportScope(config, subtasks, memberId, today = new Date()) {
@@ -115,7 +146,7 @@
     cutoff.setMonth(cutoff.getMonth() + 1);
     cutoff.setHours(23, 59, 59, 999);
     return (subtasks || []).filter(item => {
-      if (config?.assignments?.[item.id] !== memberId) return false;
+      if (config?.category_owners?.[item.owner_team] !== memberId) return false;
       const progress = Number(item.actual_progress ?? item.progress ?? 0);
       if (progress >= 100 || ['Done', 'Completed'].includes(String(item.status || ''))) return false;
       const end = new Date(String(item.end || '') + 'T12:00:00');
@@ -132,7 +163,9 @@
     activeCategories,
     categoryName(config, id) { return category(config, id)?.name || id || '—'; },
     categoryColor(config, id) { return category(config, id)?.color || '#667085'; },
-    member(config, id) { return config?.members?.find(item => item.id === id) || null; },
+    member,
+    responsibleMember,
+    memberCategories,
     reportScope
   };
 })();

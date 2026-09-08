@@ -1,4 +1,4 @@
--- Editable team roster and one-person-per-Subtask responsibility assignments.
+-- Editable team roster and one responsible member inherited by each work category.
 -- Private Git remains the source of truth; Supabase only relays the PM write job.
 
 begin;
@@ -132,11 +132,11 @@ begin
     if jsonb_array_length(v_payload -> 'members') > 300 then
       raise exception 'too_many_team_members';
     end if;
-    if jsonb_typeof(v_payload -> 'assignments') is distinct from 'object' then
-      raise exception 'team_assignments_object_required';
+    if jsonb_typeof(v_payload -> 'category_owners') is distinct from 'object' then
+      raise exception 'team_category_owners_object_required';
     end if;
-    if (select count(*) from jsonb_object_keys(v_payload -> 'assignments')) > 5000 then
-      raise exception 'too_many_team_assignments';
+    if (select count(*) from jsonb_object_keys(v_payload -> 'category_owners')) > 30 then
+      raise exception 'too_many_team_category_owners';
     end if;
   end if;
 

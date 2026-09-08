@@ -41,10 +41,10 @@ PM 可在 **設定 / 備份 → 成員與分工** 維護專案名單與責任分
 
 - 預設分類為 `CTL`（控制）、`LOC/NAV`（定位＋導航）、`PER`（感知）、`STM`（狀態機＋任務）；名稱、顏色與啟用狀態可調整。
 - 已被既有 WP / Subtask 使用的其他分類會自動保留，例如 `VERIFY`，避免讀取舊資料時遺失工作。
-- 每個 Subtask 最多指定一位主要負責人；一位成員可負責多個 Subtask，WP 只作彙整。
-- 未指派的 Subtask 會明確標示。個人週報範圍預覽只列出該成員已指派、尚未完成，且已逾期或未來一個月內到期的項目。
+- 每個工作分類指定一位主要負責人；同一人可負責多個分類，WP 與 Subtask 依既有分類自動繼承，不需要逐項分派。
+- 使用中的分類若未設定負責人會明確標示。個人週報範圍預覽會自動列出該成員所負責分類中，尚未完成且已逾期或未來一個月內到期的 Subtask。
 - 儲存後由 Supabase Gateway 交給 Windows Agent，寫入 Private Project-Control repository 的 `project/team_config.json` 並 commit / push。
-- Guest 快照只保留分類名稱與顏色；成員姓名與 Subtask 分派只提供給 Engineer / PM。
+- Guest 快照只保留分類名稱與顏色；成員姓名與分類負責人對應只提供給 Engineer / PM。
 
 首次部署此功能前，請先在 Supabase SQL Editor 執行：
 
