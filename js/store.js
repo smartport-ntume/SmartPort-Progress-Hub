@@ -5,6 +5,7 @@
     subtasks: [],
     fsrs: [],
     checkpoints: [],
+    teamConfig: window.SmartPortTeam?.defaults?.() || { schema_version: '1.0', categories: [], members: [], assignments: {} },
     connected: false,
     dirty: false
   };
@@ -15,8 +16,12 @@
     state.subtasks = snapshot.subtasks || [];
     state.fsrs = snapshot.functional_safety_requirements || snapshot.fsrs || [];
     state.checkpoints = snapshot.checkpoints || [];
+    state.teamConfig = window.SmartPortTeam?.normalize
+      ? window.SmartPortTeam.normalize(snapshot.team_config, state.workPackages, state.subtasks)
+      : (snapshot.team_config || state.teamConfig);
     state.connected = true;
     state.dirty = false;
+    document.dispatchEvent(new CustomEvent('smartport:snapshot-replaced'));
   }
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }

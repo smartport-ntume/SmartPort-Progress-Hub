@@ -2,20 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SupabaseSnapshotPublisher } from '../local-server/supabase-sync.mjs';
 
-test('Supabase Guest project snapshot matches the full Member snapshot', async () => {
+test('Supabase Guest keeps full project content but not the private team roster', async () => {
   const documents = {
     'project/project.json': {
       name: 'SmartPort', scope: 'Full project scope', target_date: '2026-12-31', methodology: 'V-model'
     },
     'project/work_packages.json': {
       work_packages: [{
-        id: 'WP-01', name: 'Control', description: 'Full work-package description',
+        id: 'WP-01', name: 'Control', owner: 'CTL', description: 'Full work-package description',
         evidence: ['design.pdf'], keywords: ['control']
       }]
     },
     'project/subtasks.json': {
       subtasks: [{
-        id: 'ST-01', parent_wp: 'WP-01', description: 'Full subtask description',
+        id: 'ST-01', parent_wp: 'WP-01', owner_team: 'CTL', description: 'Full subtask description',
         expected_evidence: ['test-report.pdf'], blockers: ['hardware'],
         pm_comments: ['reviewed'], github_issue: 42
       }]
@@ -27,6 +27,12 @@ test('Supabase Guest project snapshot matches the full Member snapshot', async (
       checkpoints: [{
         id: 'CP-01', fsr_targets: ['FSR-01'], review_checks: ['Evidence complete']
       }]
+    },
+    'project/team_config.json': {
+      schema_version: '1.0',
+      categories: [{ id: 'CTL', name: '控制', color: '#5277bb', active: true, order: 1 }],
+      members: [{ id: 'member-1', name: '王小明', category_id: 'CTL', active: true }],
+      assignments: { 'ST-01': 'member-1' }
     }
   };
   const projectStore = {
@@ -59,12 +65,17 @@ test('Supabase Guest project snapshot matches the full Member snapshot', async (
   const guest = publishedRows.find(row => row.audience === 'GUEST');
 
   assert.equal(publishedRows.length, 2);
-  assert.deepEqual(guest.payload, member.payload);
+  assert.notDeepEqual(guest.payload, member.payload);
   assert.equal(guest.payload.project.scope, 'Full project scope');
   assert.equal(guest.payload.work_packages[0].description, 'Full work-package description');
   assert.equal(guest.payload.subtasks[0].github_issue, 42);
   assert.equal(guest.payload.functional_safety_requirements[0].requirement, 'Complete safety requirement');
   assert.deepEqual(guest.payload.checkpoints[0].review_checks, ['Evidence complete']);
+  assert.equal(guest.payload.team_config.categories[0].name, '控制');
+  assert.deepEqual(guest.payload.team_config.members, []);
+  assert.deepEqual(guest.payload.team_config.assignments, {});
+  assert.equal(member.payload.team_config.members[0].name, '王小明');
+  assert.equal(member.payload.team_config.assignments['ST-01'], 'member-1');
   assert.deepEqual(result, {
     source_commit: 'abc123',
     generated_at: guest.payload.generated_at,

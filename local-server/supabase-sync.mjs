@@ -2,6 +2,7 @@ import {
   buildMemberSnapshot,
   buildReferenceSnapshot
 } from './snapshot.mjs';
+import { guestTeamConfig, referencedTeamIds } from '../worker/src/team-config.js';
 
 function assertResult(result, operation) {
   if (result?.error) throw new Error(`${operation}: ${result.error.message || result.error}`);
@@ -17,9 +18,15 @@ export class SupabaseSnapshotPublisher {
   }
 
   async publishProject() {
-    // Keep the Supabase Guest view identical to the existing main Guest view.
-    // Read-only access is enforced separately by Supabase RLS and UI permissions.
     const snapshot = await buildMemberSnapshot(this.projectStore);
+    // Project planning content stays identical for Guest. The private roster and
+    // person-to-task assignments are removed while category labels remain usable.
+    const guestSnapshot = {
+      ...snapshot,
+      team_config: guestTeamConfig(snapshot.team_config, {
+        referencedCategoryIds: referencedTeamIds(snapshot.work_packages, snapshot.subtasks)
+      })
+    };
     const updatedAt = new Date().toISOString();
     assertResult(await this.supabase.from('project_snapshots').upsert([
       {
@@ -27,7 +34,7 @@ export class SupabaseSnapshotPublisher {
         updated_by_agent: this.agentId, updated_at: updatedAt
       },
       {
-        audience: 'GUEST', payload: snapshot, source_commit: snapshot.source_commit,
+        audience: 'GUEST', payload: guestSnapshot, source_commit: snapshot.source_commit,
         updated_by_agent: this.agentId, updated_at: updatedAt
       }
     ], { onConflict: 'audience' }), 'publish_project_snapshots');

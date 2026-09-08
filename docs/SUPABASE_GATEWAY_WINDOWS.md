@@ -6,7 +6,9 @@
 
 1. 在 Supabase 建立一個 **Free** project。
 2. 不升級 Pro、不加入付費 add-on、不設定 custom domain。
-3. 到 SQL Editor 執行 `supabase/migrations/202609030001_gateway.sql` 全文。
+3. 到 SQL Editor 依序執行以下 migration 全文：
+   - `supabase/migrations/202609030001_gateway.sql`
+   - `supabase/migrations/202609080001_team_config.sql`
 4. 到 Project Settings → API 保存以下兩項：
    - Project URL
    - publishable key（或 legacy anon key）
@@ -25,7 +27,7 @@ Migration 會建立：
 | `audit_log` | 不含週報本文的操作稽核 | PM 讀取 |
 | `weekly-reports` | 10 MB 上限的 private 暫存 bucket | 授權 operator 上傳自己的路徑；Agent 下載／刪除 |
 
-`project_snapshots` 的 GUEST 與 MEMBER 列會發布同一份完整專案內容，讓 Guest 在唯讀頁面看到完整的專案快照。這不會提高 Guest 權限：RLS 仍只允許讀取指定 audience，前端仍隱藏 reports、review、settings，且 Guest 不能建立或修改工作。
+`project_snapshots` 的 GUEST 與 MEMBER 列會發布相同的甘特圖、需求與 Checkpoint 內容，讓 Guest 在唯讀頁面看到完整的專案快照；但 GUEST 快照會移除成員姓名與 Subtask 分派，只保留分類名稱與顏色。這不會提高 Guest 權限：RLS 仍只允許讀取指定 audience，前端仍隱藏 reports、review、settings，且 Guest 不能建立或修改工作。
 
 ## 2. 設定 GitHub 登入
 
@@ -170,6 +172,7 @@ Mode: Realtime events + reconnect catch-up; no interval polling
 - 開啟網頁、切頁、讀 Dashboard：只讀 Supabase snapshot，不觸發本機 Agent 或 Codex。
 - Engineer 送 Manual Proposal：建立一個 job；Agent 建 GitHub Issue，再更新 Proposal snapshot。
 - PM 編輯／核准：建立一個 job；Agent pull、檢查 clean worktree、commit、push，再更新 snapshot。
+- PM 儲存成員與分工：建立 `write_team_config` job；Agent 驗證每個分派後寫入 `project/team_config.json`，再更新 Guest / Member snapshot。
 - Codex operator 上傳週報並按下分析：暫存 Storage → Realtime job → Private Git archive → 刪除暫存 → Local Codex → Proposal。
 - Agent 離線：job 保持 `queued`。重新上線訂閱成功時補查一次，不使用 interval polling。
 

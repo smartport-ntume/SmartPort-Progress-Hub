@@ -94,6 +94,8 @@ export class GatewayJobHandler {
         return this.request('/api/safety/fsr', 'PUT', payload, job.actor_login);
       case 'write_checkpoints':
         return this.request('/api/project/checkpoints', 'PUT', payload, job.actor_login);
+      case 'write_team_config':
+        return this.request('/api/project/team-config', 'PUT', payload, job.actor_login);
       case 'create_subtask':
         return this.request('/api/project/subtasks', 'POST', payload, job.actor_login);
       case 'update_subtask':

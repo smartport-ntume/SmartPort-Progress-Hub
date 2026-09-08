@@ -388,6 +388,7 @@
       async saveWorkPackages(payload) { return enqueueAndWait('write_work_packages', payload); },
       async saveFSR(payload) { return enqueueAndWait('write_fsr', payload); },
       async saveCheckpoints(payload) { return enqueueAndWait('write_checkpoints', payload); },
+      async saveTeamConfig(payload) { return enqueueAndWait('write_team_config', payload); },
       async createSubtask(payload) { return enqueueAndWait('create_subtask', payload); },
       async updateSubtask(id, payload) { return enqueueAndWait('update_subtask', { id, item: payload }); },
       async archiveSubtask(id) { return enqueueAndWait('archive_subtask', { id }); },

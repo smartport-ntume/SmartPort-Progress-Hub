@@ -35,6 +35,25 @@ flowchart TD
 - Agent 使用 Realtime `INSERT` 事件；啟動或斷線重連時只補查一次未處理工作，不做 interval polling。
 - Codex 只產生 Proposal；正式進度仍須 PM 檢查並 Approve。
 
+## 成員與分工
+
+PM 可在 **設定 / 備份 → 成員與分工** 維護專案名單與責任分派。名單只需要姓名與負責分類，不需要 GitHub 帳號或 email。
+
+- 預設分類為 `CTL`（控制）、`LOC/NAV`（定位＋導航）、`PER`（感知）、`STM`（狀態機＋任務）；名稱、顏色與啟用狀態可調整。
+- 已被既有 WP / Subtask 使用的其他分類會自動保留，例如 `VERIFY`，避免讀取舊資料時遺失工作。
+- 每個 Subtask 最多指定一位主要負責人；一位成員可負責多個 Subtask，WP 只作彙整。
+- 未指派的 Subtask 會明確標示。個人週報範圍預覽只列出該成員已指派、尚未完成，且已逾期或未來一個月內到期的項目。
+- 儲存後由 Supabase Gateway 交給 Windows Agent，寫入 Private Project-Control repository 的 `project/team_config.json` 並 commit / push。
+- Guest 快照只保留分類名稱與顏色；成員姓名與 Subtask 分派只提供給 Engineer / PM。
+
+首次部署此功能前，請先在 Supabase SQL Editor 執行：
+
+```text
+supabase/migrations/202609080001_team_config.sql
+```
+
+接著更新並重啟 Windows Agent，再以 PM 帳號儲存第一份成員與分工設定。
+
 ## 週報分析
 
 1. 以具有 Codex 權限的 PM 登入。

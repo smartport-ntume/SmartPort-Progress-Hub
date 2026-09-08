@@ -1,3 +1,9 @@
+import {
+  guestTeamConfig,
+  normalizeTeamConfig,
+  referencedTeamIds
+} from '../worker/src/team-config.js';
+
 function scalar(value) {
   if (typeof value === 'string') return value.slice(0, 2_000);
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -56,7 +62,8 @@ function checkpoint(source) {
   return out;
 }
 
-export function sanitizeSnapshot({ project, workPackages, subtasks, fsrs, checkpoints, sourceCommit }) {
+export function sanitizeSnapshot({ project, workPackages, subtasks, fsrs, checkpoints, teamConfig, sourceCommit }) {
+  const referencedCategoryIds = referencedTeamIds(workPackages, subtasks);
   return {
     schema_version: '1.0',
     kind: 'smartport_public_snapshot',
@@ -66,18 +73,29 @@ export function sanitizeSnapshot({ project, workPackages, subtasks, fsrs, checkp
     work_packages: (workPackages || []).map(item => pick(item, WP_FIELDS, WP_LIST_FIELDS)),
     subtasks: (subtasks || []).map(item => pick(item, SUBTASK_FIELDS, SUBTASK_LIST_FIELDS)),
     functional_safety_requirements: (fsrs || []).map(item => pick(item, FSR_FIELDS, FSR_LIST_FIELDS)),
-    checkpoints: (checkpoints || []).map(checkpoint)
+    checkpoints: (checkpoints || []).map(checkpoint),
+    team_config: guestTeamConfig(teamConfig, { referencedCategoryIds })
   };
+}
+
+async function readOptionalTeamConfig(store) {
+  try {
+    return await store.readJson('project/team_config.json', { refresh: false });
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
 }
 
 export async function buildSanitizedSnapshot(store) {
   await store.refreshForRead();
-  const [project, workPackages, subtasks, fsrs, checkpoints, sourceCommit] = await Promise.all([
+  const [project, workPackages, subtasks, fsrs, checkpoints, teamConfig, sourceCommit] = await Promise.all([
     store.readJson('project/project.json', { refresh: false }),
     store.readJson('project/work_packages.json', { refresh: false }),
     store.readJson('project/subtasks.json', { refresh: false }),
     store.readJson('safety/fsr.json', { refresh: false }),
     store.readJson('project/checkpoints.json', { refresh: false }),
+    readOptionalTeamConfig(store),
     store.headSha()
   ]);
   return sanitizeSnapshot({
@@ -86,30 +104,37 @@ export async function buildSanitizedSnapshot(store) {
     subtasks: subtasks.subtasks || [],
     fsrs: fsrs.functional_safety_requirements || [],
     checkpoints: checkpoints.checkpoints || [],
+    teamConfig,
     sourceCommit
   });
 }
 
 export async function buildMemberSnapshot(store) {
   await store.refreshForRead();
-  const [project, workPackages, subtasks, fsrs, checkpoints, sourceCommit] = await Promise.all([
+  const [project, workPackages, subtasks, fsrs, checkpoints, teamConfig, sourceCommit] = await Promise.all([
     store.readJson('project/project.json', { refresh: false }),
     store.readJson('project/work_packages.json', { refresh: false }),
     store.readJson('project/subtasks.json', { refresh: false }),
     store.readJson('safety/fsr.json', { refresh: false }),
     store.readJson('project/checkpoints.json', { refresh: false }),
+    readOptionalTeamConfig(store),
     store.headSha()
   ]);
+  const wpItems = workPackages.work_packages || [];
+  const subtaskItems = subtasks.subtasks || [];
   return {
     schema_version: '1.0',
     kind: 'smartport_member_snapshot',
     generated_at: new Date().toISOString(),
     source_commit: sourceCommit,
     project,
-    work_packages: workPackages.work_packages || [],
-    subtasks: subtasks.subtasks || [],
+    work_packages: wpItems,
+    subtasks: subtaskItems,
     functional_safety_requirements: fsrs.functional_safety_requirements || [],
-    checkpoints: checkpoints.checkpoints || []
+    checkpoints: checkpoints.checkpoints || [],
+    team_config: normalizeTeamConfig(teamConfig, {
+      referencedCategoryIds: referencedTeamIds(wpItems, subtaskItems)
+    })
   };
 }
 
