@@ -45,6 +45,14 @@ function fixture() {
       { id: 'CP1', date: '2026-10-01', name: 'Basic Motion' },
       { id: 'CP2', date: '2026-11-01', name: 'Dynamic Safety' }
     ],
+    checkpointReferences: [
+      {
+        checkpoint: 'CP1',
+        level: 'ACL-1',
+        capability: '• 可執行直行、定速與基本路徑追蹤',
+        review_checks: '• 驗證 speed / steering tracking\n• 確認 E-stop 可進入停止鏈'
+      }
+    ],
     subtasks: [
       { id: 'C1.1', parent_wp: 'WP-C1', name: '閉迴路測試', owner_team: 'CTL', start: '2026-08-01', end: '2026-09-01', actual_progress: 60, status: 'At Risk', expected_evidence: ['測試紀錄'] },
       { id: 'S1.1', parent_wp: 'WP-S1', name: '任務流程整合', owner_team: 'STM', start: '2026-09-01', end: '2026-09-20', actual_progress: 30, status: 'On Track' },
@@ -68,7 +76,9 @@ test('personal weekly scope inherits every category owned by one member', async 
   assert.deepEqual({ ...model.counts }, { total: 3, overdue: 1, active: 1, upcoming: 1, dueByCheckpoint: 2 });
   assert.equal(model.periodStart, '2026-09-03');
   assert.deepEqual({ ...model.nextCheckpoint }, {
-    id: 'CP1', date: '2026-10-01', dateDisplay: '2026/10/01', daysRemaining: 22, name: 'Basic Motion', acl: ''
+    id: 'CP1', date: '2026-10-01', dateDisplay: '2026/10/01', daysRemaining: 22, name: 'Basic Motion', acl: 'ACL-1',
+    capability: '• 可執行直行、定速與基本路徑追蹤',
+    reviewChecks: '• 驗證 speed / steering tracking\n• 確認 E-stop 可進入停止鏈'
   });
   assert.equal(model.cutoffDate, '2026-10-01');
   assert.equal(window.SmartPortWeeklyReport.nextCheckpointOf(fixture().checkpoints, '2026-10-01').id, 'CP2');
@@ -113,6 +123,10 @@ test('generated personal weekly report is a readable DOCX with scoped task IDs',
   assert.match(extracted.value, /下一個檢核點預覽/);
   assert.match(extracted.value, /CP1　Basic Motion/);
   assert.match(extracted.value, /倒數 22 天/);
+  assert.match(extracted.value, /車輛能力 \/\s*Capability/);
+  assert.match(extracted.value, /可執行直行、定速與基本路徑追蹤/);
+  assert.match(extracted.value, /Review \/ Check/);
+  assert.match(extracted.value, /確認 E-stop 可進入停止鏈/);
   assert.match(extracted.value, /逾期未完成 1 項/);
   assert.match(extracted.value, /黃志峰/);
   assert.match(extracted.value, /C1\.1/);

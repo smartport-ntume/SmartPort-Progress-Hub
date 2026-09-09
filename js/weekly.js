@@ -11,8 +11,28 @@
   let selectedFileMemberId = '';
   let latestAnalysis = null;
   let canTriggerCodex = false;
+  let checkpointReferences = [];
+  let checkpointReferenceLoading = null;
+  let checkpointReferencesLoaded = false;
   const ACTIVE_JOB_KEY='smartport.weeklyAnalysisJob';
   const ACTIVE_REPORT_KEY='smartport.weeklyAnalysisReport';
+
+  async function loadCheckpointReferences(force=false){
+    if(checkpointReferencesLoaded&&!force)return checkpointReferences;
+    if(checkpointReferenceLoading)return checkpointReferenceLoading;
+    const pending=(async()=>{
+      try{
+        const data=await API.request('/api/project/reference');
+        checkpointReferences=Array.isArray(data?.reference?.acl_levels)?data.reference.acl_levels:[];
+        checkpointReferencesLoaded=true;
+      }catch(_){
+        checkpointReferencesLoaded=false;
+      }
+      return checkpointReferences;
+    })();
+    checkpointReferenceLoading=pending;
+    try{return await pending;}finally{if(checkpointReferenceLoading===pending)checkpointReferenceLoading=null;}
+  }
 
   function memberCategoryLabel(memberId){
     const categories=window.SmartPortTeam?.memberCategories(Store.state.teamConfig,memberId)||[];
@@ -55,7 +75,7 @@
         <div class="panel weekly-upload-panel">
           <div class="panel-title"><span>個人週報產生與回收</span><span class="revision-badge">Gantt → Word → Local Codex</span></div>
           <form id="weeklyReportUploadForm" class="weekly-upload-body">
-            <div class="alert info"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>首頁會先預覽下一個 CP；內容只含逾期未完成，以及該 CP 檢核前應完成的 Subtask。</div>
+            <div class="alert info"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>首頁會先預覽下一個 CP、車輛能力與 Review / Check；內容只含逾期未完成，以及該 CP 檢核前應完成的 Subtask。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
               <div class="field"><label>Report Member</label><select id="weeklyMember" name="member_id" required></select></div>
@@ -129,6 +149,7 @@
       workPackages:Store.state.workPackages,
       subtasks:Store.state.subtasks,
       checkpoints:Store.state.checkpoints,
+      checkpointReferences,
       memberId:$('#weeklyMember')?.value||'',
       reportDate:$('#weeklyDate')?.value||''
     });
@@ -165,6 +186,7 @@
   async function downloadReportTemplate(){
     const button=$('#weeklyDownloadBtn');
     try{
+      await loadCheckpointReferences();
       const model=selectedReportModel();
       button.disabled=true;button.textContent='產生 Word 中...';
       const blob=await window.SmartPortWeeklyDocx.create(model);
@@ -407,7 +429,10 @@
     if(!$('#reports')) return;
     installLayout();
     renderReportOptions();
-    document.addEventListener('smartport:snapshot-replaced',renderReportOptions);
+    document.addEventListener('smartport:snapshot-replaced',()=>{
+      renderReportOptions();
+      loadCheckpointReferences(true).then(renderReportScope);
+    });
     document.addEventListener('smartport:team-config-saved',renderReportOptions);
     const today=localIsoDate();
     $('#weeklyDate').value=today;$('#weeklyManualDate').value=today;
@@ -429,6 +454,8 @@
       if(Store.state.workPackages?.length) break;
       await new Promise(r=>setTimeout(r,150));
     }
+    await loadCheckpointReferences();
+    renderReportScope();
     targetOptions();$('#weeklyTargetType')?.addEventListener('change',targetOptions);
 
     try{me=await API.me();}catch(_){return;}

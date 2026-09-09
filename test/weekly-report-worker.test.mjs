@@ -49,6 +49,16 @@ test('personal weekly analysis derives categories and required scope from Privat
       { id: 'CP2', date: '2026-10-31', name: 'Dynamic Safety' }
     ]
   };
+  const referenceModel = {
+    acl_levels: [
+      {
+        checkpoint: 'CP1',
+        level: 'ACL-1',
+        capability: '• Basic motion commands form a closed loop',
+        review_checks: '• Verify command-feedback consistency\n• Verify the E-stop chain'
+      }
+    ]
+  };
   const teamConfig = {
     schema_version: '1.0',
     categories: [
@@ -77,6 +87,9 @@ test('personal weekly analysis derives categories and required scope from Privat
     }
     if (url.pathname.endsWith('/contents/project/checkpoints.json')) {
       return Response.json({ sha: 'cp-sha', content: encoded(checkpoints) });
+    }
+    if (url.pathname.endsWith('/contents/project/reference_model.json')) {
+      return Response.json({ sha: 'ref-sha', content: encoded(referenceModel) });
     }
     if (url.pathname.endsWith('/contents/project/team_config.json')) {
       return Response.json({ sha: 'team-sha', content: encoded(teamConfig) });
@@ -143,7 +156,9 @@ test('personal weekly analysis derives categories and required scope from Privat
   const result = await response.json();
   assert.deepEqual(capturedContext.owner_teams, ['CTL', 'STM']);
   assert.deepEqual(capturedContext.next_checkpoint, {
-    id: 'CP1', date: '2026-09-30', name: 'Basic Motion', acl: 'ACL-1'
+    id: 'CP1', date: '2026-09-30', name: 'Basic Motion', acl: 'ACL-1',
+    capability: '• Basic motion commands form a closed loop',
+    review_checks: '• Verify command-feedback consistency\n• Verify the E-stop chain'
   });
   assert.deepEqual(capturedContext.required_scope_subtask_ids, ['due', 'omitted', 'overdue', 'cp-assigned']);
   assert.deepEqual(capturedContext.work_packages.map(item => item.id), ['WP-C1', 'WP-S1']);

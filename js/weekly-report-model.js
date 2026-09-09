@@ -63,18 +63,40 @@
         || clean(left.item?.id, 80).localeCompare(clean(right.item?.id, 80)));
   }
 
-  function nextCheckpointOf(checkpoints, reportDateValue) {
+  function checkpointDetail(value, maximum = 6000) {
+    if (!Array.isArray(value)) return clean(value, maximum);
+    return value.map(entry => {
+      const text = clean(entry, 1500);
+      if (!text) return '';
+      return /^[•\-]/.test(text) ? text : `• ${text}`;
+    }).filter(Boolean).join('\n').slice(0, maximum);
+  }
+
+  function checkpointReferenceMap(checkpointReferences = []) {
+    return new Map((Array.isArray(checkpointReferences) ? checkpointReferences : []).map(item => [
+      clean(item?.checkpoint ?? item?.id, 80), item
+    ]).filter(([id]) => id));
+  }
+
+  function nextCheckpointOf(checkpoints, reportDateValue, checkpointReferences = []) {
     const reportDate = reportDateValue instanceof Date ? reportDateValue : parseDate(reportDateValue);
     if (!reportDate) return null;
     const entry = checkpointEntries(checkpoints).find(candidate => candidate.date > reportDate);
     if (!entry) return null;
+    const id = clean(entry.item?.id, 80) || '下一個 CP';
+    const reference = checkpointReferenceMap(checkpointReferences).get(id) || {};
     return {
-      id: clean(entry.item?.id, 80) || '下一個 CP',
+      id,
       date: isoDate(entry.date),
       dateDisplay: displayDate(entry.date),
       daysRemaining: Math.round((entry.date - reportDate) / 86400000),
       name: clean(entry.item?.name, 200),
-      acl: clean(entry.item?.acl, 80)
+      acl: clean(entry.item?.acl || reference.level, 80),
+      capability: checkpointDetail(reference.capability || entry.item?.capability),
+      reviewChecks: checkpointDetail(
+        reference.review_checks || reference.reviewChecks
+          || entry.item?.review_checks || entry.item?.reviewChecks
+      )
     };
   }
 
@@ -94,7 +116,8 @@
     const workPackageMap = new Map((options.workPackages || []).map(item => [String(item.id || ''), item]));
     const parsedCheckpoints = checkpointEntries(options.checkpoints || []);
     const checkpointDateMap = new Map(parsedCheckpoints.map(entry => [clean(entry.item?.id, 80), entry.date]));
-    const nextCheckpoint = nextCheckpointOf(options.checkpoints || [], reportDate);
+    const checkpointReferences = options.checkpointReferences || options.referenceModel?.acl_levels || [];
+    const nextCheckpoint = nextCheckpointOf(options.checkpoints || [], reportDate, checkpointReferences);
     const checkpointCutoff = nextCheckpoint ? parseDate(nextCheckpoint.date) : null;
 
     const tasks = (options.subtasks || []).filter(item => {

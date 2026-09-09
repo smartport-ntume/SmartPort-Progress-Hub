@@ -211,6 +211,14 @@
         labelCell('範圍工作', 18), cell(`${model.counts.total} 項`, { width: 32 })
       ]),
       row([
+        labelCell('車輛能力 /\nCapability', 18),
+        cell(valueText(checkpoint.capability, '尚未設定'), { columnSpan: 3 })
+      ]),
+      row([
+        labelCell('Review / Check', 18),
+        cell(valueText(checkpoint.reviewChecks, '尚未設定'), { columnSpan: 3 })
+      ]),
+      row([
         labelCell(`逾期未完成 ${overdue.length} 項`, 18),
         cell(taskPreview(overdue), { columnSpan: 3 })
       ]),

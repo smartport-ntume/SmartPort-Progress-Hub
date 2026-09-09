@@ -250,16 +250,31 @@ function weeklyCheckpointEntries(checkpoints) {
       ||String(left.item?.id||'').localeCompare(String(right.item?.id||'')));
 }
 
-function nextWeeklyCheckpoint(checkpoints, reportDate) {
+function weeklyCheckpointDetail(value) {
+  const raw=Array.isArray(value)
+    ?value.map(item=>boundedReportText(item,1500)).filter(Boolean).map(item=>/^[•\-]/.test(item)?item:`• ${item}`).join('\n')
+    :value;
+  return boundedReportText(raw,6000);
+}
+
+function nextWeeklyCheckpoint(checkpoints, reportDate, checkpointReferences=[]) {
   const date=weeklyReportDate(reportDate);
   if(!date)throw new Error('invalid_report_date');
   const entry=weeklyCheckpointEntries(checkpoints).find(candidate=>candidate.date>date);
   if(!entry)return null;
+  const id=boundedReportText(entry.item?.id,80)||'NEXT_CP';
+  const reference=(Array.isArray(checkpointReferences)?checkpointReferences:[])
+    .find(item=>String(item?.checkpoint||item?.id||'')===id)||{};
   return{
-    id:boundedReportText(entry.item?.id,80)||'NEXT_CP',
+    id,
     date:entry.date.toISOString().slice(0,10),
     name:boundedReportText(entry.item?.name,200),
-    acl:boundedReportText(entry.item?.acl,80)
+    acl:boundedReportText(entry.item?.acl||reference.level,80),
+    capability:weeklyCheckpointDetail(reference.capability||entry.item?.capability),
+    review_checks:weeklyCheckpointDetail(
+      reference.review_checks||reference.reviewChecks
+        ||entry.item?.review_checks||entry.item?.reviewChecks
+    )
   };
 }
 
@@ -365,12 +380,13 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   if(!reportDate||!ownerTeam)throw new Error('report_date_and_owner_team_required');
   if(!weeklyReportDate(reportDate))throw new Error('invalid_report_date');
 
-  const [reportFile,wpFile,subFile,teamFile,checkpointFile]=await Promise.all([
+  const [reportFile,wpFile,subFile,teamFile,checkpointFile,referenceFile]=await Promise.all([
     github(`/repos/${repo}/contents/${reportPath}`,token),
     getJsonFile(repo,'project/work_packages.json',token),
     getJsonFile(repo,'project/subtasks.json',token),
     getOptionalJsonFile(repo,'project/team_config.json',token),
-    getJsonFile(repo,'project/checkpoints.json',token)
+    getJsonFile(repo,'project/checkpoints.json',token),
+    getOptionalJsonFile(repo,'project/reference_model.json',token)
   ]);
   const filename=reportFile.name||reportPath.split('/').pop()||'weekly-report.docx';
   const fileBytes=b64ToBytes(reportFile.content||'');
@@ -416,7 +432,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     : ownerTeamSet.has(String(item.owner||''))
   );
   const scopedSubs=subs.filter(item=>ownerTeamSet.has(String(item.owner_team||''))&&(!enforceScope||scopeIdSet.has(String(item.id||''))));
-  const nextCheckpoint=nextWeeklyCheckpoint(checkpoints,reportDate);
+  const nextCheckpoint=nextWeeklyCheckpoint(checkpoints,reportDate,referenceFile?.json?.acl_levels||[]);
   const context={
     report_date:reportDate,
     next_checkpoint:nextCheckpoint,
@@ -460,7 +476,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
         method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
         body:JSON.stringify({
           model:env.OPENAI_MODEL||'gpt-5-mini',store:false,
-          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Scores are 0 to 100 and feedback must be specific and concise. Template prompts and blank fields are not evidence. Then convert only report-supported facts into proposed project updates. Prefer SUBTASK updates; use WP only for whole-package evidence. progress is an absolute percentage and must never decrease. Do not invent evidence, blockers, tests, completion, dates, targets, or work outside owner_teams and required scope. Return an empty proposals array when evidence is insufficient.',
+          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence. Scores are 0 to 100 and feedback must be specific and concise. Template prompts and blank fields are not evidence. Then convert only report-supported facts into proposed project updates. Prefer SUBTASK updates; use WP only for whole-package evidence. progress is an absolute percentage and must never decrease. Do not invent evidence, blockers, tests, completion, dates, targets, or work outside owner_teams and required scope. Return an empty proposals array when evidence is insufficient.',
           input:[{role:'user',content:[
             {type:'input_text',text:`Map this SmartPort weekly report into proposed WP/Subtask progress updates. Project context JSON:\n${JSON.stringify(context)}`},
             {type:'input_file',file_id:uploaded.id}
