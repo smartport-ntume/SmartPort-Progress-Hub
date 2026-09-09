@@ -55,7 +55,7 @@
         <div class="panel weekly-upload-panel">
           <div class="panel-title"><span>個人週報產生與回收</span><span class="revision-badge">Gantt → Word → Local Codex</span></div>
           <form id="weeklyReportUploadForm" class="weekly-upload-body">
-            <div class="alert info"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>內容只含逾期未完成，以及下一個 CP 檢核前應完成的 Subtask；填寫完成後再回到此處上傳。</div>
+            <div class="alert info"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>首頁會先預覽下一個 CP；內容只含逾期未完成，以及該 CP 檢核前應完成的 Subtask。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
               <div class="field"><label>Report Member</label><select id="weeklyMember" name="member_id" required></select></div>

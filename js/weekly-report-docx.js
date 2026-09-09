@@ -175,6 +175,56 @@
     ], [18, 32, 18, 32]);
   }
 
+  function taskPreview(tasks, emptyText = '無') {
+    if (!tasks.length) return emptyText;
+    const limit = 4;
+    const visible = tasks.slice(0, limit).map(item => `${item.id} ${item.name}`);
+    if (tasks.length > limit) visible.push(`另 ${tasks.length - limit} 項見後續任務總覽`);
+    return visible.join('、');
+  }
+
+  function checkpointPreviewTable(model) {
+    const checkpoint = model.nextCheckpoint;
+    if (!checkpoint) {
+      return table([
+        row([
+          labelCell('後續 CP', 18), cell('尚未設定', { width: 32 }),
+          labelCell('報告規則', 18), cell('僅追蹤逾期未完成項目', { width: 32 })
+        ]),
+        row([
+          labelCell('逾期未完成', 18),
+          cell(taskPreview(model.tasks.filter(item => item.scope === 'OVERDUE')), { columnSpan: 3 })
+        ])
+      ], [18, 32, 18, 32]);
+    }
+    const overdue = model.tasks.filter(item => item.scope === 'OVERDUE');
+    const active = model.tasks.filter(item => item.scope === 'ACTIVE');
+    const upcoming = model.tasks.filter(item => item.scope === 'UPCOMING');
+    const checkpointName = [checkpoint.id, checkpoint.name].filter(Boolean).join('　');
+    return table([
+      row([
+        labelCell('下一 CP', 18), cell(checkpointName, { width: 32, bold: true }),
+        labelCell('檢核日期', 18), cell(`${checkpoint.dateDisplay}（倒數 ${checkpoint.daysRemaining} 天）`, { width: 32, bold: true })
+      ]),
+      row([
+        labelCell('成熟度目標', 18), cell(valueText(checkpoint.acl), { width: 32 }),
+        labelCell('範圍工作', 18), cell(`${model.counts.total} 項`, { width: 32 })
+      ]),
+      row([
+        labelCell(`逾期未完成 ${overdue.length} 項`, 18),
+        cell(taskPreview(overdue), { columnSpan: 3 })
+      ]),
+      row([
+        labelCell(`CP 前進行中 ${active.length} 項`, 18),
+        cell(taskPreview(active), { columnSpan: 3 })
+      ]),
+      row([
+        labelCell(`CP 前尚未開始 ${upcoming.length} 項`, 18),
+        cell(taskPreview(upcoming), { columnSpan: 3 })
+      ])
+    ], [18, 32, 18, 32]);
+  }
+
   function overviewTable(model) {
     const rows = [row([
       cell('範圍', { bold: true, fill: BLUE, width: 12 }),
@@ -281,8 +331,11 @@
       paragraph('WEEKLY INDIVIDUAL PROGRESS REPORT', { bold: true, size: 18, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 260 } }),
       metaTable(model),
       spacer(120),
+      sectionBanner('CP', '下一個檢核點預覽　NEXT CHECKPOINT PREVIEW'),
+      checkpointPreviewTable(model),
+      spacer(120),
       paragraph(`系統已帶入 ${model.counts.total} 項工作：逾期 ${model.counts.overdue}、進行中 ${model.counts.active}、尚未開始 ${model.counts.upcoming}。下一檢核邊界：${checkpointSummary}。請勿刪除工作 ID，Codex 將依 ID 核對甘特圖。`, { color: MUTED, size: 18, spacing: { after: 160 } }),
-      sectionBanner('1', '本週整體狀態　OVERALL STATUS'),
+      sectionBanner('1', '本週整體狀態　OVERALL STATUS', { pageBreakBefore: true }),
       overallStatus(),
       spacer(160),
       sectionBanner('2', '本週任務總覽　SYSTEM GENERATED TASK SCOPE'),

@@ -72,6 +72,7 @@
       id: clean(entry.item?.id, 80) || '下一個 CP',
       date: isoDate(entry.date),
       dateDisplay: displayDate(entry.date),
+      daysRemaining: Math.round((entry.date - reportDate) / 86400000),
       name: clean(entry.item?.name, 200),
       acl: clean(entry.item?.acl, 80)
     };

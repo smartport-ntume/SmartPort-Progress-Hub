@@ -68,7 +68,7 @@ test('personal weekly scope inherits every category owned by one member', async 
   assert.deepEqual({ ...model.counts }, { total: 3, overdue: 1, active: 1, upcoming: 1, dueByCheckpoint: 2 });
   assert.equal(model.periodStart, '2026-09-03');
   assert.deepEqual({ ...model.nextCheckpoint }, {
-    id: 'CP1', date: '2026-10-01', dateDisplay: '2026/10/01', name: 'Basic Motion', acl: ''
+    id: 'CP1', date: '2026-10-01', dateDisplay: '2026/10/01', daysRemaining: 22, name: 'Basic Motion', acl: ''
   });
   assert.equal(model.cutoffDate, '2026-10-01');
   assert.equal(window.SmartPortWeeklyReport.nextCheckpointOf(fixture().checkpoints, '2026-10-01').id, 'CP2');
@@ -76,7 +76,7 @@ test('personal weekly scope inherits every category owned by one member', async 
 });
 
 test('without a future checkpoint, personal weekly scope contains overdue work only', async () => {
-  const window = await browserWeeklyModules();
+  const window = await browserWeeklyModules({ includeDocx: true });
   const data = fixture();
   const model = window.SmartPortWeeklyReport.build({
     ...data,
@@ -90,6 +90,10 @@ test('without a future checkpoint, personal weekly scope contains overdue work o
   });
   assert.equal(model.nextCheckpoint, null);
   assert.deepEqual(Array.from(model.tasks, item => item.id), ['overdue']);
+  const blob = await window.SmartPortWeeklyDocx.create(model);
+  const extracted = await mammoth.extractRawText({ buffer: Buffer.from(await blob.arrayBuffer()) });
+  assert.match(extracted.value, /後續 CP/);
+  assert.match(extracted.value, /僅追蹤逾期未完成項目/);
 });
 
 test('generated personal weekly report is a readable DOCX with scoped task IDs', async () => {
@@ -106,6 +110,10 @@ test('generated personal weekly report is a readable DOCX with scoped task IDs',
   assert.equal(buffer.subarray(0, 2).toString(), 'PK');
   const extracted = await mammoth.extractRawText({ buffer });
   assert.match(extracted.value, /每週個人工作進度報告/);
+  assert.match(extracted.value, /下一個檢核點預覽/);
+  assert.match(extracted.value, /CP1　Basic Motion/);
+  assert.match(extracted.value, /倒數 22 天/);
+  assert.match(extracted.value, /逾期未完成 1 項/);
   assert.match(extracted.value, /黃志峰/);
   assert.match(extracted.value, /C1\.1/);
   assert.match(extracted.value, /S1\.2/);
