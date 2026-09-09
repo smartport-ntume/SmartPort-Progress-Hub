@@ -133,7 +133,7 @@
   }
 
   function scopeLabel(scope) {
-    return { OVERDUE: '逾期未完成', ACTIVE: '目前進行中', UPCOMING: '30 天內到期' }[scope] || scope;
+    return { OVERDUE: '逾期未完成', ACTIVE: '目前進行中', UPCOMING: '下一 CP 前待辦' }[scope] || scope;
   }
 
   function evidenceText(task) {
@@ -143,6 +143,9 @@
   }
 
   function metaTable(model) {
+    const scope = model.nextCheckpoint
+      ? `逾期，以及 ${model.nextCheckpoint.id} (${model.nextCheckpoint.dateDisplay}) 前應完成且尚未完成`
+      : '未設定後續 CP；僅納入逾期未完成';
     return table([
       row([
         labelCell('姓名', 15), cell(model.member.name, { width: 35 }),
@@ -154,7 +157,7 @@
       ]),
       row([
         labelCell('報告期間', 15), cell(model.periodDisplay, { width: 35 }),
-        labelCell('選題範圍', 15), cell(`逾期、進行中、${model.cutoffDate} 前到期且尚未完成`, { width: 35 })
+        labelCell('選題範圍', 15), cell(scope, { width: 35 })
       ])
     ], [15, 35, 15, 35]);
   }
@@ -215,11 +218,12 @@
     ], [22, 28, 22, 28]);
   }
 
-  function upcomingTaskTable(task) {
+  function upcomingTaskTable(task, model) {
+    const checkpoint = model.nextCheckpoint?.id || '下一 CP';
     return table([
       row([
         cell(`${task.id}　${task.name}`, { bold: true, fill: BLUE, columnSpan: 3 }),
-        cell(`30 天內到期　${task.end}`, { bold: true, fill: BLUE })
+        cell(`${checkpoint} 前待辦　${valueText(task.end, task.targetCp)}`, { bold: true, fill: BLUE })
       ]),
       row([labelCell('所屬 WP'), cell(`${task.parentWp}　${task.parentWpName}`), labelCell('分類'), cell(`${task.categoryName} (${task.ownerTeam})`)]),
       row([labelCell('計畫期間'), cell(`${valueText(task.start)} ～ ${valueText(task.end)}`), labelCell('目標節點'), cell(valueText(task.targetCp))]),
@@ -268,13 +272,16 @@
 
   function buildDocument(model) {
     const { AlignmentType, Document, PageOrientation } = api();
+    const checkpointSummary = model.nextCheckpoint
+      ? `${model.nextCheckpoint.id} (${model.nextCheckpoint.dateDisplay})`
+      : '尚未設定後續 CP，僅列逾期任務';
     const children = [
       paragraph('SMARTPORT PROGRESS HUB', { bold: true, size: 17, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 80 } }),
       paragraph('每週個人工作進度報告', { bold: true, size: 34, color: '000000', alignment: AlignmentType.CENTER, spacing: { after: 30 } }),
       paragraph('WEEKLY INDIVIDUAL PROGRESS REPORT', { bold: true, size: 18, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 260 } }),
       metaTable(model),
       spacer(120),
-      paragraph(`系統已帶入 ${model.counts.total} 項工作：逾期 ${model.counts.overdue}、進行中 ${model.counts.active}、30 天內到期 ${model.counts.upcoming}。請勿刪除工作 ID，Codex 將依 ID 核對甘特圖。`, { color: MUTED, size: 18, spacing: { after: 160 } }),
+      paragraph(`系統已帶入 ${model.counts.total} 項工作：逾期 ${model.counts.overdue}、進行中 ${model.counts.active}、尚未開始 ${model.counts.upcoming}。下一檢核邊界：${checkpointSummary}。請勿刪除工作 ID，Codex 將依 ID 核對甘特圖。`, { color: MUTED, size: 18, spacing: { after: 160 } }),
       sectionBanner('1', '本週整體狀態　OVERALL STATUS'),
       overallStatus(),
       spacer(160),
@@ -296,7 +303,7 @@
     }
 
     if (model.upcomingTasks.length) {
-      children.push(spacer(120), sectionBanner('3B', '未來 30 天內到期任務', { pageBreakBefore: true }));
+      children.push(spacer(120), sectionBanner('3B', `${model.nextCheckpoint?.id || '下一 CP'} 前尚未開始任務`, { pageBreakBefore: true }));
       model.upcomingTasks.forEach((task, index) => {
         children.push(paragraph(`${task.id}　${task.name}`, {
           bold: true,
@@ -304,7 +311,7 @@
           pageBreakBefore: index > 0,
           keepNext: true,
           spacing: { before: 140, after: 100, line: 300 }
-        }), upcomingTaskTable(task));
+        }), upcomingTaskTable(task, model));
       });
     }
 

@@ -55,7 +55,7 @@
         <div class="panel weekly-upload-panel">
           <div class="panel-title"><span>個人週報產生與回收</span><span class="revision-badge">Gantt → Word → Local Codex</span></div>
           <form id="weeklyReportUploadForm" class="weekly-upload-body">
-            <div class="alert info"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>內容只含逾期未完成、目前進行中及未來 30 天內到期的 Subtask；填寫完成後再回到此處上傳。</div>
+            <div class="alert info"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>內容只含逾期未完成，以及下一個 CP 檢核前應完成的 Subtask；填寫完成後再回到此處上傳。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
               <div class="field"><label>Report Member</label><select id="weeklyMember" name="member_id" required></select></div>
@@ -128,6 +128,7 @@
       teamConfig:Store.state.teamConfig,
       workPackages:Store.state.workPackages,
       subtasks:Store.state.subtasks,
+      checkpoints:Store.state.checkpoints,
       memberId:$('#weeklyMember')?.value||'',
       reportDate:$('#weeklyDate')?.value||''
     });
@@ -138,8 +139,11 @@
     if(!root||!download)return;
     try{
       const model=selectedReportModel();
+      const checkpoint=model.nextCheckpoint
+        ? `<span class="weekly-scope-chip">${esc(model.nextCheckpoint.id)} 檢核 · ${esc(model.nextCheckpoint.dateDisplay)}</span>`
+        : '<span class="weekly-scope-chip">尚無後續 CP，僅列逾期</span>';
       root.className='weekly-scope-preview';
-      root.innerHTML=`<div class="weekly-scope-summary"><b>${esc(model.member.name)}</b><span class="weekly-scope-chip overdue">逾期 ${model.counts.overdue}</span><span class="weekly-scope-chip active">進行中 ${model.counts.active}</span><span class="weekly-scope-chip upcoming">30 天內 ${model.counts.upcoming}</span><span class="muted">共 ${model.counts.total} 項</span></div>${model.tasks.length?`<div class="weekly-scope-list">${model.tasks.map(item=>`<div class="weekly-scope-row"><span><b>${esc(item.id)}</b> · ${esc(item.name)}</span><span class="muted">${esc(item.categoryName)} · ${esc(item.end)}</span></div>`).join('')}</div>`:'<div class="muted">本期沒有符合條件的未完成工作；仍可下載空白狀態週報。</div>'}`;
+      root.innerHTML=`<div class="weekly-scope-summary"><b>${esc(model.member.name)}</b>${checkpoint}<span class="weekly-scope-chip overdue">逾期 ${model.counts.overdue}</span><span class="weekly-scope-chip active">進行中 ${model.counts.active}</span><span class="weekly-scope-chip upcoming">尚未開始 ${model.counts.upcoming}</span><span class="muted">共 ${model.counts.total} 項</span></div>${model.tasks.length?`<div class="weekly-scope-list">${model.tasks.map(item=>`<div class="weekly-scope-row"><span><b>${esc(item.id)}</b> · ${esc(item.name)}</span><span class="muted">${esc(item.categoryName)} · ${esc(item.end||item.targetCp||'—')}</span></div>`).join('')}</div>`:'<div class="muted">本期沒有符合條件的未完成工作；仍可下載空白狀態週報。</div>'}`;
       download.disabled=false;
     }catch(error){
       root.className='weekly-scope-preview muted';

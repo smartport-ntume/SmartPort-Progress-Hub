@@ -40,10 +40,15 @@ function fixture() {
       { id: 'WP-C1', name: 'Basic Motion', owner: 'CTL' },
       { id: 'WP-S1', name: 'Mission Flow', owner: 'STM' }
     ],
+    checkpoints: [
+      { id: 'CP0', date: '2026-09-07', name: 'Baseline' },
+      { id: 'CP1', date: '2026-10-01', name: 'Basic Motion' },
+      { id: 'CP2', date: '2026-11-01', name: 'Dynamic Safety' }
+    ],
     subtasks: [
       { id: 'C1.1', parent_wp: 'WP-C1', name: '閉迴路測試', owner_team: 'CTL', start: '2026-08-01', end: '2026-09-01', actual_progress: 60, status: 'At Risk', expected_evidence: ['測試紀錄'] },
       { id: 'S1.1', parent_wp: 'WP-S1', name: '任務流程整合', owner_team: 'STM', start: '2026-09-01', end: '2026-09-20', actual_progress: 30, status: 'On Track' },
-      { id: 'S1.2', parent_wp: 'WP-S1', name: '異常復歸', owner_team: 'STM', start: '2026-09-25', end: '2026-10-09', actual_progress: 0, status: 'Not Updated' },
+      { id: 'S1.2', parent_wp: 'WP-S1', name: '異常復歸', owner_team: 'STM', start: '2026-09-25', end: '2026-10-09', target_cp: 'CP1', actual_progress: 0, status: 'Not Updated' },
       { id: 'later', parent_wp: 'WP-C1', name: '超出範圍', owner_team: 'CTL', end: '2026-10-10', actual_progress: 0 },
       { id: 'done', parent_wp: 'WP-C1', name: '已完成', owner_team: 'CTL', end: '2026-09-05', actual_progress: 100 },
       { id: 'other', parent_wp: 'WP-P1', name: '其他人工作', owner_team: 'PER', end: '2026-09-08', actual_progress: 10 }
@@ -60,10 +65,31 @@ test('personal weekly scope inherits every category owned by one member', async 
   });
   assert.deepEqual(Array.from(model.ownerTeams), ['CTL', 'STM']);
   assert.deepEqual(Array.from(model.tasks, item => item.id), ['C1.1', 'S1.1', 'S1.2']);
-  assert.deepEqual({ ...model.counts }, { total: 3, overdue: 1, active: 1, upcoming: 1 });
+  assert.deepEqual({ ...model.counts }, { total: 3, overdue: 1, active: 1, upcoming: 1, dueByCheckpoint: 2 });
   assert.equal(model.periodStart, '2026-09-03');
-  assert.equal(model.cutoffDate, '2026-10-09');
+  assert.deepEqual({ ...model.nextCheckpoint }, {
+    id: 'CP1', date: '2026-10-01', dateDisplay: '2026/10/01', name: 'Basic Motion', acl: ''
+  });
+  assert.equal(model.cutoffDate, '2026-10-01');
+  assert.equal(window.SmartPortWeeklyReport.nextCheckpointOf(fixture().checkpoints, '2026-10-01').id, 'CP2');
   assert.equal(window.SmartPortWeeklyReport.parseDate('2026-02-30'), null);
+});
+
+test('without a future checkpoint, personal weekly scope contains overdue work only', async () => {
+  const window = await browserWeeklyModules();
+  const data = fixture();
+  const model = window.SmartPortWeeklyReport.build({
+    ...data,
+    checkpoints: [{ id: 'CP0', date: '2026-09-01' }],
+    subtasks: [
+      { id: 'overdue', owner_team: 'CTL', end: '2026-09-08', actual_progress: 20 },
+      { id: 'future', owner_team: 'CTL', end: '2026-09-20', actual_progress: 0 }
+    ],
+    memberId: 'member-1',
+    reportDate: '2026-09-09'
+  });
+  assert.equal(model.nextCheckpoint, null);
+  assert.deepEqual(Array.from(model.tasks, item => item.id), ['overdue']);
 });
 
 test('generated personal weekly report is a readable DOCX with scoped task IDs', async () => {

@@ -56,6 +56,27 @@
     return text ? [text] : [];
   }
 
+  function checkpointEntries(checkpoints = []) {
+    return checkpoints.map(item => ({ item, date: parseDate(item?.date) }))
+      .filter(entry => entry.date)
+      .sort((left, right) => left.date - right.date
+        || clean(left.item?.id, 80).localeCompare(clean(right.item?.id, 80)));
+  }
+
+  function nextCheckpointOf(checkpoints, reportDateValue) {
+    const reportDate = reportDateValue instanceof Date ? reportDateValue : parseDate(reportDateValue);
+    if (!reportDate) return null;
+    const entry = checkpointEntries(checkpoints).find(candidate => candidate.date > reportDate);
+    if (!entry) return null;
+    return {
+      id: clean(entry.item?.id, 80) || '下一個 CP',
+      date: isoDate(entry.date),
+      dateDisplay: displayDate(entry.date),
+      name: clean(entry.item?.name, 200),
+      acl: clean(entry.item?.acl, 80)
+    };
+  }
+
   function build(options = {}) {
     const config = options.teamConfig || {};
     const memberId = clean(options.memberId, 100);
@@ -70,17 +91,28 @@
     if (!categories.length) throw new Error(`${member.name || '此成員'} 尚未負責任何工作分類`);
     const categoryMap = new Map(categories.map(item => [item.id, item]));
     const workPackageMap = new Map((options.workPackages || []).map(item => [String(item.id || ''), item]));
-    const cutoff = addDays(reportDate, 30);
+    const parsedCheckpoints = checkpointEntries(options.checkpoints || []);
+    const checkpointDateMap = new Map(parsedCheckpoints.map(entry => [clean(entry.item?.id, 80), entry.date]));
+    const nextCheckpoint = nextCheckpointOf(options.checkpoints || [], reportDate);
+    const checkpointCutoff = nextCheckpoint ? parseDate(nextCheckpoint.date) : null;
 
     const tasks = (options.subtasks || []).filter(item => {
       if (!categoryMap.has(item?.owner_team) || isCompleted(item)) return false;
       const end = parseDate(item?.end);
-      return end && end <= cutoff;
+      const targetCheckpointDate = checkpointDateMap.get(clean(item?.target_cp, 80));
+      const overdue = (end && end < reportDate)
+        || (targetCheckpointDate && targetCheckpointDate < reportDate);
+      if (overdue) return true;
+      if (!checkpointCutoff) return false;
+      return (end && end <= checkpointCutoff)
+        || (targetCheckpointDate && targetCheckpointDate <= checkpointCutoff);
     }).map(item => {
       const end = parseDate(item.end);
       const start = parseDate(item.start);
+      const targetCheckpointDate = checkpointDateMap.get(clean(item?.target_cp, 80));
       let scope = 'UPCOMING';
-      if (end < reportDate) scope = 'OVERDUE';
+      if ((end && end < reportDate)
+        || (targetCheckpointDate && targetCheckpointDate < reportDate)) scope = 'OVERDUE';
       else if (!start || start <= reportDate) scope = 'ACTIVE';
       const wp = workPackageMap.get(String(item.parent_wp || '')) || {};
       return {
@@ -93,6 +125,7 @@
         start: clean(item.start, 20),
         end: clean(item.end, 20),
         targetCp: clean(item.target_cp, 80),
+        targetCpDate: targetCheckpointDate ? isoDate(targetCheckpointDate) : '',
         currentProgress: progressOf(item),
         currentStatus: clean(item.status, 80) || 'Not Updated',
         description: clean(item.description, 4000),
@@ -119,7 +152,8 @@
       periodEnd: isoDate(reportDate),
       periodDisplay: `${displayDate(periodStart)} ～ ${displayDate(reportDate)}`,
       weekId: isoWeek(reportDate),
-      cutoffDate: isoDate(cutoff),
+      nextCheckpoint,
+      cutoffDate: nextCheckpoint?.date || '',
       tasks,
       currentTasks: tasks.filter(item => item.scope !== 'UPCOMING'),
       upcomingTasks: tasks.filter(item => item.scope === 'UPCOMING'),
@@ -127,7 +161,8 @@
         total: tasks.length,
         overdue: tasks.filter(item => item.scope === 'OVERDUE').length,
         active: tasks.filter(item => item.scope === 'ACTIVE').length,
-        upcoming: tasks.filter(item => item.scope === 'UPCOMING').length
+        upcoming: tasks.filter(item => item.scope === 'UPCOMING').length,
+        dueByCheckpoint: tasks.filter(item => item.scope !== 'OVERDUE').length
       },
       scopeSubtaskIds: tasks.map(item => item.id),
       filename: `SmartPort_Weekly_${isoDate(reportDate)}_${filenameMember}.docx`
@@ -139,6 +174,7 @@
     build,
     displayDate,
     isCompleted,
+    nextCheckpointOf,
     parseDate,
     progressOf
   };

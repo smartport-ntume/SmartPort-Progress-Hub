@@ -9,6 +9,14 @@
   const colors = ['#456990', '#5b8e7d', '#7d5ba6', '#b36a5e', '#6b7280'];
   const clone = value => JSON.parse(JSON.stringify(value));
   const clean = (value, length = 100) => String(value ?? '').trim().slice(0, length);
+  const dateOnly = value => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return null;
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    return date.getUTCFullYear() === Number(match[1])
+      && date.getUTCMonth() === Number(match[2]) - 1
+      && date.getUTCDate() === Number(match[3]) ? date : null;
+  };
 
   function referenced(workPackages = [], subtasks = []) {
     return [...new Set([
@@ -141,16 +149,28 @@
     return (config?.categories || []).filter(item => config?.category_owners?.[item.id] === memberId);
   }
 
-  function reportScope(config, subtasks, memberId, today = new Date()) {
-    const cutoff = new Date(today);
-    cutoff.setMonth(cutoff.getMonth() + 1);
-    cutoff.setHours(23, 59, 59, 999);
+  function reportScope(config, subtasks, memberId, today = new Date(), checkpoints = []) {
+    const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const reportDate = dateOnly(localDate);
+    const checkpointEntries = checkpoints.map(item => ({
+      item, date: dateOnly(item?.date)
+    })).filter(entry => entry.date && !Number.isNaN(+entry.date))
+      .sort((left, right) => left.date - right.date
+        || String(left.item?.id || '').localeCompare(String(right.item?.id || '')));
+    const checkpointDateMap = new Map(checkpointEntries.map(entry => [String(entry.item?.id || ''), entry.date]));
+    const nextCheckpoint = checkpointEntries.find(entry => entry.date > reportDate) || null;
     return (subtasks || []).filter(item => {
       if (config?.category_owners?.[item.owner_team] !== memberId) return false;
       const progress = Number(item.actual_progress ?? item.progress ?? 0);
-      if (progress >= 100 || ['Done', 'Completed'].includes(String(item.status || ''))) return false;
-      const end = new Date(String(item.end || '') + 'T12:00:00');
-      return !Number.isNaN(+end) && end <= cutoff;
+      if (progress >= 100 || ['DONE', 'COMPLETED', 'APPROVED'].includes(String(item.status || '').toUpperCase())) return false;
+      const end = dateOnly(item.end);
+      const targetCheckpointDate = checkpointDateMap.get(String(item.target_cp || ''));
+      const overdue = (end && end < reportDate)
+        || (targetCheckpointDate && targetCheckpointDate < reportDate);
+      if (overdue) return true;
+      if (!nextCheckpoint) return false;
+      return (end && end <= nextCheckpoint.date)
+        || (targetCheckpointDate && targetCheckpointDate <= nextCheckpoint.date);
     }).sort((a, b) => String(a.end || '').localeCompare(String(b.end || '')) || String(a.id).localeCompare(String(b.id)));
   }
 

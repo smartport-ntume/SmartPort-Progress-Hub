@@ -36,9 +36,17 @@ test('personal weekly analysis derives categories and required scope from Privat
       { id: 'due', parent_wp: 'WP-C1', name: 'Due soon', owner_team: 'CTL', end: '2026-09-19', actual_progress: 10 },
       { id: 'omitted', parent_wp: 'WP-S1', name: 'Omitted by browser', owner_team: 'STM', end: '2026-09-29', actual_progress: 20 },
       { id: 'overdue', parent_wp: 'WP-C1', name: 'Overdue', owner_team: 'CTL', end: '2026-09-01', actual_progress: 40 },
+      { id: 'cp-assigned', parent_wp: 'WP-C1', name: 'Assigned to next CP', owner_team: 'CTL', end: '2026-10-10', target_cp: 'CP1', actual_progress: 0 },
       { id: 'future', parent_wp: 'WP-C1', name: 'Too late', owner_team: 'CTL', end: '2026-10-10', actual_progress: 0 },
       { id: 'done', parent_wp: 'WP-C1', name: 'Finished', owner_team: 'CTL', end: '2026-09-08', actual_progress: 100 },
       { id: 'other', parent_wp: 'WP-P1', name: 'Other member', owner_team: 'PER', end: '2026-09-15', actual_progress: 10 }
+    ]
+  };
+  const checkpoints = {
+    checkpoints: [
+      { id: 'CP0', date: '2026-09-07', name: 'Baseline' },
+      { id: 'CP1', date: '2026-09-30', name: 'Basic Motion', acl: 'ACL-1' },
+      { id: 'CP2', date: '2026-10-31', name: 'Dynamic Safety' }
     ]
   };
   const teamConfig = {
@@ -66,6 +74,9 @@ test('personal weekly analysis derives categories and required scope from Privat
     }
     if (url.pathname.endsWith('/contents/project/subtasks.json')) {
       return Response.json({ sha: 'sub-sha', content: encoded(subtasks) });
+    }
+    if (url.pathname.endsWith('/contents/project/checkpoints.json')) {
+      return Response.json({ sha: 'cp-sha', content: encoded(checkpoints) });
     }
     if (url.pathname.endsWith('/contents/project/team_config.json')) {
       return Response.json({ sha: 'team-sha', content: encoded(teamConfig) });
@@ -131,9 +142,12 @@ test('personal weekly analysis derives categories and required scope from Privat
   assert.equal(response.status, 200);
   const result = await response.json();
   assert.deepEqual(capturedContext.owner_teams, ['CTL', 'STM']);
-  assert.deepEqual(capturedContext.required_scope_subtask_ids, ['due', 'omitted', 'overdue']);
+  assert.deepEqual(capturedContext.next_checkpoint, {
+    id: 'CP1', date: '2026-09-30', name: 'Basic Motion', acl: 'ACL-1'
+  });
+  assert.deepEqual(capturedContext.required_scope_subtask_ids, ['due', 'omitted', 'overdue', 'cp-assigned']);
   assert.deepEqual(capturedContext.work_packages.map(item => item.id), ['WP-C1', 'WP-S1']);
-  assert.deepEqual(capturedContext.subtasks.map(item => item.id), ['due', 'omitted', 'overdue']);
+  assert.deepEqual(capturedContext.subtasks.map(item => item.id), ['due', 'omitted', 'overdue', 'cp-assigned']);
   assert.equal(result.report.member_name, '黃志峰');
   assert.deepEqual(result.report.owner_teams, ['CTL', 'STM']);
   assert.deepEqual(result.proposals.map(item => item.target_id), ['due', 'omitted']);

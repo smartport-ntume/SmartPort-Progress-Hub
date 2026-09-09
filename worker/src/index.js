@@ -243,15 +243,41 @@ function weeklyTaskCompleted(item) {
   return (Number.isFinite(progress)&&progress>=100)||['DONE','COMPLETED','APPROVED'].includes(status);
 }
 
-function deriveWeeklyScopeIds(subtasks, ownerTeamSet, reportDate) {
+function weeklyCheckpointEntries(checkpoints) {
+  return (Array.isArray(checkpoints)?checkpoints:[]).map(item=>({item,date:weeklyReportDate(item?.date)}))
+    .filter(entry=>entry.date)
+    .sort((left,right)=>left.date-right.date
+      ||String(left.item?.id||'').localeCompare(String(right.item?.id||'')));
+}
+
+function nextWeeklyCheckpoint(checkpoints, reportDate) {
   const date=weeklyReportDate(reportDate);
   if(!date)throw new Error('invalid_report_date');
-  const cutoff=new Date(date);
-  cutoff.setUTCDate(cutoff.getUTCDate()+30);
+  const entry=weeklyCheckpointEntries(checkpoints).find(candidate=>candidate.date>date);
+  if(!entry)return null;
+  return{
+    id:boundedReportText(entry.item?.id,80)||'NEXT_CP',
+    date:entry.date.toISOString().slice(0,10),
+    name:boundedReportText(entry.item?.name,200),
+    acl:boundedReportText(entry.item?.acl,80)
+  };
+}
+
+function deriveWeeklyScopeIds(subtasks, ownerTeamSet, reportDate, checkpoints) {
+  const date=weeklyReportDate(reportDate);
+  if(!date)throw new Error('invalid_report_date');
+  const checkpointEntries=weeklyCheckpointEntries(checkpoints);
+  const checkpointDateMap=new Map(checkpointEntries.map(entry=>[String(entry.item?.id||''),entry.date]));
+  const nextCheckpoint=checkpointEntries.find(candidate=>candidate.date>date);
+  const cutoff=nextCheckpoint?.date||null;
   return subtasks.filter(item=>{
     if(!ownerTeamSet.has(String(item?.owner_team||''))||weeklyTaskCompleted(item))return false;
     const end=weeklyReportDate(item?.end);
-    return end&&end<=cutoff;
+    const targetCheckpointDate=checkpointDateMap.get(String(item?.target_cp||''));
+    const overdue=(end&&end<date)||(targetCheckpointDate&&targetCheckpointDate<date);
+    if(overdue)return true;
+    if(!cutoff)return false;
+    return(end&&end<=cutoff)||(targetCheckpointDate&&targetCheckpointDate<=cutoff);
   }).map(item=>String(item.id||'')).filter(Boolean);
 }
 
@@ -339,15 +365,17 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   if(!reportDate||!ownerTeam)throw new Error('report_date_and_owner_team_required');
   if(!weeklyReportDate(reportDate))throw new Error('invalid_report_date');
 
-  const [reportFile,wpFile,subFile,teamFile]=await Promise.all([
+  const [reportFile,wpFile,subFile,teamFile,checkpointFile]=await Promise.all([
     github(`/repos/${repo}/contents/${reportPath}`,token),
     getJsonFile(repo,'project/work_packages.json',token),
     getJsonFile(repo,'project/subtasks.json',token),
-    getOptionalJsonFile(repo,'project/team_config.json',token)
+    getOptionalJsonFile(repo,'project/team_config.json',token),
+    getJsonFile(repo,'project/checkpoints.json',token)
   ]);
   const filename=reportFile.name||reportPath.split('/').pop()||'weekly-report.docx';
   const fileBytes=b64ToBytes(reportFile.content||'');
   const wps=wpFile.json.work_packages||[],subs=subFile.json.subtasks||[];
+  const checkpoints=checkpointFile.json.checkpoints||[];
   const teamConfig=normalizeTeamConfig(teamFile?.json,{
     referencedCategoryIds:referencedTeamIds(wps,subs),subtasks:subs
   });
@@ -373,7 +401,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   const scopeWarnings=[];
   if(memberId){
     enforceScope=true;
-    scopeSubtaskIds=deriveWeeklyScopeIds(subs,ownerTeamSet,reportDate);
+    scopeSubtaskIds=deriveWeeklyScopeIds(subs,ownerTeamSet,reportDate,checkpoints);
     const requestedSet=new Set(requestedIds);
     const derivedSet=new Set(scopeSubtaskIds);
     const omitted=scopeSubtaskIds.filter(id=>!requestedSet.has(id));
@@ -388,8 +416,10 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     : ownerTeamSet.has(String(item.owner||''))
   );
   const scopedSubs=subs.filter(item=>ownerTeamSet.has(String(item.owner_team||''))&&(!enforceScope||scopeIdSet.has(String(item.id||''))));
+  const nextCheckpoint=nextWeeklyCheckpoint(checkpoints,reportDate);
   const context={
     report_date:reportDate,
+    next_checkpoint:nextCheckpoint,
     report_member:{id:memberId,name:memberName},
     owner_team:ownerTeams[0],
     owner_teams:ownerTeams,
