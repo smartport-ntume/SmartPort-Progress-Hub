@@ -1,5 +1,6 @@
 import app from './reference.js';
 import { corsHeaders } from './cors.js';
+import { guestTeamConfig, referencedTeamIds } from './team-config.js';
 
 const GH_API='https://api.github.com';
 
@@ -94,6 +95,10 @@ async function getJsonFile(repo,path,token){
   return{json:JSON.parse(decodeUtf8Base64(f.content)),sha:f.sha};
 }
 async function getJson(repo,path,token){return(await getJsonFile(repo,path,token)).json}
+async function getOptionalJson(repo,path,token){
+  try{return await getJson(repo,path,token)}
+  catch(error){if(error?.status===404)return null;throw error}
+}
 async function canWrite(repo,token){
   const r=await github(`/repos/${repo}`,token);const p=r.permissions||{};
   return!!(p.admin||p.maintain||p.push);
@@ -160,19 +165,22 @@ async function validateGuestSession(session,env){
 async function guestSnapshot(env){
   if(!env.GUEST_REPO_TOKEN)throw Object.assign(new Error('guest_repo_token_missing'),{status:503});
   const token=env.GUEST_REPO_TOKEN,repo=env.PROJECT_REPO;
-  const[project,wp,subs,fsr,cp]=await Promise.all([
+  const[project,wp,subs,fsr,cp,teamConfig]=await Promise.all([
     getJson(repo,'project/project.json',token),
     getJson(repo,'project/work_packages.json',token),
     getJson(repo,'project/subtasks.json',token),
     getJson(repo,'safety/fsr.json',token),
-    getJson(repo,'project/checkpoints.json',token)
+    getJson(repo,'project/checkpoints.json',token),
+    getOptionalJson(repo,'project/team_config.json',token)
   ]);
+  const workPackages=wp.work_packages||[],subtasks=subs.subtasks||[];
   return{
     project,
-    work_packages:wp.work_packages||[],
-    subtasks:subs.subtasks||[],
+    work_packages:workPackages,
+    subtasks,
     functional_safety_requirements:fsr.functional_safety_requirements||[],
-    checkpoints:cp.checkpoints||[]
+    checkpoints:cp.checkpoints||[],
+    team_config:guestTeamConfig(teamConfig,{referencedCategoryIds:referencedTeamIds(workPackages,subtasks)})
   };
 }
 async function guestReference(env){

@@ -171,6 +171,7 @@
     async saveWorkPackages(payload) { return request(cfg.endpoints.workPackages, { method:'PUT', body:JSON.stringify(payload) }); },
     async saveFSR(payload) { return request(cfg.endpoints.fsr, { method:'PUT', body:JSON.stringify(payload) }); },
     async saveCheckpoints(payload) { return request(cfg.endpoints.checkpoints, { method:'PUT', body:JSON.stringify(payload) }); },
+    async saveTeamConfig(payload) { return request(cfg.endpoints.teamConfig, { method:'PUT', body:JSON.stringify(payload) }); },
     async createSubtask(payload) { return request(cfg.endpoints.subtasks, { method:'POST', body:JSON.stringify(payload) }); },
     async updateSubtask(id, payload) { return request(`${cfg.endpoints.subtasks}/${encodeURIComponent(id)}`, { method:'PUT', body:JSON.stringify(payload) }); },
     async archiveSubtask(id) { return request(`${cfg.endpoints.subtasks}/${encodeURIComponent(id)}`, { method:'DELETE' }); },

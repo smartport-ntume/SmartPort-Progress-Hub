@@ -12,6 +12,16 @@
   const ACTIVE_JOB_KEY='smartport.weeklyAnalysisJob';
   const ACTIVE_REPORT_KEY='smartport.weeklyAnalysisReport';
 
+  function renderOwnerOptions(){
+    const categories=window.SmartPortTeam?.activeCategories(Store.state.teamConfig)||[];
+    for(const select of [$('#weeklyOwner'),$('#weeklyManualOwner')]){
+      if(!select)continue;
+      const selected=select.value;
+      select.innerHTML=categories.map(item=>`<option value="${esc(item.id)}">${esc(item.name)} (${esc(item.id)})</option>`).join('');
+      if(categories.some(item=>item.id===selected))select.value=selected;
+    }
+  }
+
   function toast(msg){
     const el=$('#toast');
     if(!el) return;
@@ -32,7 +42,7 @@
             <div class="alert info"><b>只有被授權的 PM 按下按鈕後，本機 Codex 才會啟動。</b><br>Word 檔先暫存 Supabase；本機 Agent 收到事件後保存到 Private Git 並刪除暫存檔。開啟頁面不會觸發 Codex，AI 也不會直接寫入正式 baseline。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
-              <div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div>
+              <div class="field"><label>Owner Team</label><select id="weeklyOwner" name="owner_team" required></select></div>
             </div>
             <label id="weeklyDropZone" class="weekly-dropzone" for="weeklyReportFile">
               <input id="weeklyReportFile" type="file" accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
@@ -65,7 +75,7 @@
         <form id="weeklyProposalForm" style="padding:14px">
           <div class="weekly-manual-grid">
             <div class="field"><label>Report Date</label><input id="weeklyManualDate" name="report_date" type="date" required></div>
-            <div class="field"><label>Owner Team</label><select name="owner_team" required><option value="CTL">CTL</option><option value="LOC/NAV">LOC/NAV</option><option value="PER">PER</option><option value="STM">STM</option><option value="VERIFY">VERIFY</option></select></div>
+            <div class="field"><label>Owner Team</label><select id="weeklyManualOwner" name="owner_team" required></select></div>
             <div class="field"><label>Target Type</label><select id="weeklyTargetType" name="target_type" required><option value="WP">WP</option><option value="SUBTASK">Subtask</option></select></div>
             <div class="field"><label>Target</label><select id="weeklyTargetId" name="target_id" required></select></div>
             <div class="field"><label>Proposed Progress (%)</label><input name="progress" type="number" min="0" max="100" step="1" required></div>
@@ -293,6 +303,9 @@
   async function init(){
     if(!$('#reports')) return;
     installLayout();
+    renderOwnerOptions();
+    document.addEventListener('smartport:snapshot-replaced',renderOwnerOptions);
+    document.addEventListener('smartport:team-config-saved',renderOwnerOptions);
     const today=new Date().toISOString().slice(0,10);
     $('#weeklyDate').value=today;$('#weeklyManualDate').value=today;
     bindDropzone();$('#weeklyReportUploadForm').addEventListener('submit',submitReport);

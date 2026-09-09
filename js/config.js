@@ -33,6 +33,7 @@
       subtasks: '/api/project/subtasks',
       fsr: '/api/safety/fsr',
       checkpoints: '/api/project/checkpoints',
+      teamConfig: '/api/project/team-config',
       proposals: '/api/reports/proposals',
       reportJobs: '/api/reports/jobs'
     }

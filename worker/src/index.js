@@ -1,4 +1,9 @@
 import { corsHeaders, safeReturnUrl } from './cors.js';
+import {
+  normalizeTeamConfig,
+  referencedTeamIds,
+  validateTeamConfig
+} from './team-config.js';
 
 const GH_API = 'https://api.github.com';
 
@@ -24,7 +29,12 @@ async function github(path, token, options = {}) {
   const text = await res.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch (_) { body = text; }
-  if (!res.ok) throw new Error(`GitHub ${res.status}: ${typeof body === 'string' ? body : JSON.stringify(body)}`);
+  if (!res.ok) {
+    const error = new Error(`GitHub ${res.status}: ${typeof body === 'string' ? body : JSON.stringify(body)}`);
+    error.status = res.status;
+    error.body = body;
+    throw error;
+  }
   return body;
 }
 
@@ -39,6 +49,15 @@ function b64encode(v) {
 async function getJsonFile(repo, path, token) {
   const data = await github(`/repos/${repo}/contents/${path}`, token);
   return { json: JSON.parse(b64decode(data.content)), sha: data.sha };
+}
+
+async function getOptionalJsonFile(repo, path, token) {
+  try {
+    return await getJsonFile(repo, path, token);
+  } catch (error) {
+    if (error?.status === 404) return null;
+    throw error;
+  }
 }
 
 async function putJsonFile(repo, path, payload, token, message) {
@@ -652,14 +671,44 @@ export default {
       }
 
       if (url.pathname === '/api/project/snapshot' && request.method === 'GET') {
-        const [project, wp, subtasks, fsr, cp] = await Promise.all([
+        const [project, wp, subtasks, fsr, cp, teamConfig] = await Promise.all([
           getJsonFile(repo, 'project/project.json', token),
           getJsonFile(repo, 'project/work_packages.json', token),
           getJsonFile(repo, 'project/subtasks.json', token),
           getJsonFile(repo, 'safety/fsr.json', token),
-          getJsonFile(repo, 'project/checkpoints.json', token)
+          getJsonFile(repo, 'project/checkpoints.json', token),
+          getOptionalJsonFile(repo, 'project/team_config.json', token)
         ]);
-        return json({ project: project.json, work_packages: wp.json.work_packages || [], subtasks: subtasks.json.subtasks || [], functional_safety_requirements: fsr.json.functional_safety_requirements || [], checkpoints: cp.json.checkpoints || [] }, 200, C);
+        const workPackages = wp.json.work_packages || [];
+        const subtaskItems = subtasks.json.subtasks || [];
+        return json({
+          project: project.json,
+          work_packages: workPackages,
+          subtasks: subtaskItems,
+          functional_safety_requirements: fsr.json.functional_safety_requirements || [],
+          checkpoints: cp.json.checkpoints || [],
+          team_config: normalizeTeamConfig(teamConfig?.json, {
+            referencedCategoryIds: referencedTeamIds(workPackages, subtaskItems),
+            subtasks: subtaskItems
+          })
+        }, 200, C);
+      }
+
+      if (url.pathname === '/api/project/team-config' && request.method === 'PUT') {
+        const [payload, wp, subtasks, actor] = await Promise.all([
+          request.json(),
+          getJsonFile(repo, 'project/work_packages.json', token),
+          getJsonFile(repo, 'project/subtasks.json', token),
+          requestActor(request, token, env)
+        ]);
+        const config = validateTeamConfig(payload, {
+          workPackages: wp.json.work_packages || [],
+          subtasks: subtasks.json.subtasks || []
+        });
+        config.updated_at = new Date().toISOString();
+        config.updated_by = actor.login;
+        await putJsonFile(repo, 'project/team_config.json', config, token, 'Hub: update team responsibilities');
+        return json({ ok: true, team_config: config }, 200, C);
       }
 
       if (url.pathname === '/api/project/work-packages' && request.method === 'PUT') {
@@ -710,7 +759,7 @@ export default {
 
       return json({ error: 'not found' }, 404, C);
     } catch (e) {
-      return json({ error: e.message || String(e) }, 500, C);
+      return json({ error: e.message || String(e) }, Number(e?.status) || 500, C);
     }
   }
 };

@@ -30,6 +30,27 @@ test('GatewayJobHandler maps a baseline job to the internal API with trusted act
   assert.deepEqual(await captured.json(), { work_packages: [] });
 });
 
+test('GatewayJobHandler maps PM team configuration writes to the managed project API', async () => {
+  let captured = null;
+  const handler = new GatewayJobHandler({
+    app: {
+      async fetch(request) {
+        captured = request;
+        return Response.json({ ok: true, team_config: await request.clone().json() });
+      }
+    },
+    env: {},
+    internalBearer: 'internal-secret',
+    supabase: {}
+  });
+  const payload = { categories: [], members: [], category_owners: {} };
+  const result = await handler.handle({ kind: 'write_team_config', actor_login: 'vincent', payload });
+  assert.equal(new URL(captured.url).pathname, '/api/project/team-config');
+  assert.equal(captured.method, 'PUT');
+  assert.equal(captured.headers.get('X-SmartPort-Actor'), 'vincent');
+  assert.deepEqual(result.team_config, payload);
+});
+
 test('weekly report is archived before temporary Supabase Storage is deleted and analyzed', async () => {
   const calls = [];
   const app = {
