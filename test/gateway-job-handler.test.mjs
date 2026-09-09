@@ -60,10 +60,14 @@ test('weekly report is archived before temporary Supabase Storage is deleted and
       if (url.pathname === '/api/reports/upload') {
         const body = await request.json();
         assert.equal(Buffer.from(body.data_base64, 'base64').toString(), 'weekly report');
+        assert.equal(body.member_name, '黃志峰');
+        assert.deepEqual(body.owner_teams, ['CTL', 'STM']);
         return Response.json({ report: { path: 'weekly_reports/2026/report.docx', filename: 'report.docx' } }, { status: 201 });
       }
       if (url.pathname === '/api/reports/analyze') {
-        assert.equal((await request.json()).report_path, 'weekly_reports/2026/report.docx');
+        const body = await request.json();
+        assert.equal(body.report_path, 'weekly_reports/2026/report.docx');
+        assert.deepEqual(body.scope_subtask_ids, ['C1.1', 'S1.1']);
         return Response.json({ analysis: { report_summary: 'done' }, proposals: [] });
       }
       throw new Error('unexpected request');
@@ -99,7 +103,11 @@ test('weekly report is archived before temporary Supabase Storage is deleted and
       storage_path: 'user-1/job/report.docx',
       filename: 'report.docx',
       report_date: '2026-09-03',
-      owner_team: 'CTL'
+      owner_team: 'CTL',
+      owner_teams: ['CTL', 'STM'],
+      member_id: 'member-1',
+      member_name: '黃志峰',
+      scope_subtask_ids: ['C1.1', 'S1.1']
     }
   });
   assert.equal(result.analysis.report_summary, 'done');

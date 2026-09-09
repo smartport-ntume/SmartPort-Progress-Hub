@@ -207,6 +207,54 @@ function safePathPart(v, fallback='item') {
   return x||fallback;
 }
 
+function boundedReportText(value, maximum=100) {
+  return String(value||'').trim().slice(0, maximum);
+}
+
+function requestedReportTeams(payload) {
+  const raw=Array.isArray(payload?.owner_teams)?payload.owner_teams:[payload?.owner_team];
+  const teams=[...new Set(raw.map(item=>boundedReportText(item,32)).filter(item=>/^[A-Z][A-Z0-9/_-]{0,31}$/.test(item)))];
+  if(!teams.length){
+    const fallback=boundedReportText(payload?.owner_team,32);
+    if(fallback)teams.push(fallback);
+  }
+  return teams.slice(0,30);
+}
+
+function requestedScopeIds(payload) {
+  if(!Array.isArray(payload?.scope_subtask_ids))return [];
+  return [...new Set(payload.scope_subtask_ids.map(item=>boundedReportText(item,128)).filter(Boolean))].slice(0,200);
+}
+
+function weeklyReportDate(value) {
+  const match=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value||''));
+  if(!match)return null;
+  const date=new Date(Date.UTC(Number(match[1]),Number(match[2])-1,Number(match[3])));
+  if(Number.isNaN(+date)
+    ||date.getUTCFullYear()!==Number(match[1])
+    ||date.getUTCMonth()!==Number(match[2])-1
+    ||date.getUTCDate()!==Number(match[3]))return null;
+  return date;
+}
+
+function weeklyTaskCompleted(item) {
+  const progress=Number(item?.actual_progress??item?.progress);
+  const status=String(item?.status||'').trim().toUpperCase();
+  return (Number.isFinite(progress)&&progress>=100)||['DONE','COMPLETED','APPROVED'].includes(status);
+}
+
+function deriveWeeklyScopeIds(subtasks, ownerTeamSet, reportDate) {
+  const date=weeklyReportDate(reportDate);
+  if(!date)throw new Error('invalid_report_date');
+  const cutoff=new Date(date);
+  cutoff.setUTCDate(cutoff.getUTCDate()+30);
+  return subtasks.filter(item=>{
+    if(!ownerTeamSet.has(String(item?.owner_team||''))||weeklyTaskCompleted(item))return false;
+    const end=weeklyReportDate(item?.end);
+    return end&&end<=cutoff;
+  }).map(item=>String(item.id||'')).filter(Boolean);
+}
+
 function b64ToBytes(v) {
   const raw=atob(String(v||'').replace(/\s/g,''));
   const out=new Uint8Array(raw.length);
@@ -233,22 +281,25 @@ async function uploadWeeklyReport(repo, userToken, env, payload, author) {
   const ext=(filename.split('.').pop()||'').toLowerCase();
   if(!['doc','docx'].includes(ext))throw new Error('weekly_report_file_must_be_doc_or_docx');
   const reportDate=String(payload.report_date||'').trim();
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(reportDate))throw new Error('invalid_report_date');
+  if(!weeklyReportDate(reportDate))throw new Error('invalid_report_date');
   const ownerTeam=String(payload.owner_team||'').trim();
   if(!ownerTeam)throw new Error('owner_team_required');
+  const ownerTeams=requestedReportTeams(payload);
+  const memberId=boundedReportText(payload.member_id,100);
+  const memberName=boundedReportText(payload.member_name,80);
   const b64=String(payload.data_base64||'').replace(/^data:[^,]+,/,'').replace(/\s/g,'');
   if(!b64)throw new Error('report_file_empty');
   const approximateBytes=Math.floor(b64.length*3/4);
   if(approximateBytes>10*1024*1024)throw new Error('report_file_too_large_10mb_max');
   const storageToken=await reportStorageToken(repo,userToken,env);
   if(!storageToken)throw new Error('REPORT_REPO_TOKEN_required_for_engineer_upload');
-  const year=reportDate.slice(0,4),team=safePathPart(ownerTeam,'TEAM');
+  const year=reportDate.slice(0,4),reportOwner=safePathPart(memberId||ownerTeam,'TEAM');
   const stamp=new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14);
   const cleanName=safePathPart(filename,'weekly-report.'+ext);
-  const path=`weekly_reports/${year}/${reportDate}/${team}/${stamp}_${cleanName}`;
+  const path=`weekly_reports/${year}/${reportDate}/${reportOwner}/${stamp}_${cleanName}`;
   const result=await github(`/repos/${repo}/contents/${path}`,storageToken,{
     method:'PUT',
-    body:JSON.stringify({message:`Weekly report: ${reportDate} ${ownerTeam} by ${author}`,content:b64})
+    body:JSON.stringify({message:`Weekly report: ${reportDate} ${memberName||ownerTeam} by ${author}`,content:b64})
   });
   return{
     path,
@@ -256,7 +307,10 @@ async function uploadWeeklyReport(repo, userToken, env, payload, author) {
     mime_type:reportMime(cleanName,payload.mime_type),
     size:approximateBytes,
     html_url:result?.content?.html_url||`https://github.com/${repo}/blob/main/${path}`,
-    commit_sha:result?.commit?.sha||null
+    commit_sha:result?.commit?.sha||null,
+    member_id:memberId,
+    member_name:memberName,
+    owner_teams:ownerTeams
   };
 }
 
@@ -283,24 +337,74 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   const reportDate=String(payload.report_date||'').trim();
   const ownerTeam=String(payload.owner_team||'').trim();
   if(!reportDate||!ownerTeam)throw new Error('report_date_and_owner_team_required');
+  if(!weeklyReportDate(reportDate))throw new Error('invalid_report_date');
 
-  const [reportFile,wpFile,subFile]=await Promise.all([
+  const [reportFile,wpFile,subFile,teamFile]=await Promise.all([
     github(`/repos/${repo}/contents/${reportPath}`,token),
     getJsonFile(repo,'project/work_packages.json',token),
-    getJsonFile(repo,'project/subtasks.json',token)
+    getJsonFile(repo,'project/subtasks.json',token),
+    getOptionalJsonFile(repo,'project/team_config.json',token)
   ]);
   const filename=reportFile.name||reportPath.split('/').pop()||'weekly-report.docx';
   const fileBytes=b64ToBytes(reportFile.content||'');
   const wps=wpFile.json.work_packages||[],subs=subFile.json.subtasks||[];
+  const teamConfig=normalizeTeamConfig(teamFile?.json,{
+    referencedCategoryIds:referencedTeamIds(wps,subs),subtasks:subs
+  });
+  const memberId=boundedReportText(payload.member_id,100);
+  let memberName=boundedReportText(payload.member_name,80);
+  let ownerTeams=requestedReportTeams(payload);
+  if(memberId){
+    const member=teamConfig.members.find(item=>item.id===memberId&&item.active!==false);
+    if(!member)throw new Error('weekly_report_member_not_found_or_inactive');
+    memberName=member.name;
+    ownerTeams=teamConfig.categories
+      .filter(item=>item.active!==false&&teamConfig.category_owners[item.id]===memberId)
+      .map(item=>item.id);
+    if(!ownerTeams.length)throw new Error('weekly_report_member_has_no_responsible_category');
+  }
+  const ownerTeamSet=new Set(ownerTeams);
+  const requestedIds=requestedScopeIds(payload);
+  let enforceScope=requestedIds.length>0;
+  let scopeSubtaskIds=requestedIds.filter(id=>{
+    const task=subs.find(item=>String(item.id||'')===id);
+    return task&&ownerTeamSet.has(String(task.owner_team||''));
+  });
+  const scopeWarnings=[];
+  if(memberId){
+    enforceScope=true;
+    scopeSubtaskIds=deriveWeeklyScopeIds(subs,ownerTeamSet,reportDate);
+    const requestedSet=new Set(requestedIds);
+    const derivedSet=new Set(scopeSubtaskIds);
+    const omitted=scopeSubtaskIds.filter(id=>!requestedSet.has(id));
+    const unexpected=requestedIds.filter(id=>!derivedSet.has(id));
+    if(omitted.length)scopeWarnings.push(`Required scope restored from Private Git: ${omitted.join(', ')}`);
+    if(unexpected.length)scopeWarnings.push(`Browser scope ignored because it is no longer required: ${unexpected.join(', ')}`);
+  }
+  const scopeIdSet=new Set(scopeSubtaskIds);
+  const scopeWpIds=new Set(subs.filter(item=>scopeIdSet.has(String(item.id||''))).map(item=>String(item.parent_wp||'')));
+  const scopedWps=wps.filter(item=>enforceScope
+    ? scopeWpIds.has(String(item.id||''))
+    : ownerTeamSet.has(String(item.owner||''))
+  );
+  const scopedSubs=subs.filter(item=>ownerTeamSet.has(String(item.owner_team||''))&&(!enforceScope||scopeIdSet.has(String(item.id||''))));
   const context={
     report_date:reportDate,
-    owner_team:ownerTeam,
-    work_packages:wps.map(w=>({id:w.id,name:w.name,owner:w.owner,start:w.start,end:w.end,actual_progress:w.actual_progress??null,status:w.status||'Not Updated',description:w.description||''})),
-    subtasks:subs.map(x=>({id:x.id,parent_wp:x.parent_wp,name:x.name,owner_team:x.owner_team,start:x.start,end:x.end,target_cp:x.target_cp||'',actual_progress:x.actual_progress??null,status:x.status||'Not Updated',description:x.description||''}))
+    report_member:{id:memberId,name:memberName},
+    owner_team:ownerTeams[0],
+    owner_teams:ownerTeams,
+    required_scope_subtask_ids:scopeSubtaskIds,
+    work_packages:scopedWps.map(w=>({id:w.id,name:w.name,owner:w.owner,start:w.start,end:w.end,actual_progress:w.actual_progress??null,status:w.status||'Not Updated',description:w.description||'',expected_evidence:w.evidence||[]})),
+    subtasks:scopedSubs.map(x=>({id:x.id,parent_wp:x.parent_wp,name:x.name,owner_team:x.owner_team,start:x.start,end:x.end,target_cp:x.target_cp||'',actual_progress:x.actual_progress??null,status:x.status||'Not Updated',description:x.description||'',expected_evidence:x.expected_evidence||[]}))
   };
   const schema={
-    type:'object',additionalProperties:false,required:['report_summary','warnings','proposals'],properties:{
-      report_summary:{type:'string',maxLength:8000},warnings:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},
+    type:'object',additionalProperties:false,required:['report_summary','review','warnings','proposals'],properties:{
+      report_summary:{type:'string',maxLength:8000},
+      review:{type:'object',additionalProperties:false,required:['overall_assessment','completeness_score','evidence_score','schedule_alignment_score','strengths','missing_items','actions'],properties:{
+        overall_assessment:{type:'string',maxLength:8000},completeness_score:{type:'number',minimum:0,maximum:100},evidence_score:{type:'number',minimum:0,maximum:100},schedule_alignment_score:{type:'number',minimum:0,maximum:100},
+        strengths:{type:'array',maxItems:20,items:{type:'string',maxLength:2000}},missing_items:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},actions:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}}
+      }},
+      warnings:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},
       proposals:{type:'array',maxItems:200,items:{type:'object',additionalProperties:false,required:['target_type','target_id','progress','status','blocker','evidence','summary','confidence','rationale'],properties:{
         target_type:{type:'string',enum:['WP','SUBTASK']},target_id:{type:'string',maxLength:128},progress:{type:'number',minimum:0,maximum:100},
         status:{type:'string',enum:['On Track','At Risk','Blocked','Delayed','Completed']},blocker:{type:'string',maxLength:4000},evidence:{type:'string',maxLength:12000},summary:{type:'string',maxLength:8000},confidence:{type:'number',minimum:0,maximum:1},rationale:{type:'string',maxLength:8000}
@@ -326,7 +430,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
         method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
         body:JSON.stringify({
           model:env.OPENAI_MODEL||'gpt-5-mini',store:false,
-          instructions:'You are the SmartPort weekly-report progress mapper. Convert only evidence supported by the uploaded weekly report into proposed project updates. Compare the report against the supplied current WP/Subtask baseline. Prefer SUBTASK updates when a specific task is identifiable. Use WP only when the report materially updates the whole work package or no specific Subtask fits. progress is the proposed absolute progress percentage after this report, not a weekly delta. Never lower an existing progress value. Do not invent evidence, blockers, tests, completion, dates, or targets. If a percentage is not stated, estimate conservatively from concrete completed deliverables relative to the task description and explain the estimate in rationale. Only map work owned by the selected Owner Team. Return an empty proposals array when evidence is insufficient.',
+          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Scores are 0 to 100 and feedback must be specific and concise. Template prompts and blank fields are not evidence. Then convert only report-supported facts into proposed project updates. Prefer SUBTASK updates; use WP only for whole-package evidence. progress is an absolute percentage and must never decrease. Do not invent evidence, blockers, tests, completion, dates, targets, or work outside owner_teams and required scope. Return an empty proposals array when evidence is insufficient.',
           input:[{role:'user',content:[
             {type:'input_text',text:`Map this SmartPort weekly report into proposed WP/Subtask progress updates. Project context JSON:\n${JSON.stringify(context)}`},
             {type:'input_file',file_id:uploaded.id}
@@ -342,6 +446,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     try{analysis=JSON.parse(raw)}catch(_){throw new Error('OpenAI_structured_output_parse_failed')}
   }
   analysis.warnings=Array.isArray(analysis.warnings)?analysis.warnings:[];
+  analysis.warnings.unshift(...scopeWarnings);
   analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals:[];
 
   const index=new Map();
@@ -355,21 +460,23 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     const type=String(a.target_type||'').toUpperCase(),id=String(a.target_id||'').trim(),key=`${type}:${id}`;
     const target=index.get(key);
     if(!target){analysis.warnings.push(`Ignored unknown target ${key}`);continue;}
-    if(String(target._team)!==ownerTeam){analysis.warnings.push(`Ignored ${id}: owner ${target._team} does not match report team ${ownerTeam}`);continue;}
+    if(!ownerTeamSet.has(String(target._team))){analysis.warnings.push(`Ignored ${id}: owner ${target._team} is outside this member's responsible categories`);continue;}
+    if(enforceScope&&type==='SUBTASK'&&!scopeIdSet.has(id)){analysis.warnings.push(`Ignored ${id}: not in this report's required scope`);continue;}
+    if(enforceScope&&type==='WP'&&!scopeWpIds.has(id)){analysis.warnings.push(`Ignored ${id}: no scoped Subtask belongs to this WP`);continue;}
     if(existingKeys.has(key)){analysis.warnings.push(`Skipped duplicate ${id}: this report already has a non-rejected proposal`);continue;}
     const current=Number(target.actual_progress??0)||0;
     const proposed=Math.max(current,Math.min(100,Number(a.progress)||0));
     const p={
-      report_date:reportDate,owner_team:ownerTeam,target_type:type,target_id:id,progress:proposed,status:a.status,
+      report_date:reportDate,owner_team:String(target._team),report_member_id:memberId,report_member_name:memberName,target_type:type,target_id:id,progress:proposed,status:a.status,
       blocker:a.blocker||'',evidence:a.evidence||'',summary:a.summary||'',source_report_path:reportPath,ai_generated:true,
       ai_confidence:Number(a.confidence)||0,ai_rationale:a.rationale||'',analysis_id:analysisId
     };
-    const title=`[WEEKLY-AI][${reportDate}][${ownerTeam}] ${type} ${id}`;
+    const title=`[WEEKLY-AI][${reportDate}][${memberName||ownerTeams.join('+')}] ${type} ${id}`;
     const issue=await github(`/repos/${repo}/issues`,token,{method:'POST',body:JSON.stringify({title,body:proposalBody(p,author)})});
     created.push(parseProposalIssue(issue));
   }
   const model=useLocalCodex?(env.LOCAL_CODEX_MODEL||'Codex account'):(env.OPENAI_MODEL||'gpt-5-mini');
-  return{analysis:{report_summary:analysis.report_summary||'',warnings:analysis.warnings,analysis_id:analysisId,model},proposals:created,report:{path:reportPath,filename}};
+  return{analysis:{report_summary:analysis.report_summary||'',review:analysis.review||null,warnings:analysis.warnings,analysis_id:analysisId,model},proposals:created,report:{path:reportPath,filename,member_id:memberId,member_name:memberName,owner_teams:ownerTeams}};
 }
 
 function proposalBody(p, author) {
@@ -380,6 +487,8 @@ function proposalBody(p, author) {
     submitted_at: new Date().toISOString(),
     report_date: p.report_date,
     owner_team: p.owner_team,
+    report_member_id: p.report_member_id || '',
+    report_member_name: p.report_member_name || '',
     target_type: p.target_type,
     target_id: p.target_id,
     progress: Number(p.progress),
@@ -393,7 +502,7 @@ function proposalBody(p, author) {
     ai_rationale: p.ai_rationale || '',
     analysis_id: p.analysis_id || ''
   };
-  return `## Weekly Progress Proposal\n\n- **Report Date:** ${payload.report_date}\n- **Owner Team:** ${payload.owner_team}\n- **Target:** ${payload.target_type} ${payload.target_id}\n- **Proposed Progress:** ${payload.progress}%\n- **Status:** ${payload.status}\n- **Blocker:** ${payload.blocker || '—'}\n- **Evidence:** ${payload.evidence || '—'}\n- **Source Report:** ${payload.source_report_path || '—'}\n- **Origin:** ${payload.ai_generated ? 'AI mapped' : 'Manual'}${payload.ai_confidence == null ? '' : ` · confidence ${Math.round(payload.ai_confidence * 100)}%`}\n${payload.ai_rationale ? `- **AI Rationale:** ${payload.ai_rationale}\n` : ''}\n## Summary\n${payload.summary || '—'}\n\n<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\n${JSON.stringify(payload)}\n-->`;
+  return `## Weekly Progress Proposal\n\n- **Report Date:** ${payload.report_date}\n- **Report Member:** ${payload.report_member_name || '—'}\n- **Owner Team:** ${payload.owner_team}\n- **Target:** ${payload.target_type} ${payload.target_id}\n- **Proposed Progress:** ${payload.progress}%\n- **Status:** ${payload.status}\n- **Blocker:** ${payload.blocker || '—'}\n- **Evidence:** ${payload.evidence || '—'}\n- **Source Report:** ${payload.source_report_path || '—'}\n- **Origin:** ${payload.ai_generated ? 'AI mapped' : 'Manual'}${payload.ai_confidence == null ? '' : ` · confidence ${Math.round(payload.ai_confidence * 100)}%`}\n${payload.ai_rationale ? `- **AI Rationale:** ${payload.ai_rationale}\n` : ''}\n## Summary\n${payload.summary || '—'}\n\n<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\n${JSON.stringify(payload)}\n-->`;
 }
 
 function parseProposalIssue(issue) {

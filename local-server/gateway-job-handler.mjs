@@ -63,6 +63,9 @@ export class GatewayJobHandler {
     const upload = await this.request('/api/reports/upload', 'POST', {
       report_date: payload.report_date,
       owner_team: payload.owner_team,
+      owner_teams: payload.owner_teams,
+      member_id: payload.member_id,
+      member_name: payload.member_name,
       filename,
       mime_type: data.type || 'application/octet-stream',
       size: buffer.length,
@@ -76,6 +79,10 @@ export class GatewayJobHandler {
     const result = await this.request('/api/reports/analyze', 'POST', {
       report_date: payload.report_date,
       owner_team: payload.owner_team,
+      owner_teams: payload.owner_teams,
+      member_id: payload.member_id,
+      member_name: payload.member_name,
+      scope_subtask_ids: payload.scope_subtask_ids,
       report_path: upload.report.path
     }, job.actor_login);
     return {

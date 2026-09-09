@@ -183,10 +183,10 @@ Local Codex 不會在這些動作執行：
 
 1. 使用者通過 GitHub Organization 驗證。
 2. 使用者具 PM / Maintain / Write 權限（預設）。
-3. 使用者選擇 `.doc` / `.docx`、填日期與 owner team。
-4. 使用者按下「上傳並排入本機 Codex」。
+3. 使用者選擇日期與成員，網站依該成員的負責分類產生個人 `.docx`；成員填寫後再選回同一人並上傳。
+4. 使用者按下「上傳並批改」。
 
-後端會先把原始 Word 檔 commit / push 到 Private Project-Control，接著把工作放進單工 queue。Codex 使用：
+後端會先把原始 Word 檔 commit / push 到 Private Project-Control，並依 Private Git 的最新分工與甘特圖重新計算成員分類及應填 Subtask，接著把工作放進單工 queue。Codex 使用：
 
 - `codex exec --ephemeral`
 - `--sandbox read-only`

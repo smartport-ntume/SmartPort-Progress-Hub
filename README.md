@@ -58,9 +58,13 @@ supabase/migrations/202609080001_team_config.sql
 
 1. 以具有 Codex 權限的 PM 登入。
 2. 前往 **Workflow → Weekly Reports**。
-3. 選擇日期與團隊，上傳不超過 10 MB 的 `.docx`；舊 `.doc` 需由 Agent 電腦安裝 LibreOffice。
-4. 按下分析後，Agent 會先把原始週報歸檔到 Private Git，再刪除 Supabase Storage 暫存檔。
-5. 本機 Codex CLI 依專案資料產生 Proposal，最後由 PM 決定是否核准。
+3. 選擇報告日期與成員。系統會合併該成員負責的所有分類，列出尚未完成且「已逾期、目前進行中，或未來 30 天內到期」的 Subtask。
+4. 按 **下載此人的 Word 週報**。Word 會帶入姓名、分類、工作 ID、計畫期間、目前進度與預期成果，成員直接填寫成果、證據、風險及下一步。
+5. 填好後回到同一頁、選擇同一位成員並上傳不超過 10 MB 的 `.docx`；舊 `.doc` 需由 Agent 電腦安裝 LibreOffice。
+6. 按 **上傳並批改**。Agent 會先把原始週報歸檔到 Private Git，再刪除 Supabase Storage 暫存檔。
+7. 本機 Codex CLI 會核對 Private Git 中的最新分工與甘特圖，給出完整度、證據品質、時程一致性三項分數及具體補充建議；有足夠依據的內容才會建立 Proposal，最後仍由 PM 決定是否核准。
+
+瀏覽器傳來的成員名稱、分類與任務範圍不被視為可信資料。Agent 會依 `project/team_config.json`、`project/work_packages.json` 與 `project/subtasks.json` 重新計算該人的負責分類及應填範圍，避免漏項或跨組更新。這個版本沿用既有 `analyze_weekly_report` job，不需要再執行新的 Supabase migration；部署新版程式後需更新並重啟 Windows Agent。
 
 這是「在本機執行 Codex CLI」，不是離線模型。分析時，抽出的週報文字與必要 project context 會由 Codex CLI 傳送至 OpenAI 服務。
 
@@ -116,7 +120,7 @@ npm test
 npm run doctor
 ```
 
-測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限、Realtime 事件處理、週報先歸檔後刪除暫存、CORS、static allowlist、未登入資料保護，以及 Guest 唯讀快照。
+測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限、Realtime 事件處理、個人週報範圍與 Word 產生、Private Git 端重新驗證分工與範圍、週報先歸檔後刪除暫存、CORS、static allowlist、未登入資料保護，以及 Guest 唯讀快照。
 
 ## 回復點
 
