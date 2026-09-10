@@ -208,6 +208,7 @@ Weekly Discord automation: enabled
 - Engineer 送 Manual Proposal：建立一個 job；Agent 建 GitHub Issue，再更新 Proposal snapshot。
 - PM 編輯／核准：建立一個 job；Agent pull、檢查 clean worktree、commit、push，再更新 snapshot。
 - PM 儲存成員與分工：建立 `write_team_config` job；Agent 驗證分類負責人後寫入 `project/team_config.json`。WP / Subtask 依分類自動繼承負責人，再更新 Guest / Member snapshot。
+- PM 修改既有成員姓名：Agent 會同步更新仍開放週報批次中的顯示姓名；當週已凍結的分類、任務與 CP 範圍不變。週報入口重新整理後即生效，重新下載的 Word 也會使用新姓名。
 - Codex operator 在 Weekly Reports 選擇日期與成員：網站依成員負責分類及甘特圖產生個人 `.docx`，只列入逾期未完成，以及下一個 CP 檢核前應完成的 Subtask；首頁會預覽該 CP 的主題、日期、倒數天數、車輛能力（Capability）、Review / Check 與任務摘要。若已無後續 CP，則只列逾期項目。
 - 填好的個人週報上傳並按下批改：暫存 Storage → Realtime job → Private Git archive → 刪除暫存 → Local Codex 批改與進度映射 → Proposal。Agent 會以 Private Git 的最新 `team_config.json` 與甘特圖重新計算負責分類及應填範圍，不信任 browser 傳入的名稱或 scope。
 - 每週一 13:00：Agent 從 Private Git 建立不可變的當週報告批次，為每位成員產生個人 `.docx` 並直接附到指定 Discord 頻道，同時附上 token URL。成員直接下載自己的附件；填完後開啟網址即可選姓名並上傳，不需要 GitHub 帳號或 Guest 密碼。提交 RPC 會建立既有 `analyze_weekly_report` job，結果照常等待 PM Approve。

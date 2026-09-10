@@ -86,7 +86,8 @@ const publisher = new SupabaseSnapshotPublisher({
   supabase,
   projectStore,
   agentId: config.supabase.agentId,
-  loadProposals: () => handler.listProposals()
+  loadProposals: () => handler.listProposals(),
+  syncWeeklyMemberNames: config.weeklyAutomation.enabled
 });
 
 async function execute(job) {

@@ -9,12 +9,53 @@ function assertResult(result, operation) {
   return result?.data;
 }
 
+export function refreshWeeklyBatchMemberNames(payload, teamConfig) {
+  const currentNames = new Map((teamConfig?.members || [])
+    .map(member => [String(member?.id || ''), String(member?.name || '').trim()])
+    .filter(([id, name]) => id && name));
+  const batchMembers = payload?.team_config?.members;
+  if (!Array.isArray(batchMembers) || !currentNames.size) return null;
+  let changed = false;
+  const members = batchMembers.map(member => {
+    const name = currentNames.get(String(member?.id || ''));
+    if (!name || name === member?.name) return member;
+    changed = true;
+    return { ...member, name };
+  });
+  if (!changed) return null;
+  return {
+    ...payload,
+    team_config: { ...payload.team_config, members }
+  };
+}
+
 export class SupabaseSnapshotPublisher {
-  constructor({ supabase, projectStore, agentId, loadProposals }) {
+  constructor({ supabase, projectStore, agentId, loadProposals, syncWeeklyMemberNames = false }) {
     this.supabase = supabase;
     this.projectStore = projectStore;
     this.agentId = agentId;
     this.loadProposals = loadProposals;
+    this.syncWeeklyMemberNames = syncWeeklyMemberNames;
+  }
+
+  async publishWeeklyMemberNames(teamConfig, now = new Date()) {
+    if (!this.syncWeeklyMemberNames) return { checked: 0, updated: 0 };
+    const lookup = await this.supabase.from('weekly_report_batches')
+      .select('id,payload')
+      .eq('status', 'OPEN')
+      .gte('accept_until', now.toISOString());
+    const batches = assertResult(lookup, 'load_open_weekly_batches') || [];
+    let updated = 0;
+    for (const batch of batches) {
+      const payload = refreshWeeklyBatchMemberNames(batch.payload, teamConfig);
+      if (!payload) continue;
+      assertResult(
+        await this.supabase.from('weekly_report_batches').update({ payload }).eq('id', batch.id),
+        'sync_weekly_batch_member_names'
+      );
+      updated += 1;
+    }
+    return { checked: batches.length, updated };
   }
 
   async publishProject() {
@@ -38,6 +79,7 @@ export class SupabaseSnapshotPublisher {
         updated_by_agent: this.agentId, updated_at: updatedAt
       }
     ], { onConflict: 'audience' }), 'publish_project_snapshots');
+    await this.publishWeeklyMemberNames(snapshot.team_config);
     return {
       source_commit: snapshot.source_commit,
       generated_at: snapshot.generated_at,

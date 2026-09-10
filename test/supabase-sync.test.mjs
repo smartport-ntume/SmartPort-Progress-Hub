@@ -1,6 +1,88 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SupabaseSnapshotPublisher } from '../local-server/supabase-sync.mjs';
+import {
+  SupabaseSnapshotPublisher,
+  refreshWeeklyBatchMemberNames
+} from '../local-server/supabase-sync.mjs';
+
+test('open weekly batches refresh display names without changing their frozen scope', () => {
+  const original = {
+    report_date: '2026-09-07',
+    subtasks: [{ id: 'ST-01', end: '2026-09-20' }],
+    team_config: {
+      members: [
+        { id: 'member-1', name: '舊名字', active: true },
+        { id: 'member-2', name: '保留名字', active: true }
+      ],
+      category_owners: { CTL: 'member-1' }
+    }
+  };
+  const refreshed = refreshWeeklyBatchMemberNames(original, {
+    members: [
+      { id: 'member-1', name: '新名字' },
+      { id: 'member-2', name: '保留名字' }
+    ]
+  });
+
+  assert.equal(refreshed.team_config.members[0].name, '新名字');
+  assert.deepEqual(refreshed.subtasks, original.subtasks);
+  assert.deepEqual(refreshed.team_config.category_owners, { CTL: 'member-1' });
+  assert.equal(original.team_config.members[0].name, '舊名字');
+});
+
+test('snapshot publisher updates only changed names in open weekly batches', async () => {
+  const batches = [
+    { id: 'batch-1', payload: { team_config: { members: [{ id: 'member-1', name: '舊名字' }] } } },
+    { id: 'batch-2', payload: { team_config: { members: [{ id: 'member-1', name: '新名字' }] } } }
+  ];
+  const updates = [];
+  const supabase = {
+    from(table) {
+      assert.equal(table, 'weekly_report_batches');
+      return {
+        select(columns) {
+          assert.equal(columns, 'id,payload');
+          return {
+            eq(column, value) {
+              assert.deepEqual([column, value], ['status', 'OPEN']);
+              return {
+                async gte(dateColumn, cutoff) {
+                  assert.equal(dateColumn, 'accept_until');
+                  assert.equal(cutoff, '2026-09-10T00:00:00.000Z');
+                  return { data: batches, error: null };
+                }
+              };
+            }
+          };
+        },
+        update(value) {
+          return {
+            async eq(column, id) {
+              updates.push({ value, column, id });
+              return { data: null, error: null };
+            }
+          };
+        }
+      };
+    }
+  };
+  const publisher = new SupabaseSnapshotPublisher({
+    supabase,
+    projectStore: {},
+    agentId: 'test-agent',
+    loadProposals: async () => ({ proposals: [] }),
+    syncWeeklyMemberNames: true
+  });
+
+  const result = await publisher.publishWeeklyMemberNames(
+    { members: [{ id: 'member-1', name: '新名字' }] },
+    new Date('2026-09-10T00:00:00.000Z')
+  );
+  assert.deepEqual(result, { checked: 2, updated: 1 });
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].id, 'batch-1');
+  assert.equal(updates[0].value.payload.team_config.members[0].name, '新名字');
+});
 
 test('Supabase Guest keeps full project content but not the private team roster', async () => {
   const documents = {
