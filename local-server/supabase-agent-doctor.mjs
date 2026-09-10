@@ -76,6 +76,16 @@ if (!problems.length) {
         !weekly.error,
         weekly.error ? weekly.error.message : 'weekly_report_batches is available'
       );
+      const passwordlessPortal = await supabase.rpc('smartport_weekly_portal_version');
+      add(
+        'Passwordless weekly portal migration',
+        !passwordlessPortal.error && Number(passwordlessPortal.data) >= 2,
+        passwordlessPortal.error
+          ? passwordlessPortal.error.message
+          : Number(passwordlessPortal.data) >= 2
+            ? `version ${passwordlessPortal.data}`
+            : `unexpected version ${passwordlessPortal.data}`
+      );
       add(
         'Discord weekly publisher',
         true,

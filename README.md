@@ -70,15 +70,18 @@ supabase/migrations/202609080001_team_config.sql
 
 ### 每週自動建立、Discord 發布與收件
 
-啟用後，持續運行的 Windows Agent 會在每週一 13:00（`Asia/Taipei`）建立當週批次，從 Private Git 凍結當下的甘特圖、Checkpoint 與成員分工，為每位應繳成員產生個人 `.docx`，並直接附加到 Discord 訊息。成員在 Discord 下載與自己姓名相同的 Word，填寫後再開啟訊息中的當週專用網址、輸入既有 Guest 密碼、選擇姓名並上傳；不需要 GitHub 帳號。入口頁仍可重新下載同一格式的空白週報，並顯示全員的繳交／批改狀態；Agent 離線時工作留在 Supabase，恢復後再自動批改，最後仍進入既有 PM Review Queue。
+啟用後，持續運行的 Windows Agent 會在每週一 13:00（`Asia/Taipei`）建立當週批次，從 Private Git 凍結當下的甘特圖、Checkpoint 與成員分工，為每位應繳成員產生個人 `.docx`，並直接附加到 Discord 訊息。成員在 Discord 下載與自己姓名相同的 Word，填寫後直接開啟訊息中的當週專用網址、選擇姓名並上傳；不需要 GitHub 帳號或訪客密碼。入口頁會在背景建立獨立的 Supabase 匿名工作階段，也可重新下載同一格式的空白週報，並顯示全員的繳交／批改狀態；Agent 離線時工作留在 Supabase，恢復後再自動批改，最後仍進入既有 PM Review Queue。
 
 預設截止時間是次週一 12:00，並保留七天補交期。每則 Discord 訊息最多附五份 Word，人數較多時會自動分批；Agent 會記錄已送出的批次，重啟後從未完成的下一批續送。若 Agent 在發布時間關機，只要在下一個發布週期前重新啟動就會補發。可選的每日催繳只列出尚未成功上傳的姓名與上傳網址，不會重複附檔或自動 mention Discord 帳號。
 
-首次部署自動收件前，只需在 Supabase SQL Editor **執行一次**：
+首次部署自動收件前，在 Supabase SQL Editor 依序各**執行一次**：
 
 ```text
 supabase/migrations/202609100001_weekly_discord_automation.sql
+supabase/migrations/202609100002_passwordless_weekly_portal.sql
 ```
+
+若第一份已經執行，只需再執行 `202609100002_passwordless_weekly_portal.sql`。接著到 Supabase **Authentication → Providers → Anonymous Sign-Ins** 開啟匿名登入；這只供持有當週私密網址的週報入口使用，不會讓匿名使用者看到主網站資料。
 
 然後在 Agent 電腦的 `.env.local` 加入：
 
@@ -91,7 +94,7 @@ WEEKLY_REPORT_PM_LOGIN=YOUR_PM_GITHUB_LOGIN
 WEEKLY_REMINDER_ENABLED=false
 ```
 
-Webhook 是密鑰，只能放在 `.env.local`。每週不需要再執行 SQL、手動建立 Codex 指令或新增 Windows 排程；原本常駐的 `npm start` Agent 會負責排程。由於所有無 GitHub 帳號的成員共用 Guest 身分，系統能確認「哪個名字被選來繳交」，但不能把該動作視為個人身分驗證；需要不可否認性時才應改成每人登入或個人 PIN。
+Webhook 是密鑰，只能放在 `.env.local`。每週不需要再執行 SQL、手動建立 Codex 指令或新增 Windows 排程；原本常駐的 `npm start` Agent 會負責排程。當週的隨機 token 網址就是繳交憑證，拿到網址的人可以選擇任一姓名，因此只能發布在受控的 Discord 頻道，不能轉貼；需要不可否認性時才應改成每人登入或個人 PIN。
 
 ## 維運者快速開始
 

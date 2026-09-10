@@ -10,10 +10,12 @@
    - `supabase/migrations/202609030001_gateway.sql`
    - `supabase/migrations/202609080001_team_config.sql`
    - `supabase/migrations/202609100001_weekly_discord_automation.sql`
-4. 到 Project Settings → API 保存以下兩項：
+   - `supabase/migrations/202609100002_passwordless_weekly_portal.sql`
+4. 到 Authentication → Providers → Anonymous Sign-Ins 開啟匿名登入。匿名 session 只可搭配當週私密 token 使用週報 RPC；既有 RLS 仍拒絕它讀取主網站資料。
+5. 到 Project Settings → API 保存以下兩項：
    - Project URL
    - publishable key（或 legacy anon key）
-5. service-role/secret key 只保存到 Windows 的 `.env.local`，絕不可貼進前端、GitHub Issue、README 或 commit。
+6. service-role/secret key 只保存到 Windows 的 `.env.local`，絕不可貼進前端、GitHub Issue、README 或 commit。
 
 Migration 會建立：
 
@@ -208,7 +210,7 @@ Weekly Discord automation: enabled
 - PM 儲存成員與分工：建立 `write_team_config` job；Agent 驗證分類負責人後寫入 `project/team_config.json`。WP / Subtask 依分類自動繼承負責人，再更新 Guest / Member snapshot。
 - Codex operator 在 Weekly Reports 選擇日期與成員：網站依成員負責分類及甘特圖產生個人 `.docx`，只列入逾期未完成，以及下一個 CP 檢核前應完成的 Subtask；首頁會預覽該 CP 的主題、日期、倒數天數、車輛能力（Capability）、Review / Check 與任務摘要。若已無後續 CP，則只列逾期項目。
 - 填好的個人週報上傳並按下批改：暫存 Storage → Realtime job → Private Git archive → 刪除暫存 → Local Codex 批改與進度映射 → Proposal。Agent 會以 Private Git 的最新 `team_config.json` 與甘特圖重新計算負責分類及應填範圍，不信任 browser 傳入的名稱或 scope。
-- 每週一 13:00：Agent 從 Private Git 建立不可變的當週報告批次，為每位成員產生個人 `.docx` 並直接附到指定 Discord 頻道，同時附上 token URL。成員直接下載自己的附件；填完後用 Guest 密碼進入網址、選姓名並上傳。提交 RPC 會建立既有 `analyze_weekly_report` job，結果照常等待 PM Approve。
+- 每週一 13:00：Agent 從 Private Git 建立不可變的當週報告批次，為每位成員產生個人 `.docx` 並直接附到指定 Discord 頻道，同時附上 token URL。成員直接下載自己的附件；填完後開啟網址即可選姓名並上傳，不需要 GitHub 帳號或 Guest 密碼。提交 RPC 會建立既有 `analyze_weekly_report` job，結果照常等待 PM Approve。
 - Agent 離線：job 保持 `queued`。重新上線訂閱成功時補查一次，不使用 interval polling。
 
 ## 8. 免費與資料量護欄
@@ -248,7 +250,7 @@ npm start
 
 ### 週報入口能開啟但不能上傳
 
-確認第三份 migration 已執行、使用的是 Discord 當週最新網址、檔案為 `.doc` / `.docx` 且不超過 10 MB。原截止後仍可在七天補交期內上傳；再超過則需等 PM 處理。
+確認兩份週報 migration 均已執行、Authentication → Providers 的 Anonymous Sign-Ins 已開啟、使用的是 Discord 當週最新網址，且檔案為 `.doc` / `.docx` 且不超過 10 MB。原截止後仍可在七天補交期內上傳；再超過則需等 PM 處理。
 
 ### Job 顯示 failed
 
@@ -263,7 +265,7 @@ git -C .runtime/SmartPort-Project-Control log -5 --oneline
 
 ### Guest 密碼要更換
 
-在 Supabase Authentication → Users 對專用 Guest user 變更密碼。前端刻意不持有 Auth 管理權限。
+在 Supabase Authentication → Users 對專用 Guest user 變更密碼。這只影響主網站的唯讀 Guest 登入；週報專用網址不再要求這組密碼。前端刻意不持有 Auth 管理權限。
 
 ### Supabase Free project 被暫停
 

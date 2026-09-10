@@ -38,12 +38,27 @@
     }
     client = window.supabase.createClient(runtime.supabaseUrl, runtime.supabaseAnonKey, {
       auth: {
-        storageKey: 'smartport.supabase.auth',
+        storageKey: 'smartport.weekly.auth',
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true
+        detectSessionInUrl: false
       }
     });
+  }
+
+  async function ensurePortalSession() {
+    const current = await client.auth.getSession();
+    if (current.error) throw current.error;
+    if (current.data.session) return current.data.session;
+    const signedIn = await client.auth.signInAnonymously();
+    if (signedIn.error) {
+      if (/anonymous|disabled|not enabled/i.test(errorText(signedIn.error))) {
+        throw new Error('週報免密碼登入尚未啟用，請聯絡 PM 開啟 Supabase Anonymous Sign-Ins');
+      }
+      throw signedIn.error;
+    }
+    if (!signedIn.data.session) throw new Error('無法建立週報繳交工作階段，請重新整理後再試');
+    return signedIn.data.session;
   }
 
   async function loadBatch() {
@@ -135,7 +150,6 @@
   }
 
   function renderBatch() {
-    $('#loginCard').hidden = true;
     $('#batchCard').hidden = false;
     $('#weekKey').textContent = batch.week_key || 'WEEKLY REPORT';
     $('#batchTitle').textContent = '本週個人週報已建立';
@@ -251,49 +265,18 @@
       .subscribe();
   }
 
-  async function showLogin() {
-    $('#batchCard').hidden = true;
-    $('#loginCard').hidden = false;
-    $('#guestPassword').focus();
-  }
-
   async function init() {
     try {
       if (token.length < 24) throw new Error('這個週報網址不完整，請回到 Discord 使用本週最新連結');
       requireConfiguration();
-      const session = await client.auth.getSession();
-      if (session.error) throw session.error;
-      if (!session.data.session) return showLogin();
+      await ensurePortalSession();
       await loadBatch();
     } catch (error) {
-      const text = errorText(error);
-      if (/login|required|JWT|session|permission/i.test(text)) return showLogin();
-      message(text, true);
+      $('#batchCard').hidden = true;
+      message(errorText(error), true);
     }
   }
 
-  $('#guestLoginForm').addEventListener('submit', async event => {
-    event.preventDefault();
-    const button = event.currentTarget.querySelector('button');
-    button.disabled = true;
-    button.textContent = '驗證中...';
-    try {
-      const result = await client.auth.signInWithPassword({
-        email: runtime.guestEmail,
-        password: $('#guestPassword').value
-      });
-      if (result.error) throw result.error;
-      await loadBatch();
-    } catch (error) {
-      message('訪客密碼錯誤，或本週連結已失效。', true);
-    } finally {
-      button.disabled = false;
-      button.textContent = '進入';
-    }
-  });
-  $('#showPassword').addEventListener('change', event => {
-    $('#guestPassword').type = event.target.checked ? 'text' : 'password';
-  });
   $('#memberSelect').addEventListener('change', renderScope);
   $('#downloadButton').addEventListener('click', downloadReport);
   $('#reportFile').addEventListener('change', () => {
