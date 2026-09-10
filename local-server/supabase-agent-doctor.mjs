@@ -69,6 +69,24 @@ if (!problems.length) {
     });
     const { error } = await supabase.from('gateway_jobs').select('id').limit(1);
     add('Supabase migration', !error, error ? error.message : 'gateway_jobs is available');
+    if (config.weeklyAutomation.enabled) {
+      const weekly = await supabase.from('weekly_report_batches').select('id').limit(1);
+      add(
+        'Weekly automation migration',
+        !weekly.error,
+        weekly.error ? weekly.error.message : 'weekly_report_batches is available'
+      );
+      add(
+        'Discord weekly publisher',
+        true,
+        `weekday ${config.weeklyAutomation.publishWeekday} at ${String(config.weeklyAutomation.publishHour).padStart(2, '0')}:${String(config.weeklyAutomation.publishMinute).padStart(2, '0')} in ${config.weeklyAutomation.timezone}`
+      );
+      add(
+        'Discord submission reminders',
+        true,
+        config.weeklyAutomation.reminderEnabled ? 'enabled' : 'disabled'
+      );
+    }
   } catch (error) {
     add('Supabase migration', false, error.message);
   }

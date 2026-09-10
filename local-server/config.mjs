@@ -10,6 +10,11 @@ function integer(value, fallback, minimum = 0) {
   return Number.isFinite(parsed) && parsed >= minimum ? parsed : fallback;
 }
 
+function boundedInteger(value, fallback, minimum, maximum) {
+  const parsed = integer(value, fallback, minimum);
+  return parsed <= maximum ? parsed : fallback;
+}
+
 function list(value) {
   return String(value || '')
     .split(',')
@@ -22,6 +27,9 @@ export function loadConfig(env = process.env, rootDir = process.cwd()) {
   const projectRepoPath = path.resolve(rootDir, env.PROJECT_REPO_PATH || path.join('.runtime', 'SmartPort-Project-Control'));
   const publicRepoPath = env.PUBLIC_REPO_PATH ? path.resolve(rootDir, env.PUBLIC_REPO_PATH) : '';
   const frontendUrl = String(env.FRONTEND_URL || 'https://smartport-ntume.github.io/SmartPort-Progress-Hub/').trim();
+  let defaultWeeklyPortalUrl = '';
+  try { defaultWeeklyPortalUrl = new URL('weekly-submit.html', frontendUrl).toString(); }
+  catch (_) {}
   const publicBaseUrl = String(env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
   const allowedOrigins = list(env.ALLOWED_ORIGINS);
   try {
@@ -73,6 +81,23 @@ export function loadConfig(env = process.env, rootDir = process.cwd()) {
       maxActiveJobs: integer(env.CODEX_MAX_ACTIVE_JOBS, 5, 1),
       libreOfficeBin: String(env.LIBREOFFICE_BIN || 'soffice'),
       keepWorkspace: bool(env.KEEP_CODEX_WORKSPACE, false)
+    },
+    weeklyAutomation: {
+      enabled: bool(env.WEEKLY_AUTOMATION_ENABLED, false),
+      discordWebhookUrl: String(env.WEEKLY_DISCORD_WEBHOOK_URL || '').trim(),
+      portalUrl: String(env.WEEKLY_PORTAL_URL || defaultWeeklyPortalUrl).trim(),
+      timezone: String(env.WEEKLY_REPORT_TIMEZONE || 'Asia/Taipei').trim(),
+      publishWeekday: boundedInteger(env.WEEKLY_REPORT_PUBLISH_WEEKDAY, 1, 0, 6),
+      publishHour: boundedInteger(env.WEEKLY_REPORT_PUBLISH_HOUR, 13, 0, 23),
+      publishMinute: boundedInteger(env.WEEKLY_REPORT_PUBLISH_MINUTE, 0, 0, 59),
+      dueDays: boundedInteger(env.WEEKLY_REPORT_DUE_DAYS, 7, 1, 14),
+      dueHour: boundedInteger(env.WEEKLY_REPORT_DUE_HOUR, 12, 0, 23),
+      dueMinute: boundedInteger(env.WEEKLY_REPORT_DUE_MINUTE, 0, 0, 59),
+      catchUpDays: boundedInteger(env.WEEKLY_REPORT_CATCH_UP_DAYS, 7, 0, 7),
+      reminderEnabled: bool(env.WEEKLY_REMINDER_ENABLED, false),
+      reminderHour: boundedInteger(env.WEEKLY_REMINDER_HOUR, 13, 0, 23),
+      reminderMinute: boundedInteger(env.WEEKLY_REMINDER_MINUTE, 0, 0, 59),
+      pmLogin: String(env.WEEKLY_REPORT_PM_LOGIN || '').trim()
     },
     snapshot: {
       enabled: bool(env.PUBLIC_SNAPSHOT_ENABLED, false),
@@ -163,5 +188,23 @@ export function agentConfigProblems(config) {
     problems.push('PROJECT_REPO must use owner/repository format');
   }
   if (!config.supabase.reportBucket) problems.push('SUPABASE_REPORT_BUCKET is missing');
+  if (config.weeklyAutomation?.enabled) {
+    try {
+      const url = new URL(config.weeklyAutomation.discordWebhookUrl);
+      if (url.protocol !== 'https:'
+        || !['discord.com', 'discordapp.com'].includes(url.hostname)
+        || !/^\/api\/webhooks\/[0-9]+\/[A-Za-z0-9._-]+\/?$/.test(url.pathname)) throw new Error();
+    } catch (_) {
+      problems.push('WEEKLY_DISCORD_WEBHOOK_URL must be a Discord HTTPS webhook URL');
+    }
+    try {
+      const url = new URL(config.weeklyAutomation.portalUrl);
+      if (url.protocol !== 'https:' || !/\/weekly-submit\.html$/.test(url.pathname)) throw new Error();
+    } catch (_) {
+      problems.push('WEEKLY_PORTAL_URL must be an HTTPS weekly-submit.html URL');
+    }
+    try { new Intl.DateTimeFormat('en-CA', { timeZone: config.weeklyAutomation.timezone }); }
+    catch (_) { problems.push('WEEKLY_REPORT_TIMEZONE must be a valid IANA timezone'); }
+  }
   return problems;
 }

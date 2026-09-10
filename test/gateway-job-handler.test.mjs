@@ -118,3 +118,110 @@ test('weekly report is archived before temporary Supabase Storage is deleted and
     '/api/reports/analyze'
   ]);
 });
+
+test('portal weekly report trusts the server-side submission identity instead of browser fields', async () => {
+  const filters = [];
+  const query = {
+    select() { return this; },
+    eq(column, value) { filters.push([column, value]); return this; },
+    async maybeSingle() {
+      return {
+        data: {
+          id: 'submission-1',
+          job_id: 'job-1',
+          storage_path: 'portal/batch-1/member-1/upload-1/report.docx',
+          filename: 'trusted-report.docx',
+          member_id: 'member-1',
+          member_name: '可信成員'
+        },
+        error: null
+      };
+    }
+  };
+  const handler = new GatewayJobHandler({
+    app: {
+      async fetch(request) {
+        const body = await request.json();
+        assert.equal(body.member_id, 'member-1');
+        assert.equal(body.member_name, '可信成員');
+        if (new URL(request.url).pathname === '/api/reports/upload') {
+          assert.equal(body.filename, 'trusted-report.docx');
+          return Response.json({ report: { path: 'weekly_reports/2026/trusted.docx' } }, { status: 201 });
+        }
+        assert.equal(body.report_path, 'weekly_reports/2026/trusted.docx');
+        return Response.json({ analysis: { report_summary: 'trusted' }, proposals: [] });
+      }
+    },
+    env: {},
+    internalBearer: 'internal-secret',
+    supabase: {
+      from(table) {
+        assert.equal(table, 'weekly_report_submissions');
+        return query;
+      },
+      storage: {
+        from() {
+          return {
+            async download() { return { data: new Blob(['portal report']), error: null }; },
+            async remove() { return { data: [], error: null }; }
+          };
+        }
+      }
+    }
+  });
+  const result = await handler.handle({
+    id: 'job-1',
+    kind: 'analyze_weekly_report',
+    actor_id: 'pm-user-id',
+    actor_login: 'pm',
+    payload: {
+      submission_id: 'submission-1',
+      storage_path: 'portal/batch-1/member-1/upload-1/report.docx',
+      filename: 'spoofed.docx',
+      member_id: 'spoofed-member',
+      member_name: '偽造名稱',
+      owner_team: 'CTL',
+      owner_teams: ['CTL'],
+      report_date: '2026-09-14',
+      scope_subtask_ids: []
+    }
+  });
+  assert.equal(result.analysis.report_summary, 'trusted');
+  assert.deepEqual(filters, [['id', 'submission-1'], ['job_id', 'job-1']]);
+});
+
+test('portal weekly report rejects a storage path that does not match its submission row', async () => {
+  const query = {
+    select() { return this; },
+    eq() { return this; },
+    async maybeSingle() {
+      return {
+        data: {
+          id: 'submission-1',
+          job_id: 'job-1',
+          storage_path: 'portal/batch/member/upload/trusted.docx'
+        },
+        error: null
+      };
+    }
+  };
+  const handler = new GatewayJobHandler({
+    app: { async fetch() { throw new Error('must not reach internal API'); } },
+    env: {},
+    internalBearer: 'internal-secret',
+    supabase: {
+      from() { return query; },
+      storage: { from() { throw new Error('must not download mismatched file'); } }
+    }
+  });
+  await assert.rejects(() => handler.handle({
+    id: 'job-1',
+    kind: 'analyze_weekly_report',
+    actor_id: 'pm-user-id',
+    actor_login: 'pm',
+    payload: {
+      submission_id: 'submission-1',
+      storage_path: 'portal/batch/member/upload/attacker.docx'
+    }
+  }), /invalid_weekly_portal_submission/);
+});

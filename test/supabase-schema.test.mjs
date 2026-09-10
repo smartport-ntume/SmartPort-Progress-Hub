@@ -4,6 +4,10 @@ import { readFile } from 'node:fs/promises';
 
 const migrationUrl = new URL('../supabase/migrations/202609030001_gateway.sql', import.meta.url);
 const teamMigrationUrl = new URL('../supabase/migrations/202609080001_team_config.sql', import.meta.url);
+const weeklyAutomationMigrationUrl = new URL(
+  '../supabase/migrations/202609100001_weekly_discord_automation.sql',
+  import.meta.url
+);
 
 test('Supabase migration keeps browser writes behind RLS and a role-checking RPC', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -30,4 +34,22 @@ test('team configuration jobs stay PM-only and validate bounded structured paylo
   assert.match(sql, /jsonb_typeof\(v_payload -> 'category_owners'\)[\s\S]*30/i);
   assert.match(sql, /p_kind = any\(v_pm_only\) and v_profile\.role <> 'PM'/i);
   assert.doesNotMatch(sql, /grant (insert|update|delete).*gateway_jobs to authenticated/i);
+});
+
+test('weekly portal uses token-scoped RPCs, one-time uploads, and the existing analysis queue', async () => {
+  const sql = await readFile(weeklyAutomationMigrationUrl, 'utf8');
+  assert.match(sql, /create table if not exists public\.weekly_report_batches/i);
+  assert.match(sql, /create table if not exists public\.weekly_report_upload_grants/i);
+  assert.match(sql, /create table if not exists public\.weekly_report_submissions/i);
+  assert.match(sql, /alter table public\.weekly_report_batches enable row level security/i);
+  assert.match(sql, /revoke all on public\.weekly_report_batches from anon, authenticated/i);
+  assert.match(sql, /create or replace function public\.get_weekly_report_batch/i);
+  assert.match(sql, /create or replace function public\.prepare_weekly_report_upload/i);
+  assert.match(sql, /expires_at[\s\S]*interval '15 minutes'/i);
+  assert.match(sql, /create policy smartport_weekly_portal_insert[\s\S]*smartport_valid_weekly_upload_path/i);
+  assert.match(sql, /create or replace function public\.submit_weekly_report/i);
+  assert.match(sql, /'analyze_weekly_report'[\s\S]*'weekly-portal:' \|\| v_grant\.id::text/i);
+  assert.match(sql, /weekly_report_submissions[\s\S]*status = new\.status/i);
+  assert.match(sql, /too_many_weekly_report_resubmissions/i);
+  assert.doesNotMatch(sql, /grant (insert|update|delete).*weekly_report_batches to authenticated/i);
 });

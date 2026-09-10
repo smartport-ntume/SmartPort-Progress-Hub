@@ -12,7 +12,7 @@ const TYPES = {
 };
 
 function isPublicFrontendPath(pathname, allowPublicSnapshot) {
-  if (pathname === '/index.html') return true;
+  if (pathname === '/index.html' || pathname === '/weekly-submit.html') return true;
   if (allowPublicSnapshot && pathname === '/data/public-snapshot.json') return true;
   return /^\/(?:js|css|vendor)\/[^/]+\.(?:js|css)$/.test(pathname);
 }

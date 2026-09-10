@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+  <title>SmartPort 每週週報</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/weekly-submit.css?v=20260910.1900">
+</head>
+<body>
+  <header class="portal-header">
+    <div>
+      <div class="portal-brand">SmartPort Progress Hub</div>
+      <h1>每週個人工作進度報告</h1>
+    </div>
+    <span class="portal-build">Build 20260910.1900</span>
+  </header>
+
+  <main class="portal-shell">
+    <section id="portalMessage" class="portal-message" hidden></section>
+
+    <section id="loginCard" class="portal-card" hidden>
+      <div class="eyebrow">WEEKLY REPORT ACCESS</div>
+      <h2>輸入訪客密碼</h2>
+      <p>不需要 GitHub 帳號。可直接使用 Discord 附件；密碼驗證後也能重新下載並繳交本週週報。</p>
+      <form id="guestLoginForm">
+        <label for="guestPassword">訪客密碼</label>
+        <div class="input-row">
+          <input id="guestPassword" type="password" autocomplete="current-password" required>
+          <button class="button primary" type="submit">進入</button>
+        </div>
+        <label class="check"><input id="showPassword" type="checkbox"> 顯示密碼</label>
+      </form>
+    </section>
+
+    <section id="batchCard" class="portal-card" hidden>
+      <div class="batch-head">
+        <div>
+          <div id="weekKey" class="eyebrow"></div>
+          <h2 id="batchTitle">本週週報</h2>
+          <p id="batchMeta"></p>
+        </div>
+        <span id="deadlineBadge" class="deadline-badge"></span>
+      </div>
+
+      <div class="step-grid">
+        <section class="step-card">
+          <span class="step-number">1</span>
+          <div>
+            <h3>選擇姓名</h3>
+            <select id="memberSelect"><option value="">請選擇成員</option></select>
+          </div>
+        </section>
+        <section class="step-card">
+          <span class="step-number">2</span>
+          <div>
+            <h3>如需可重新下載</h3>
+            <button id="downloadButton" class="button" type="button" disabled>重新下載我的 Word 週報</button>
+          </div>
+        </section>
+        <section class="step-card">
+          <span class="step-number">3</span>
+          <div>
+            <h3>上傳完成版</h3>
+            <input id="reportFile" type="file" accept=".doc,.docx" disabled>
+            <button id="submitButton" class="button primary" type="button" disabled>上傳並送出批改</button>
+          </div>
+        </section>
+      </div>
+
+      <section id="scopePanel" class="scope-panel muted">請先選擇姓名。</section>
+
+      <section class="submission-panel">
+        <div class="section-head">
+          <div><h3>繳交狀態</h3><p>上傳後會自動由本機 Agent 取得並交給 Codex 批改。</p></div>
+          <button id="refreshButton" class="button small" type="button">重新整理</button>
+        </div>
+        <div id="submissionRows" class="submission-rows muted">尚無繳交紀錄。</div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="js/runtime-config.js?v=20260910.1900"></script>
+  <script src="vendor/supabase-2.114.0.js?v=20260910.1900"></script>
+  <script src="vendor/docx-9.5.1.iife.js?v=20260910.1900"></script>
+  <script src="js/weekly-report-model.js?v=20260910.1900"></script>
+  <script src="js/weekly-report-docx.js?v=20260910.1900"></script>
+  <script src="js/weekly-submit.js?v=20260910.1900"></script>
+</body>
+</html>

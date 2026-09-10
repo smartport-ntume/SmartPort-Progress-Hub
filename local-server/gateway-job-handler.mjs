@@ -49,11 +49,26 @@ export class GatewayJobHandler {
 
   async analyzeWeeklyReport(job) {
     const payload = job.payload || {};
-    const storagePath = String(payload.storage_path || '');
-    if (!storagePath || !storagePath.startsWith(job.actor_id + '/')) {
+    let storagePath = String(payload.storage_path || '');
+    let trustedSubmission = null;
+    if (payload.submission_id) {
+      const lookup = await this.supabase
+        .from('weekly_report_submissions')
+        .select('id,job_id,storage_path,filename,member_id,member_name')
+        .eq('id', String(payload.submission_id))
+        .eq('job_id', job.id)
+        .maybeSingle();
+      if (lookup.error) throw new Error('weekly_submission_lookup_failed: ' + lookup.error.message);
+      trustedSubmission = lookup.data;
+      if (!trustedSubmission || trustedSubmission.storage_path !== storagePath) {
+        throw new Error('invalid_weekly_portal_submission');
+      }
+    } else if (!storagePath || !storagePath.startsWith(job.actor_id + '/')) {
       throw new Error('invalid_weekly_report_storage_path');
     }
-    const filename = String(payload.filename || storagePath.split('/').pop() || 'weekly-report.docx');
+    const filename = String(
+      trustedSubmission?.filename || payload.filename || storagePath.split('/').pop() || 'weekly-report.docx'
+    );
     const { data, error } = await this.supabase.storage.from(this.reportBucket).download(storagePath);
     if (error) throw new Error('weekly_report_download_failed: ' + error.message);
     const buffer = Buffer.from(await data.arrayBuffer());
@@ -64,8 +79,8 @@ export class GatewayJobHandler {
       report_date: payload.report_date,
       owner_team: payload.owner_team,
       owner_teams: payload.owner_teams,
-      member_id: payload.member_id,
-      member_name: payload.member_name,
+      member_id: trustedSubmission?.member_id || payload.member_id,
+      member_name: trustedSubmission?.member_name || payload.member_name,
       filename,
       mime_type: data.type || 'application/octet-stream',
       size: buffer.length,
@@ -80,8 +95,8 @@ export class GatewayJobHandler {
       report_date: payload.report_date,
       owner_team: payload.owner_team,
       owner_teams: payload.owner_teams,
-      member_id: payload.member_id,
-      member_name: payload.member_name,
+      member_id: trustedSubmission?.member_id || payload.member_id,
+      member_name: trustedSubmission?.member_name || payload.member_name,
       scope_subtask_ids: payload.scope_subtask_ids,
       report_path: upload.report.path
     }, job.actor_login);

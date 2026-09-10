@@ -64,9 +64,34 @@ supabase/migrations/202609080001_team_config.sql
 6. 按 **上傳並批改**。Agent 會先把原始週報歸檔到 Private Git，再刪除 Supabase Storage 暫存檔。
 7. 本機 Codex CLI 會核對 Private Git 中的最新分工與甘特圖，給出完整度、證據品質、時程一致性三項分數及具體補充建議；有足夠依據的內容才會建立 Proposal，最後仍由 PM 決定是否核准。
 
-瀏覽器傳來的成員名稱、分類與任務範圍不被視為可信資料。Agent 會依 `project/team_config.json`、`project/work_packages.json`、`project/subtasks.json`、`project/checkpoints.json` 與 `project/reference_model.json` 重新計算該人的負責分類、應填範圍及下一個 CP 的檢核依據，避免漏項或跨組更新。這個版本沿用既有 `analyze_weekly_report` job，不需要再執行新的 Supabase migration；部署新版程式後需更新並重啟 Windows Agent。
+瀏覽器傳來的成員名稱、分類與任務範圍不被視為可信資料。Agent 會依 `project/team_config.json`、`project/work_packages.json`、`project/subtasks.json`、`project/checkpoints.json` 與 `project/reference_model.json` 重新計算該人的負責分類、應填範圍及下一個 CP 的檢核依據，避免漏項或跨組更新。手動與自動收件都沿用既有 `analyze_weekly_report` job，不會啟動另一套批改邏輯。
 
 這是「在本機執行 Codex CLI」，不是離線模型。分析時，抽出的週報文字與必要 project context 會由 Codex CLI 傳送至 OpenAI 服務。
+
+### 每週自動建立、Discord 發布與收件
+
+啟用後，持續運行的 Windows Agent 會在每週一 13:00（`Asia/Taipei`）建立當週批次，從 Private Git 凍結當下的甘特圖、Checkpoint 與成員分工，為每位應繳成員產生個人 `.docx`，並直接附加到 Discord 訊息。成員在 Discord 下載與自己姓名相同的 Word，填寫後再開啟訊息中的當週專用網址、輸入既有 Guest 密碼、選擇姓名並上傳；不需要 GitHub 帳號。入口頁仍可重新下載同一格式的空白週報，並顯示全員的繳交／批改狀態；Agent 離線時工作留在 Supabase，恢復後再自動批改，最後仍進入既有 PM Review Queue。
+
+預設截止時間是次週一 12:00，並保留七天補交期。每則 Discord 訊息最多附五份 Word，人數較多時會自動分批；Agent 會記錄已送出的批次，重啟後從未完成的下一批續送。若 Agent 在發布時間關機，只要在下一個發布週期前重新啟動就會補發。可選的每日催繳只列出尚未成功上傳的姓名與上傳網址，不會重複附檔或自動 mention Discord 帳號。
+
+首次部署自動收件前，只需在 Supabase SQL Editor **執行一次**：
+
+```text
+supabase/migrations/202609100001_weekly_discord_automation.sql
+```
+
+然後在 Agent 電腦的 `.env.local` 加入：
+
+```dotenv
+WEEKLY_AUTOMATION_ENABLED=true
+WEEKLY_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+WEEKLY_REPORT_PM_LOGIN=YOUR_PM_GITHUB_LOGIN
+
+# 選用；預設不催繳
+WEEKLY_REMINDER_ENABLED=false
+```
+
+Webhook 是密鑰，只能放在 `.env.local`。每週不需要再執行 SQL、手動建立 Codex 指令或新增 Windows 排程；原本常駐的 `npm start` Agent 會負責排程。由於所有無 GitHub 帳號的成員共用 Guest 身分，系統能確認「哪個名字被選來繳交」，但不能把該動作視為個人身分驗證；需要不可否認性時才應改成每人登入或個人 PIN。
 
 ## 維運者快速開始
 
@@ -99,6 +124,7 @@ npm start
 ```text
 SmartPort Supabase Agent connected
 Mode: Realtime events + reconnect catch-up; no interval polling
+Weekly Discord automation: enabled
 ```
 
 正式運行應使用 Windows Task Scheduler 啟動 `scripts/start-agent.ps1`。本機預覽 `npm run preview` 只供開發測試，一般使用者應直接開正式網站。
@@ -111,6 +137,7 @@ Mode: Realtime events + reconnect catch-up; no interval polling
 - job payload/result 上限 4 MB、snapshot 上限 5 MB、週報單檔上限 10 MB。
 - 已完成 job 保留 30 天、audit metadata 保留 90 天；Agent 啟動及每次工作完成後執行清理。
 - 週報完成 Private Git 歸檔後立即刪除 Supabase Storage 暫存檔。
+- Discord webhook 與每週批次 token 不寫入前端設定或 Private Git；附檔與批次網址只應發布到受控的專案頻道。
 
 ## 驗證
 
@@ -120,7 +147,7 @@ npm test
 npm run doctor
 ```
 
-測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限、Realtime 事件處理、個人週報範圍與 Word 產生、Private Git 端重新驗證分工與範圍、週報先歸檔後刪除暫存、CORS、static allowlist、未登入資料保護，以及 Guest 唯讀快照。
+測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限、Realtime 事件處理、個人週報範圍與 Word 產生、每週台灣時區排程與補發、Discord 個人 `.docx` 附件分批／續送與催繳、token 限定的一次性上傳、Private Git 端重新驗證分工與範圍、週報先歸檔後刪除暫存、CORS、static allowlist、未登入資料保護，以及 Guest 唯讀快照。
 
 ## 回復點
 

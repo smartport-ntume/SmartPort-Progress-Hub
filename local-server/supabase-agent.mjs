@@ -10,6 +10,7 @@ import { GitRepositoryStore } from './git-store.mjs';
 import { createLocalGitHubFetch } from './github-local-fetch.mjs';
 import { SupabaseRealtimeAgent } from './supabase-realtime-agent.mjs';
 import { SupabaseSnapshotPublisher } from './supabase-sync.mjs';
+import { WeeklyReportAutomation } from './weekly-report-automation.mjs';
 
 const config = loadConfig();
 const problems = agentConfigProblems(config);
@@ -115,6 +116,14 @@ const agent = new SupabaseRealtimeAgent({
   version: packageVersion,
   handleJob: execute
 });
+const weeklyAutomation = new WeeklyReportAutomation({
+  supabase,
+  projectStore,
+  options: {
+    ...config.weeklyAutomation,
+    agentId: config.supabase.agentId
+  }
+});
 
 const abandoned = await supabase.rpc('fail_abandoned_gateway_jobs', {
   p_agent_id: config.supabase.agentId
@@ -132,17 +141,22 @@ try {
 }
 
 await agent.start();
+await weeklyAutomation.start().catch(error => {
+  process.stderr.write('Weekly Discord automation needs attention: ' + (error.message || String(error)) + '\n');
+});
 process.stdout.write(
   'SmartPort Supabase Agent connected\n' +
   'Agent: ' + config.supabase.agentId + '\n' +
   'Project repository: ' + config.project.fullName + ' (' + config.project.branch + ')\n' +
-  'Mode: Realtime events + reconnect catch-up; no interval polling\n'
+  'Mode: Realtime events + reconnect catch-up; no interval polling\n' +
+  'Weekly Discord automation: ' + (config.weeklyAutomation.enabled ? 'enabled' : 'disabled') + '\n'
 );
 
 let stopping = false;
 async function shutdown() {
   if (stopping) return;
   stopping = true;
+  weeklyAutomation.stop();
   await agent.stop();
   process.exit(0);
 }

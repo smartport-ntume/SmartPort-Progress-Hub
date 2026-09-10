@@ -27,6 +27,7 @@ test('static server exposes only the frontend allowlist', async t => {
   await fs.mkdir(path.join(root, 'data'));
   await fs.mkdir(path.join(root, 'local-server'));
   await fs.writeFile(path.join(root, 'index.html'), '<h1>SmartPort</h1>');
+  await fs.writeFile(path.join(root, 'weekly-submit.html'), '<h1>Weekly report</h1>');
   await fs.writeFile(path.join(root, 'js', 'app.js'), 'window.app=true;');
   await fs.writeFile(path.join(root, 'vendor', 'supabase.js'), 'window.supabase={};');
   await fs.writeFile(path.join(root, '.env.local'), 'SESSION_SECRET=private');
@@ -37,6 +38,15 @@ test('static server exposes only the frontend allowlist', async t => {
   assert.equal(await serveStaticFile({ method: 'GET', url: '/' }, indexResponse, root), true);
   assert.equal(indexResponse.status, 200);
   assert.match(indexResponse.body.toString(), /SmartPort/);
+
+  const weeklyResponse = responseRecorder();
+  assert.equal(await serveStaticFile(
+    { method: 'GET', url: '/weekly-submit.html' },
+    weeklyResponse,
+    root
+  ), true);
+  assert.equal(weeklyResponse.status, 200);
+  assert.match(weeklyResponse.body.toString(), /Weekly report/);
 
   const jsResponse = responseRecorder();
   assert.equal(await serveStaticFile({ method: 'GET', url: '/js/app.js' }, jsResponse, root), true);

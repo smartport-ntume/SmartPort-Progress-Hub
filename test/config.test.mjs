@@ -58,3 +58,40 @@ test('Supabase Agent configuration does not require a public listener or OAuth a
   assert.ok(invalid.some(problem => problem.includes('SUPABASE_AGENT_ID')));
   assert.ok(invalid.some(problem => problem.includes('dedicated Project-Control clone')));
 });
+
+test('weekly Discord automation is opt-in and validates its webhook and portal URLs', () => {
+  const base = {
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret-key-with-enough-length',
+    SUPABASE_AGENT_ID: 'vincent-windows-agent',
+    PROJECT_REPO_PATH: '../smartport-project-control'
+  };
+  const disabled = loadConfig(base, root);
+  assert.equal(disabled.weeklyAutomation.enabled, false);
+  assert.equal(disabled.weeklyAutomation.portalUrl, 'https://smartport-ntume.github.io/SmartPort-Progress-Hub/weekly-submit.html');
+  assert.deepEqual(agentConfigProblems(disabled), []);
+
+  const enabled = loadConfig({
+    ...base,
+    WEEKLY_AUTOMATION_ENABLED: 'true',
+    WEEKLY_DISCORD_WEBHOOK_URL: 'https://discord.com/api/webhooks/1234567890/test_token',
+    WEEKLY_PORTAL_URL: 'https://example.test/weekly-submit.html',
+    WEEKLY_REPORT_TIMEZONE: 'Asia/Taipei'
+  }, root);
+  assert.deepEqual(agentConfigProblems(enabled), []);
+  assert.equal(enabled.weeklyAutomation.publishWeekday, 1);
+  assert.equal(enabled.weeklyAutomation.publishHour, 13);
+  assert.equal(enabled.weeklyAutomation.catchUpDays, 7);
+
+  const invalid = loadConfig({
+    ...base,
+    WEEKLY_AUTOMATION_ENABLED: 'true',
+    WEEKLY_DISCORD_WEBHOOK_URL: 'https://example.test/not-discord',
+    WEEKLY_PORTAL_URL: 'http://example.test/report',
+    WEEKLY_REPORT_TIMEZONE: 'Not/A_Timezone'
+  }, root);
+  const problems = agentConfigProblems(invalid);
+  assert.ok(problems.some(problem => problem.includes('Discord HTTPS webhook')));
+  assert.ok(problems.some(problem => problem.includes('HTTPS weekly-submit.html')));
+  assert.ok(problems.some(problem => problem.includes('IANA timezone')));
+});
