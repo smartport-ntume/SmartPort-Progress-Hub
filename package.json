@@ -21,6 +21,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.114.0",
     "cross-spawn": "^7.0.6",
+    "docx": "9.5.1",
     "mammoth": "^1.10.0"
   }
 }

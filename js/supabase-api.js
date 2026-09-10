@@ -271,7 +271,11 @@
           storage_path: storagePath,
           filename: storagePath.split('/').pop() || 'weekly-report.docx',
           report_date: payload?.report_date || '',
-          owner_team: payload?.owner_team || ''
+          owner_team: payload?.owner_team || '',
+          owner_teams: Array.isArray(payload?.owner_teams) ? payload.owner_teams : [],
+          member_id: payload?.member_id || '',
+          member_name: payload?.member_name || '',
+          scope_subtask_ids: Array.isArray(payload?.scope_subtask_ids) ? payload.scope_subtask_ids : []
         }, `weekly:${uploadId}`);
         return { job: normalizeJob(row) };
       } catch (error) {

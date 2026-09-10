@@ -92,7 +92,7 @@ test('Guest team configuration keeps category labels but removes the private ros
   assert.equal(JSON.stringify(guest).includes('王小明'), false);
 });
 
-test('browser report scope inherits category owner and includes unfinished work due by next month', async () => {
+test('browser report scope inherits category owner and stops at the next checkpoint', async () => {
   const code = await readFile(new URL('../js/team-config.js', import.meta.url), 'utf8');
   const window = {};
   vm.runInNewContext(code, { window, Date, JSON, Set, Map });
@@ -110,7 +110,8 @@ test('browser report scope inherits category owner and includes unfinished work 
     config,
     subtasks,
     'member-1',
-    new Date('2026-09-07T12:00:00Z')
+    new Date('2026-09-07T12:00:00Z'),
+    [{ id: 'CP1', date: '2026-10-07' }, { id: 'CP2', date: '2026-11-08' }]
   );
   assert.deepEqual(Array.from(scope, item => item.id), ['overdue', 'due']);
 });

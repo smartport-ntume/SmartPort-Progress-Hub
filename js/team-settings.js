@@ -117,13 +117,13 @@
       return;
     }
     const member = draft.members.find(item => item.id === memberId);
-    const items = Team.reportScope(draft, Store.state.subtasks, memberId);
+    const items = Team.reportScope(draft, Store.state.subtasks, memberId, new Date(), Store.state.checkpoints);
     const categories = memberCategoryLabel(memberId);
     root.className = 'team-report-scope-rows';
     root.innerHTML = items.length ? `
       <div class="team-scope-summary"><b>${esc(member?.name || '')}</b> · ${esc(categories)} · 本期應回報 ${items.length} 項</div>
       ${items.map(item => `<div class="team-scope-item"><div><b>${esc(item.id)} · ${esc(item.name || '')}</b><div class="muted">${esc(item.parent_wp || '')} · ${esc(Team.categoryName(draft, item.owner_team))} · ${esc(item.status || 'Not Updated')}</div></div><time>${esc(item.end || '未設定期限')}</time></div>`).join('')}`
-      : `<div class="team-empty">${esc(member?.name || '')} 目前沒有已逾期或未來一個月內到期、且尚未完成的分類工作。</div>`;
+      : `<div class="team-empty">${esc(member?.name || '')} 目前沒有逾期，或下一個 CP 檢核前應完成的分類工作。</div>`;
   }
 
   function renderAll() {

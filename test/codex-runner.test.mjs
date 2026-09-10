@@ -7,6 +7,15 @@ import { CodexWeeklyRunner, validateWeeklyAnalysis } from '../local-server/codex
 
 const validResult = {
   report_summary: 'One update found',
+  review: {
+    overall_assessment: '內容完整，但證據連結可更具體。',
+    completeness_score: 90,
+    evidence_score: 75,
+    schedule_alignment_score: 85,
+    strengths: ['有明確工作成果'],
+    missing_items: ['補上測試紀錄連結'],
+    actions: ['下次填寫驗證日期']
+  },
   warnings: [],
   proposals: [{
     target_type: 'subtask',
@@ -35,6 +44,10 @@ test('validateWeeklyAnalysis normalizes and rejects unsafe values', () => {
   assert.throws(
     () => validateWeeklyAnalysis({ ...validResult, report_summary: 'x'.repeat(8_001) }),
     /report_summary_too_long/
+  );
+  assert.throws(
+    () => validateWeeklyAnalysis({ ...validResult, review: { ...validResult.review, evidence_score: 101 } }),
+    /invalid_evidence_score/
   );
 });
 

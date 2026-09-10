@@ -42,7 +42,7 @@ PM 可在 **設定 / 備份 → 成員與分工** 維護專案名單與責任分
 - 預設分類為 `CTL`（控制）、`LOC/NAV`（定位＋導航）、`PER`（感知）、`STM`（狀態機＋任務）；名稱、顏色與啟用狀態可調整。
 - 已被既有 WP / Subtask 使用的其他分類會自動保留，例如 `VERIFY`，避免讀取舊資料時遺失工作。
 - 每個工作分類指定一位主要負責人；同一人可負責多個分類，WP 與 Subtask 依既有分類自動繼承，不需要逐項分派。
-- 使用中的分類若未設定負責人會明確標示。個人週報範圍預覽會自動列出該成員所負責分類中，尚未完成且已逾期或未來一個月內到期的 Subtask。
+- 使用中的分類若未設定負責人會明確標示。個人週報範圍預覽會自動列出該成員所負責分類中，已逾期未完成，以及下一個 CP 檢核前應完成的 Subtask。
 - 儲存後由 Supabase Gateway 交給 Windows Agent，寫入 Private Project-Control repository 的 `project/team_config.json` 並 commit / push。
 - Guest 快照只保留分類名稱與顏色；成員姓名與分類負責人對應只提供給 Engineer / PM。
 
@@ -58,9 +58,13 @@ supabase/migrations/202609080001_team_config.sql
 
 1. 以具有 Codex 權限的 PM 登入。
 2. 前往 **Workflow → Weekly Reports**。
-3. 選擇日期與團隊，上傳不超過 10 MB 的 `.docx`；舊 `.doc` 需由 Agent 電腦安裝 LibreOffice。
-4. 按下分析後，Agent 會先把原始週報歸檔到 Private Git，再刪除 Supabase Storage 暫存檔。
-5. 本機 Codex CLI 依專案資料產生 Proposal，最後由 PM 決定是否核准。
+3. 選擇報告日期與成員。系統會合併該成員負責的所有分類，列出已逾期未完成，以及從報告日到下一個 CP 檢核前應完成的 Subtask。工作若被指定到該 CP 或更早 CP，也會納入；若已無後續 CP，則僅列逾期項目。
+4. 按 **下載此人的 Word 週報**。首頁會先顯示下一個 CP 的主題、日期、倒數天數、車輛能力（Capability）、Review / Check 與任務摘要；Word 並會帶入姓名、分類、工作 ID、計畫期間、目前進度與預期成果，成員直接填寫成果、證據、風險及下一步。
+5. 填好後回到同一頁、選擇同一位成員並上傳不超過 10 MB 的 `.docx`；舊 `.doc` 需由 Agent 電腦安裝 LibreOffice。
+6. 按 **上傳並批改**。Agent 會先把原始週報歸檔到 Private Git，再刪除 Supabase Storage 暫存檔。
+7. 本機 Codex CLI 會核對 Private Git 中的最新分工與甘特圖，給出完整度、證據品質、時程一致性三項分數及具體補充建議；有足夠依據的內容才會建立 Proposal，最後仍由 PM 決定是否核准。
+
+瀏覽器傳來的成員名稱、分類與任務範圍不被視為可信資料。Agent 會依 `project/team_config.json`、`project/work_packages.json`、`project/subtasks.json`、`project/checkpoints.json` 與 `project/reference_model.json` 重新計算該人的負責分類、應填範圍及下一個 CP 的檢核依據，避免漏項或跨組更新。這個版本沿用既有 `analyze_weekly_report` job，不需要再執行新的 Supabase migration；部署新版程式後需更新並重啟 Windows Agent。
 
 這是「在本機執行 Codex CLI」，不是離線模型。分析時，抽出的週報文字與必要 project context 會由 Codex CLI 傳送至 OpenAI 服務。
 
@@ -116,7 +120,7 @@ npm test
 npm run doctor
 ```
 
-測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限、Realtime 事件處理、週報先歸檔後刪除暫存、CORS、static allowlist、未登入資料保護，以及 Guest 唯讀快照。
+測試涵蓋 Git 寫入衝突與 symlink 防護、內部 GitHub adapter、PM-only/Codex 權限、Realtime 事件處理、個人週報範圍與 Word 產生、Private Git 端重新驗證分工與範圍、週報先歸檔後刪除暫存、CORS、static allowlist、未登入資料保護，以及 Guest 唯讀快照。
 
 ## 回復點
 
