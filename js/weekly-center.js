@@ -15,7 +15,7 @@
       <div class="weekly-center-tools"><label>週次<select data-field="batch" aria-label="週報週次"></select></label>
       <label>狀態<select data-field="filter"><option value="all">全部成員</option><option value="missing">尚未繳交</option><option value="pending">待 PM 審核</option><option value="failed">處理失敗</option><option value="returned">退回補件</option><option value="approved">已核准</option></select></label>
       <button class="btn" data-action="resend">補發 Discord</button><label>截止時間（台灣）<input type="datetime-local" data-field="deadline"></label><button class="btn" data-action="extend">展延截止</button>
-      <button class="btn" data-action="older">更早週次</button></div>
+      <button class="btn" data-action="older">更早週次</button><button class="btn" data-action="copy-link" disabled>複製個人繳交連結</button></div>
       <div class="weekly-center-message" data-field="message" role="status" aria-live="polite"></div><div class="weekly-center-counts" data-field="counts"></div>
       <div class="weekly-center-grid"><div class="weekly-center-roster" data-field="roster"></div><section class="weekly-center-detail" data-field="detail">選擇成員查看週報。</section></div>`;
     parent.append(root,manual);
@@ -24,7 +24,7 @@
     const active=()=>batches.find(b=>b.id===batchId);
     const jobKey='smartport.weeklyCenterJob';
     const message=(text,error=false)=>{el('message').textContent=text;el('message').classList.toggle('error',error);};
-    function controls(){root.querySelectorAll('[data-action]').forEach(b=>{b.disabled=busy||(!active()&&!['refresh','older'].includes(b.dataset.action));});}
+    function controls(){root.querySelectorAll('[data-action]').forEach(b=>{b.disabled=busy||(!active()&&!['refresh','older'].includes(b.dataset.action))||(b.dataset.action==='copy-link'&&!memberId);});}
     function renderRoster(){
       const batch=active();if(!batch){el('roster').innerHTML='';el('counts').textContent='尚無自動週報批次。';el('detail').textContent='每週週報建立後，會列在這裡。';controls();return;}
       const people=(batch.members||[]).map(m=>({member:m,row:model().latest(batch.submissions||[],m.id)}));
@@ -94,6 +94,13 @@
       if(name==='older'){await load(true);return;}
       if(name==='select-all'){el('detail').querySelectorAll('[data-proposal]:not(:disabled)').forEach(b=>b.checked=true);return;}
       const batch=active();if(!batch)return;
+      if(name==='copy-link'){
+        const member=batch.members?.find(m=>m.id===memberId);if(!member||!batch.token)return;
+        const url=model().portalLink(new URL('weekly-submit.html',window.location.href).href,batch.token,member.id);
+        try{await navigator.clipboard.writeText(url);message(`已複製 ${member.name} 的繳交連結，開啟時會預選姓名。`);}
+        catch{window.prompt(`${member.name} 的繳交連結（會預選姓名）`,url);}
+        return;
+      }
       let id=batch.id,payload={};
       if(name==='resend'){if(!confirm(`補發 ${batch.week_key} 的全部 Word 附件與原繳交連結到 Discord？`))return;}
       else if(name==='extend'){

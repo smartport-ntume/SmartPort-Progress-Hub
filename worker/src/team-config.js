@@ -14,6 +14,12 @@ const CATEGORY_ID = /^[A-Z][A-Z0-9/_-]{0,31}$/;
 const MEMBER_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
+export function discordUserId(value) {
+  if (typeof value !== 'string') return '';
+  const id = value.trim();
+  return /^[1-9][0-9]{16,19}$/.test(id) && BigInt(id) <= 18446744073709551615n ? id : '';
+}
+
 function text(value, maxLength) {
   return String(value ?? '').trim().slice(0, maxLength);
 }
@@ -108,6 +114,7 @@ export function normalizeTeamConfig(value, {
     members.push({
       id,
       name: text(raw?.name, 80),
+      ...(discordUserId(raw?.discord_user_id) ? { discord_user_id: discordUserId(raw.discord_user_id) } : {}),
       weekly_report_required: raw?.weekly_report_required !== false,
       active: raw?.active !== false
     });
@@ -185,12 +192,19 @@ export function validateTeamConfig(value, { workPackages = [], subtasks = [] } =
 
   const memberIds = new Set();
   const memberById = new Map();
+  const discordIds = new Set();
   for (const member of value.members) {
     const id = text(member?.id, 100);
     const name = text(member?.name, 80);
     if (!MEMBER_ID.test(id)) invalid('invalid_team_member_id');
     if (!name) invalid('team_member_name_required');
     if (memberIds.has(id)) invalid('duplicate_team_member_id');
+    if (member.discord_user_id != null && member.discord_user_id !== '') {
+      const discordId = discordUserId(member.discord_user_id);
+      if (!discordId) invalid('invalid_discord_user_id');
+      if (discordIds.has(discordId)) invalid('duplicate_discord_user_id');
+      discordIds.add(discordId);
+    }
     memberIds.add(id);
     memberById.set(id, member);
   }

@@ -90,6 +90,9 @@
       members.push({
         id,
         name: clean(item?.name, 80),
+        ...(typeof item?.discord_user_id === 'string' && /^[1-9][0-9]{16,19}$/.test(item.discord_user_id.trim())
+          && BigInt(item.discord_user_id.trim()) <= 18446744073709551615n
+          ? { discord_user_id: item.discord_user_id.trim() } : {}),
         weekly_report_required: item?.weekly_report_required !== false,
         active: item?.active !== false
       });

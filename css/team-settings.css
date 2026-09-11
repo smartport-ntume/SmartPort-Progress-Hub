@@ -45,6 +45,11 @@
   gap: 7px;
   align-items: center;
 }
+.team-discord-field { grid-column: 1 / -1; grid-row: 2; display: grid; grid-template-columns: 10rem minmax(0, 1fr); gap: .5rem; align-items: center; font-size: .875rem; }
+.team-discord-field input { width: 100%; min-width: 0; box-sizing: border-box; }
+.team-discord-help { margin-bottom: .75rem; font-size: .875rem; line-height: 1.6; }
+.team-discord-help summary { cursor: pointer; color: #315f91; }
+.team-member-row input[data-member-field=name] { font-size: 1rem; min-width: 0; }
 .team-color-input { width: 38px !important; height: 36px; padding: 3px !important; }
 .team-code-input[readonly] { background: #f0f2f5; color: #667085; }
 .team-check {
@@ -101,6 +106,7 @@
 }
 
 @media (max-width: 760px) {
+  .team-discord-field { grid-template-columns: 1fr; }
   .team-category-row,
   .team-member-row { grid-template-columns: 1fr 1fr; }
   .team-color-input { width: 100% !important; }
