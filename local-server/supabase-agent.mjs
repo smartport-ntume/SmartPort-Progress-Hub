@@ -11,6 +11,7 @@ import { createLocalGitHubFetch } from './github-local-fetch.mjs';
 import { SupabaseRealtimeAgent } from './supabase-realtime-agent.mjs';
 import { SupabaseSnapshotPublisher } from './supabase-sync.mjs';
 import { WeeklyReportAutomation } from './weekly-report-automation.mjs';
+import { WeeklyReviewService } from './weekly-review-service.mjs';
 
 const config = loadConfig();
 const problems = agentConfigProblems(config);
@@ -91,7 +92,9 @@ const publisher = new SupabaseSnapshotPublisher({
 });
 
 async function execute(job) {
-  const result = await handler.handle(job);
+  let result, jobError;
+  try { result = await handler.handle(job); }
+  catch (error) { jobError = error; }
   let gatewaySync = null;
   const warnings = [];
   try {
@@ -107,6 +110,7 @@ async function execute(job) {
   if (gatewaySync) envelope.gateway_sync = gatewaySync;
   if (retention.data) envelope.gateway_retention = retention.data;
   if (warnings.length) envelope.gateway_warning = warnings.join('; ');
+  if (jobError) throw jobError;
   return envelope;
 }
 
@@ -125,6 +129,17 @@ const weeklyAutomation = new WeeklyReportAutomation({
     agentId: config.supabase.agentId
   }
 });
+const weeklyReview = new WeeklyReviewService({
+  supabase, request: (...args) => handler.request(...args), automation: weeklyAutomation
+});
+handler.weeklyReview = weeklyReview;
+workerEnv.LOCAL_WEEKLY_ANALYSIS_GUARD = input => weeklyReview.assertAnalysis(input);
+workerEnv.LOCAL_WEEKLY_REVIEW_GUARD = (...args) => weeklyReview.guardProposal(...args);
+
+const reviewSchema = await supabase.rpc('smartport_weekly_review_version');
+if (reviewSchema.error || Number(reviewSchema.data) < 1) {
+  throw new Error('請先執行 supabase/migrations/202609110002_weekly_review_cycle.sql，再重啟 Agent。');
+}
 
 const abandoned = await supabase.rpc('fail_abandoned_gateway_jobs', {
   p_agent_id: config.supabase.agentId

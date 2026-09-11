@@ -10,12 +10,13 @@ function numericIssue(value) {
 }
 
 export class GatewayJobHandler {
-  constructor({ app, env, internalBearer, supabase, reportBucket = 'weekly-reports' }) {
+  constructor({ app, env, internalBearer, supabase, reportBucket = 'weekly-reports', weeklyReview = null }) {
     this.app = app;
     this.env = env;
     this.internalBearer = internalBearer;
     this.supabase = supabase;
     this.reportBucket = reportBucket;
+    this.weeklyReview = weeklyReview;
   }
 
   async request(path, method = 'GET', payload = null, actor = 'supabase-user') {
@@ -54,7 +55,7 @@ export class GatewayJobHandler {
     if (payload.submission_id) {
       const lookup = await this.supabase
         .from('weekly_report_submissions')
-        .select('id,job_id,storage_path,filename,member_id,member_name')
+        .select('*')
         .eq('id', String(payload.submission_id))
         .eq('job_id', job.id)
         .maybeSingle();
@@ -69,27 +70,41 @@ export class GatewayJobHandler {
     const filename = String(
       trustedSubmission?.filename || payload.filename || storagePath.split('/').pop() || 'weekly-report.docx'
     );
-    const { data, error } = await this.supabase.storage.from(this.reportBucket).download(storagePath);
-    if (error) throw new Error('weekly_report_download_failed: ' + error.message);
-    const buffer = Buffer.from(await data.arrayBuffer());
-    if (!buffer.length) throw new Error('report_file_empty');
-    if (buffer.length > 10 * 1024 * 1024) throw new Error('report_file_too_large_10mb_max');
-
-    const upload = await this.request('/api/reports/upload', 'POST', {
-      report_date: payload.report_date,
-      owner_team: payload.owner_team,
-      owner_teams: payload.owner_teams,
-      member_id: trustedSubmission?.member_id || payload.member_id,
-      member_name: trustedSubmission?.member_name || payload.member_name,
-      filename,
-      mime_type: data.type || 'application/octet-stream',
-      size: buffer.length,
-      data_base64: buffer.toString('base64')
-    }, job.actor_login);
-
+    if (trustedSubmission && this.weeklyReview) {
+      await this.weeklyReview.assertPm(job, true);
+      await this.weeklyReview.assertAnalysis({ submission_id: trustedSubmission.id, analysis_job_id: job.id });
+      await this.weeklyReview.supersedeObsolete(trustedSubmission, job);
+    }
+    let upload;
     let temporaryDeleteWarning = '';
-    const removed = await this.supabase.storage.from(this.reportBucket).remove([storagePath]);
-    if (removed.error) temporaryDeleteWarning = 'temporary_storage_delete_failed: ' + removed.error.message;
+    if (trustedSubmission?.report_path && this.weeklyReview) {
+      // Reanalysis reads the archived original, even after the temporary upload was deleted.
+      upload = { report: { path: trustedSubmission.report_path, html_url: trustedSubmission.report_html_url, filename } };
+    } else {
+      const { data, error } = await this.supabase.storage.from(this.reportBucket).download(storagePath);
+      if (error) throw new Error('weekly_report_download_failed: ' + error.message);
+      const buffer = Buffer.from(await data.arrayBuffer());
+      if (!buffer.length) throw new Error('report_file_empty');
+      if (buffer.length > 10 * 1024 * 1024) throw new Error('report_file_too_large_10mb_max');
+
+      upload = await this.request('/api/reports/upload', 'POST', {
+        report_date: payload.report_date,
+        owner_team: payload.owner_team,
+        owner_teams: payload.owner_teams,
+        member_id: trustedSubmission?.member_id || payload.member_id,
+        member_name: trustedSubmission?.member_name || payload.member_name,
+        filename,
+        mime_type: data.type || 'application/octet-stream',
+        size: buffer.length,
+        data_base64: buffer.toString('base64')
+      }, job.actor_login);
+
+      if (trustedSubmission && this.weeklyReview) {
+        await this.weeklyReview.recordArchive(trustedSubmission, job, upload.report);
+      }
+      const removed = await this.supabase.storage.from(this.reportBucket).remove([storagePath]);
+      if (removed.error) temporaryDeleteWarning = 'temporary_storage_delete_failed: ' + removed.error.message;
+    }
 
     const result = await this.request('/api/reports/analyze', 'POST', {
       report_date: payload.report_date,
@@ -98,6 +113,9 @@ export class GatewayJobHandler {
       member_id: trustedSubmission?.member_id || payload.member_id,
       member_name: trustedSubmission?.member_name || payload.member_name,
       scope_subtask_ids: payload.scope_subtask_ids,
+      submission_id: trustedSubmission?.id,
+      analysis_job_id: trustedSubmission ? job.id : undefined,
+      report_revision: trustedSubmission?.revision,
       report_path: upload.report.path
     }, job.actor_login);
     return {
@@ -155,6 +173,12 @@ export class GatewayJobHandler {
         );
       case 'analyze_weekly_report':
         return this.analyzeWeeklyReport(job);
+      case 'review_weekly_submission':
+        if (!this.weeklyReview) throw new Error('weekly_review_service_unavailable');
+        return this.weeklyReview.review(job);
+      case 'manage_weekly_batch':
+        if (!this.weeklyReview) throw new Error('weekly_review_service_unavailable');
+        return this.weeklyReview.manageBatch(job);
       case 'refresh_snapshots':
         return { ok: true, refresh_requested: true };
       default:

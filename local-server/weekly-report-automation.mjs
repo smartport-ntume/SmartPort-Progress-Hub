@@ -196,6 +196,7 @@ export class WeeklyReportAutomation {
     this.now = now;
     this.timer = null;
     this.stopped = true;
+    this.deliveryChain = Promise.resolve();
   }
 
   async resolvePm() {
@@ -431,13 +432,37 @@ export class WeeklyReportAutomation {
   }
 
   async publish(schedule) {
-    const { row } = await this.batchFor(schedule);
-    try {
-      return await this.sendDiscord(row, schedule);
-    } catch (error) {
-      await this.recordError(row.id, error);
-      throw error;
-    }
+    return this.withDeliveryLock(async () => {
+      const { row } = await this.batchFor(schedule);
+      try { return await this.sendDiscord(row, schedule); }
+      catch (error) { await this.recordError(row.id, error); throw error; }
+    });
+  }
+
+  withDeliveryLock(operation) {
+    const next = this.deliveryChain.then(operation);
+    this.deliveryChain = next.catch(() => {});
+    return next;
+  }
+
+  async resendBatch(batchId, jobId) {
+    if (!this.options.enabled) throw new Error('請先啟用每週 Discord 發送設定');
+    return this.withDeliveryLock(async () => {
+      const loaded = await this.supabase.from('weekly_report_batches').select('*').eq('id', batchId).maybeSingle();
+      if (loaded.error) throw new Error('weekly_resend_lookup_failed: ' + loaded.error.message);
+      const batch = loaded.data;
+      if (!batch || batch.status !== 'OPEN' || +new Date(batch.accept_until) < +this.now()) {
+        throw new Error('此批次已停止收件，請先展延截止時間');
+      }
+      if (batch.delivery_job_id !== jobId) {
+        const reset = { delivery_job_id: jobId, discord_message_id: '', discord_message_sent_at: null, last_error: null };
+        const updated = await this.supabase.from('weekly_report_batches').update(reset).eq('id', batch.id);
+        if (updated.error) throw new Error('weekly_resend_state_failed: ' + updated.error.message);
+        Object.assign(batch, reset);
+      }
+      try { return await this.sendDiscord(batch, { weekKey: batch.week_key, reportDate: batch.report_date }); }
+      catch (error) { await this.recordError(batch.id, error); throw error; }
+    });
   }
 
   arm(when) {
