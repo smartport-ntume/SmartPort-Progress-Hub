@@ -84,6 +84,7 @@
       return `
         <div class="team-member-row" data-member-index="${index}">
           <input value="${esc(item.name)}" data-member-field="name" placeholder="姓名" aria-label="成員姓名">
+          <label class="team-discord-field">Discord 使用者 ID<input value="${esc(item.discord_user_id || '')}" data-member-field="discord_user_id" inputmode="numeric" maxlength="20" placeholder="可留白；催繳時用來標記本人" aria-label="${esc(item.name)} 的 Discord 使用者 ID"></label>
           <div class="team-member-categories">${responsibility}</div>
           <label class="team-check"><input type="checkbox" data-member-field="weekly_report_required" ${item.weekly_report_required !== false ? 'checked' : ''}>需交週報</label>
           <label class="team-check"><input type="checkbox" data-member-field="active" ${item.active !== false ? 'checked' : ''}>在組</label>
@@ -157,6 +158,7 @@
       members: draft.members.map(item => ({
         id: item.id,
         name: String(item.name || '').trim(),
+        ...(String(item.discord_user_id || '').trim() ? { discord_user_id: String(item.discord_user_id).trim() } : {}),
         weekly_report_required: item.weekly_report_required !== false,
         active: item.active !== false
       })),
@@ -178,9 +180,17 @@
       if (!categoryIds.has(id)) throw new Error(`分類 ${id} 仍被甘特圖使用，不能刪除`);
     });
     const memberMap = new Map();
+    const discordIds = new Set();
     config.members.forEach(item => {
       if (!item.name) throw new Error('所有成員都必須填寫姓名');
       if (memberMap.has(item.id)) throw new Error(`成員資料重複：${item.name}`);
+      if (item.discord_user_id) {
+        if (!/^[1-9][0-9]{16,19}$/.test(item.discord_user_id) || BigInt(item.discord_user_id) > 18446744073709551615n) {
+          throw new Error(`${item.name} 的 Discord ID 格式不正確，請貼上「複製使用者 ID」取得的數字。`);
+        }
+        if (discordIds.has(item.discord_user_id)) throw new Error('同一個 Discord 帳號不能對應多位成員。');
+        discordIds.add(item.discord_user_id);
+      }
       memberMap.set(item.id, item);
     });
     Object.entries(config.category_owners).forEach(([categoryId, memberId]) => {

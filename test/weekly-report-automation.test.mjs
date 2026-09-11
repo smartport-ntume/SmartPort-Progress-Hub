@@ -159,6 +159,9 @@ test('weekly publisher attaches each personalized DOCX and records delivery', as
   assert.match(body.content, /weekly-submit\.html#batch=abcdefghijklmnopqrstuvwxyz123456/);
   assert.match(body.content, /CP1/);
   assert.equal(body.attachments.length, 2);
+  assert.equal(body.embeds[0].fields.length, 2);
+  assert.match(body.embeds[0].fields[0].value, /member=member-1/);
+  assert.match(body.embeds[0].fields[1].value, /member=member-2/);
   const firstFile = requests[0].init.body.get('files[0]');
   assert.match(firstFile.name, /成員1\.docx$/);
   assert.equal(firstFile.type, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -212,6 +215,7 @@ test('weekly publisher splits attachments and resumes after a delivered chunk', 
   const body = JSON.parse(requests[0].body.get('payload_json'));
   assert.match(body.content, /2\/2/);
   assert.equal(body.attachments.length, 1);
+  assert.match(body.embeds[0].fields[0].value, /member=member-6/);
   assert.match(requests[0].body.get('files[0]').name, /成員6\.docx$/);
   assert.equal(updates[0].values.discord_message_id, '["discord-message-1","discord-message-2"]');
   assert.equal(updates.at(-1).values.discord_message_sent_at, '2026-09-14T05:00:02.000Z');

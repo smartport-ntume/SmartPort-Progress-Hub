@@ -30,5 +30,16 @@
     const date = new Date(value);
     return Number.isFinite(+date) ? new Date(+date + 8*3600000).toISOString().slice(0,16) : '';
   }
-  window.SmartPortWeeklyReview = { status, latest, expected, taipeiInput };
+  function portalLink(baseUrl, token, memberId = '') {
+    const url = new URL(baseUrl);
+    url.searchParams.delete('batch');
+    url.searchParams.delete('member');
+    url.hash = new URLSearchParams({ batch: token, ...(memberId ? { member: memberId } : {}) }).toString();
+    return url.toString();
+  }
+  function portalMember(location) {
+    return new URLSearchParams(location.hash.slice(1)).get('member')
+      || new URLSearchParams(location.search).get('member') || '';
+  }
+  window.SmartPortWeeklyReview = { status, latest, expected, taipeiInput, portalLink, portalMember };
 })();

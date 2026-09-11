@@ -163,13 +163,21 @@ WEEKLY_REPORT_PM_LOGIN=YOUR_AUTHORIZED_PM_LOGIN
 
 `WEEKLY_REPORT_PUBLISH_WEEKDAY=1` 代表星期一。`WEEKLY_REPORT_PM_LOGIN` 必須對應 `profiles` 中 `role='PM'`、`active=true` 且 `can_trigger_codex=true` 的 login。若只有一位符合者可留白，但明確填寫較不容易選錯。
 
-要借鏡集中催繳流程，可再開啟每日提醒；它只列姓名，不會 ping 成員：
+每日催繳預設關閉。需要時，在同一份 `.env.local` 設定以下值並重啟 Agent：
 
 ```dotenv
 WEEKLY_REMINDER_ENABLED=true
 WEEKLY_REMINDER_HOUR=13
 WEEKLY_REMINDER_MINUTE=0
 ```
+
+PM 可在網站的成員設定填入 **Discord 使用者 ID** 並儲存。請在 Discord「使用者設定 → 進階」開啟開發者模式，再對成員按右鍵選「複製使用者 ID」（[官方說明](https://support.discord.com/hc/en-us/articles/206346498-Where-can-I-find-my-User-Server-Message-ID)）。貼上完整數字 ID，不是顯示名稱或 `@名稱`；留白者仍會列姓名。同一帳號不可對應多位成員。
+
+催繳依每人最新提交版本，只提醒未繳、處理失敗或退回補件的人；已上傳排隊中、批改中、等待 PM 或已核准者不會收到催繳。已設定 ID 的待繳成員才會被 `@`，不使用 `@everyone`。開放收件批次會同步新的姓名與通知設定；停用、移除或取消「需交週報」會停止催繳，已凍結的週報範圍與歷史仍保留。
+
+每週附件訊息與催繳訊息會附上對應成員的繳交連結。PM 也可到 **Workflow → Weekly Reports** 選擇成員，再按 **複製個人繳交連結**。連結開啟時預選姓名，仍可切換成員，沿用共用批次憑證；這是通知對應，沒有加入 Discord 登入驗證。
+
+已完成 `weekly_review_cycle` 升級者，本次不需新增 SQL 或套件。先停止 Agent、取得新版程式、執行 `npm run check`、`npm test` 與 `npm run doctor`，再 `npm start`；完成後重新整理網站並填寫 ID，避免舊版 Agent 儲存時忽略新欄位。已發布的 Discord 訊息不會自動重貼，需要時可由 PM 按「補發 Discord」。每日提醒全部送出並成功記錄後，同日不再重送；斷線或記錄失敗時，重試仍可能重複部分訊息。
 
 不需要建立第二個 Windows 排程。每週發布與選用的每日提醒都由原本常駐的 Agent 以單次 timer 排程；Agent 會直接產生每位成員的個人 `.docx` 並附在 Discord，最多每則五份，人數較多時自動分批。Agent 從睡眠或關機恢復後，會在本週內補發尚未完成的附件批次。
 

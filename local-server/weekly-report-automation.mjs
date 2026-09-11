@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { weeklyPortalLink, memberPortalEmbed, membersNeedingReminder, reminderMessages } from './weekly-discord.mjs';
 import {
   normalizeTeamConfig,
   referencedTeamIds,
@@ -12,7 +13,6 @@ import {
 
 const DAY_MS = 86_400_000;
 const RETRY_MS = 15 * 60 * 1000;
-const SUBMITTED_STATUSES = new Set(['queued', 'running', 'completed']);
 
 function localParts(date, timeZone) {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -298,8 +298,7 @@ export class WeeklyReportAutomation {
 
   async sendDiscord(batch, schedule) {
     if (batch.discord_message_sent_at) return { alreadySent: true };
-    const portal = new URL(this.options.portalUrl);
-    portal.hash = new URLSearchParams({ batch: batch.token }).toString();
+    const portal = weeklyPortalLink(this.options.portalUrl, batch.token);
     const members = batch.payload?.team_config?.members || [];
     const attachments = await createWeeklyReportAttachments(batch.payload);
     if (attachments.length !== members.length || !attachments.length) {
@@ -328,7 +327,7 @@ export class WeeklyReportAutomation {
       ].join('\n');
       const response = await this.fetchFn(safeDiscordWebhook(this.options.discordWebhookUrl), {
         method: 'POST',
-        body: discordAttachmentForm(content, chunks[index])
+        body: discordAttachmentForm(content, chunks[index], [memberPortalEmbed(chunks[index], this.options.portalUrl, batch.token)])
       });
       if (!response.ok) throw new Error(`discord_webhook_failed:${response.status}`);
       const sent = await response.json().catch(() => ({}));
@@ -363,6 +362,10 @@ export class WeeklyReportAutomation {
 
   async sendReminder(schedule) {
     if (!this.options.reminderEnabled) return { enabled: false };
+    return this.withDeliveryLock(() => this.deliverReminder(schedule));
+  }
+
+  async deliverReminder(schedule) {
     const now = this.now();
     const todayKey = localDateKey(now, this.options.timezone);
     const reminderAt = instantForDate(
@@ -382,44 +385,28 @@ export class WeeklyReportAutomation {
     }
 
     const submissions = await this.supabase.from('weekly_report_submissions')
-      .select('member_id,status')
+      .select('member_id,status,review_status,is_current,revision,submitted_at')
       .eq('batch_id', batch.id);
     if (submissions.error) {
       throw new Error('weekly_reminder_submission_lookup_failed: ' + submissions.error.message);
     }
-    const submitted = new Set((submissions.data || [])
-      .filter(item => SUBMITTED_STATUSES.has(item.status))
-      .map(item => item.member_id));
-    const missing = (batch.payload?.team_config?.members || [])
-      .filter(member => !submitted.has(member.id));
+    const missing = membersNeedingReminder(batch.payload?.team_config?.members, submissions.data);
 
     if (missing.length) {
-      const portal = new URL(this.options.portalUrl);
-      portal.hash = new URLSearchParams({ batch: batch.token }).toString();
-      const names = [];
-      let length = 0;
-      for (const member of missing) {
-        const name = String(member.name || member.id || '').trim();
-        if (!name || length + name.length > 900) break;
-        names.push(name);
-        length += name.length + 1;
-      }
-      const omitted = missing.length - names.length;
       const late = now > new Date(batch.due_at);
-      const content = [
-        `⏰ **【SmartPort 週報${late ? '逾期' : '催繳'}｜${schedule.weekKey}】**`,
-        `尚有 ${missing.length} 位未完成繳交：${names.join('、')}${omitted ? `，另 ${omitted} 位` : ''}`,
-        late
+      const messages = reminderMessages({
+        members: missing, baseUrl: this.options.portalUrl, token: batch.token,
+        heading: `⏰ **【SmartPort 週報${late ? '逾期' : '催繳'}｜${schedule.weekKey}】**`,
+        deadline: late
           ? `補交期限：${discordDate(new Date(batch.accept_until), this.options.timezone)}`
-          : `截止：${discordDate(new Date(batch.due_at), this.options.timezone)}`,
-        `👉 ${portal.toString()}`
-      ].join('\n');
-      const response = await this.fetchFn(safeDiscordWebhook(this.options.discordWebhookUrl), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, allowed_mentions: { parse: [] } })
+          : `截止：${discordDate(new Date(batch.due_at), this.options.timezone)}`
       });
-      if (!response.ok) throw new Error(`discord_reminder_failed:${response.status}`);
+      for (const message of messages) {
+        const response = await this.fetchFn(safeDiscordWebhook(this.options.discordWebhookUrl), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(message)
+        });
+        if (!response.ok) throw new Error(`discord_reminder_failed:${response.status}`);
+      }
     }
 
     const updated = await this.supabase.from('weekly_report_batches').update({

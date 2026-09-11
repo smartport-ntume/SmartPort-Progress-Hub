@@ -12,6 +12,8 @@
   let selectedModel = null;
   let subscription = null;
   let feedbackSequence = 0;
+  let initialMemberPending = true;
+  const requestedMember = window.SmartPortWeeklyReview.portalMember(window.location);
 
   function toast(message) {
     const element = $('#toast');
@@ -190,7 +192,8 @@
     badge.classList.toggle('late', overdue && batch.can_submit);
     badge.classList.toggle('closed', !batch.can_submit);
     const select = $('#memberSelect');
-    const selected = select.value;
+    const selected = select.value || (initialMemberPending ? requestedMember : '');
+    initialMemberPending = false;
     const members = batch?.payload?.team_config?.members || [];
     select.innerHTML = '<option value="">請選擇成員</option>' + members.map(member =>
       `<option value="${esc(member.id)}">${esc(member.name)}</option>`

@@ -108,10 +108,11 @@ export function chunkWeeklyReportAttachments(attachments, size = DISCORD_FILES_P
   return chunks;
 }
 
-export function discordAttachmentForm(content, attachments) {
+export function discordAttachmentForm(content, attachments, embeds = []) {
   const form = new FormData();
   form.set('payload_json', JSON.stringify({
     content,
+    ...(embeds.length ? { embeds } : {}),
     allowed_mentions: { parse: [] },
     attachments: attachments.map((attachment, index) => ({
       id: index,

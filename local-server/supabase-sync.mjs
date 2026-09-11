@@ -2,7 +2,7 @@ import {
   buildMemberSnapshot,
   buildReferenceSnapshot
 } from './snapshot.mjs';
-import { guestTeamConfig, referencedTeamIds } from '../worker/src/team-config.js';
+import { discordUserId, guestTeamConfig, referencedTeamIds } from '../worker/src/team-config.js';
 
 function assertResult(result, operation) {
   if (result?.error) throw new Error(`${operation}: ${result.error.message || result.error}`);
@@ -10,17 +10,21 @@ function assertResult(result, operation) {
 }
 
 export function refreshWeeklyBatchMemberNames(payload, teamConfig) {
-  const currentNames = new Map((teamConfig?.members || [])
-    .map(member => [String(member?.id || ''), String(member?.name || '').trim()])
-    .filter(([id, name]) => id && name));
+  const currentMembers = new Map((teamConfig?.members || []).map(member => [String(member?.id || ''), member]));
   const batchMembers = payload?.team_config?.members;
-  if (!Array.isArray(batchMembers) || !currentNames.size) return null;
+  if (!Array.isArray(batchMembers)) return null;
   let changed = false;
   const members = batchMembers.map(member => {
-    const name = currentNames.get(String(member?.id || ''));
-    if (!name || name === member?.name) return member;
+    const current = currentMembers.get(String(member?.id || ''));
+    const name = String(current?.name || '').trim() || member.name;
+    const reminderDisabled = !current || current.active === false || current.weekly_report_required === false;
+    const discordId = reminderDisabled ? '' : discordUserId(current.discord_user_id);
+    if (name === member.name && discordId === (member.discord_user_id || '')
+      && reminderDisabled === (member.reminder_disabled === true)) return member;
     changed = true;
-    return { ...member, name };
+    const { discord_user_id: previousId, reminder_disabled: previousDisabled, ...rest } = member;
+    return { ...rest, name, ...(discordId ? { discord_user_id: discordId } : {}),
+      ...(reminderDisabled ? { reminder_disabled: true } : {}) };
   });
   if (!changed) return null;
   return {
