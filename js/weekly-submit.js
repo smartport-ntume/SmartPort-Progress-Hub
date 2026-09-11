@@ -11,6 +11,7 @@
   let batch = null;
   let selectedModel = null;
   let subscription = null;
+  let feedbackSequence = 0;
 
   function toast(message) {
     const element = $('#toast');
@@ -28,7 +29,9 @@
   }
 
   function errorText(error) {
-    return error?.message || error?.error_description || String(error || '未知錯誤');
+    const text = error?.message || error?.error_description || String(error || '未知錯誤');
+    if (/weekly_report_review_in_progress/.test(text)) return 'PM 正在處理這份週報，請稍後再補交；若審核未完成，請聯絡 PM。';
+    return text;
   }
 
   function requireConfiguration() {
@@ -66,6 +69,7 @@
     if (error) throw error;
     batch = data;
     renderBatch();
+    await loadFeedback();
     subscribe();
   }
 
@@ -86,14 +90,8 @@
     return map;
   }
 
-  function statusLabel(status) {
-    return ({
-      queued: '已上傳・等待 Agent',
-      running: 'Codex 批改中',
-      completed: '批改完成・等待 PM',
-      failed: '批改失敗・可重新上傳',
-      cancelled: '已取消'
-    })[status] || '尚未繳交';
+  function statusLabel(row) {
+    return window.SmartPortWeeklyReview.status(row).label;
   }
 
   function renderSubmissions() {
@@ -103,8 +101,38 @@
     rows.className = 'submission-rows';
     rows.innerHTML = members.map(member => {
       const submission = latest.get(member.id);
-      return `<div class="submission-row"><span><b>${esc(member.name)}</b>${submission?.late ? ' · <span class="muted">逾期繳交</span>' : ''}</span><span class="status ${esc(submission?.status || '')}">${esc(statusLabel(submission?.status))}</span></div>`;
+      return `<div class="submission-row"><span><b>${esc(member.name)}</b>${submission?.revision ? ` · 第 ${submission.revision} 版` : ''}${submission?.late ? ' · <span class="muted">逾期繳交</span>' : ''}</span><span class="status ${esc(submission?.status || '')}">${esc(statusLabel(submission))}</span></div>`;
     }).join('') || '<span class="muted">本期沒有需要繳交週報的成員。</span>';
+  }
+
+  async function loadFeedback() {
+    const sequence = ++feedbackSequence;
+    const memberId = $('#memberSelect').value;
+    const panel = $('#feedbackPanel');
+    panel.hidden = !memberId;
+    if (!memberId) return;
+    panel.textContent = '正在讀取批改與 PM 回饋…';
+    try {
+      const { data, error } = await client.rpc('get_weekly_report_feedback', { p_token: token, p_member_id: memberId });
+      if (error) throw error;
+      if (sequence !== feedbackSequence) return;
+      const rows = data?.versions || [];
+      if (!rows.length) { panel.innerHTML = '<h3>批改與 PM 回饋</h3><p>上傳週報後，可在這裡查看缺漏、修改建議及審核結果。</p>'; return; }
+      const list = (label,items) => Array.isArray(items)&&items.length ? `<b>${label}</b><ul>${items.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>` : '';
+      const content = row => {
+        const review = row.review || {};
+        return `<p><b>${esc(statusLabel(row))}</b> · ${esc(dateTime(row.submitted_at))}</p>
+          ${row.is_current===false?'<p class="muted">這是歷史版本，請依最新一版的結果處理。</p>':''}
+          ${review.overall_assessment||row.summary?`<p>${esc(review.overall_assessment||row.summary)}</p>`:''}
+          ${Object.keys(review).length?`<div class="feedback-scores">${[['completeness_score','完整度'],['evidence_score','證據品質'],['schedule_alignment_score','時程一致性']].map(([key,label])=>`<span><b>${esc(review[key]??'—')}</b>${label}</span>`).join('')}</div>`:''}
+          ${list('需要補充',review.missing_items)}${list('建議下一步',review.actions)}
+          ${row.pm_feedback?`<div class="feedback-pm"><b>PM 回饋</b><p>${esc(row.pm_feedback)}</p></div>`:''}
+          ${row.review_status==='CHANGES_REQUESTED'?'<p>請依回饋修改 Word，再使用上方入口補交新版。</p>':''}`;
+      };
+      panel.innerHTML = `<h3>批改與 PM 回饋 · 第 ${rows[0].revision} 版</h3>${content(rows[0])}${rows.slice(1).map(row=>`<details><summary>第 ${row.revision} 版 · ${esc(statusLabel(row))}</summary>${content(row)}</details>`).join('')}`;
+    } catch (error) {
+      if (sequence===feedbackSequence) panel.textContent='回饋暫時無法讀取，請重新整理或聯絡 PM。';
+    }
   }
 
   function modelFor(memberId) {
@@ -277,7 +305,7 @@
     }
   }
 
-  $('#memberSelect').addEventListener('change', renderScope);
+  $('#memberSelect').addEventListener('change', () => { renderScope(); loadFeedback(); });
   $('#downloadButton').addEventListener('click', downloadReport);
   $('#reportFile').addEventListener('change', () => {
     try { validateFile($('#reportFile').files?.[0]); }

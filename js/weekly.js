@@ -259,8 +259,7 @@
         <div class="field"><label>Evidence</label><div>${esc(p.evidence||'—')}</div></div>
         <div class="toolbar" style="justify-content:flex-end">
           ${p.html_url?`<a class="btn" href="${esc(p.html_url)}" target="_blank" rel="noopener">GitHub Issue</a>`:''}
-          <button class="btn danger" data-reject-proposal="${esc(p.issue_number)}">Reject</button>
-          <button class="btn primary" data-approve-proposal="${esc(p.issue_number)}">Approve → Baseline</button>
+          ${p.source_submission_id?'<button class="btn primary" data-open-weekly-center>到週報管理中心審核</button>':`<button class="btn danger" data-reject-proposal="${esc(p.issue_number)}">Reject</button><button class="btn primary" data-approve-proposal="${esc(p.issue_number)}">Approve → Baseline</button>`}
         </div>
       </div>
     </div>`).join('');
@@ -459,6 +458,9 @@
     targetOptions();$('#weeklyTargetType')?.addEventListener('change',targetOptions);
 
     try{me=await API.me();}catch(_){return;}
+    await window.SmartPortWeeklyCenter?.mount($('#reports'), {
+      API, me, onChange: async () => { await refreshSnapshotAfterApprove(); await reloadProposals(); }
+    });
     canTriggerCodex=me?.can_trigger_codex!==false;
     const analyzeButton=$('#weeklyAnalyzeBtn');
     if(!canTriggerCodex){
@@ -491,6 +493,7 @@
     });
 
     document.addEventListener('click',async e=>{
+      if(e.target.closest('[data-open-weekly-center]')){document.querySelector('[data-view="reports"]')?.click();return;}
       const approve=e.target.closest('[data-approve-proposal]');
       if(approve){const n=approve.dataset.approveProposal;if(!confirm(`Approve Proposal #${n} 並寫入正式 baseline？`))return;approve.disabled=true;try{await API.approveProposal(n);toast(`Proposal #${n} 已核准並寫入 baseline`);await refreshSnapshotAfterApprove();await reloadProposals();}catch(err){toast(err.message)}finally{approve.disabled=false;}return;}
       const reject=e.target.closest('[data-reject-proposal]');

@@ -60,9 +60,11 @@ async function getOptionalJsonFile(repo, path, token) {
   }
 }
 
-async function putJsonFile(repo, path, payload, token, message) {
-  let sha;
-  try { sha = (await github(`/repos/${repo}/contents/${path}`, token)).sha; } catch (_) {}
+async function putJsonFile(repo, path, payload, token, message, expectedSha) {
+  let sha = expectedSha;
+  if (expectedSha === undefined) {
+    try { sha = (await github(`/repos/${repo}/contents/${path}`, token)).sha; } catch (_) {}
+  }
   return github(`/repos/${repo}/contents/${path}`, token, {
     method: 'PUT',
     body: JSON.stringify({
@@ -371,6 +373,7 @@ function responseOutputText(response) {
 }
 
 async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
+  if (typeof env.LOCAL_WEEKLY_ANALYSIS_GUARD === 'function') await env.LOCAL_WEEKLY_ANALYSIS_GUARD(payload);
   const useLocalCodex=typeof env.LOCAL_CODEX_RUNNER==='function';
   if(!useLocalCodex&&!env.OPENAI_API_KEY)throw new Error('OPENAI_API_KEY_not_configured');
   const reportPath=String(payload.report_path||'');
@@ -499,9 +502,10 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   for(const w of wps)index.set(`WP:${w.id}`,{...w,_team:w.owner||''});
   for(const x of subs)index.set(`SUBTASK:${x.id}`,{...x,_team:x.owner_team||''});
   const existing=await listProposals(repo,token);
-  const existingKeys=new Set(existing.filter(p=>p.source_report_path===reportPath&&p.review_status!=='REJECTED').map(p=>`${String(p.target_type).toUpperCase()}:${p.target_id}`));
+  const existingKeys=new Set(existing.filter(p=>p.source_report_path===reportPath&&['PENDING','APPROVED'].includes(p.review_status)).map(p=>`${String(p.target_type).toUpperCase()}:${p.target_id}`));
   const created=[];
   const analysisId=crypto.randomUUID();
+  if (typeof env.LOCAL_WEEKLY_ANALYSIS_GUARD === 'function') await env.LOCAL_WEEKLY_ANALYSIS_GUARD(payload);
   for(const a of analysis.proposals){
     const type=String(a.target_type||'').toUpperCase(),id=String(a.target_id||'').trim(),key=`${type}:${id}`;
     const target=index.get(key);
@@ -515,8 +519,11 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     const p={
       report_date:reportDate,owner_team:String(target._team),report_member_id:memberId,report_member_name:memberName,target_type:type,target_id:id,progress:proposed,status:a.status,
       blocker:a.blocker||'',evidence:a.evidence||'',summary:a.summary||'',source_report_path:reportPath,ai_generated:true,
-      ai_confidence:Number(a.confidence)||0,ai_rationale:a.rationale||'',analysis_id:analysisId
+      ai_confidence:Number(a.confidence)||0,ai_rationale:a.rationale||'',analysis_id:analysisId,
+      source_submission_id:payload.submission_id||'',source_analysis_job_id:payload.analysis_job_id||'',
+      source_revision:payload.report_revision||null,base_progress:current
     };
+    if (typeof env.LOCAL_WEEKLY_ANALYSIS_GUARD === 'function') await env.LOCAL_WEEKLY_ANALYSIS_GUARD(payload);
     const title=`[WEEKLY-AI][${reportDate}][${memberName||ownerTeams.join('+')}] ${type} ${id}`;
     const issue=await github(`/repos/${repo}/issues`,token,{method:'POST',body:JSON.stringify({title,body:proposalBody(p,author)})});
     created.push(parseProposalIssue(issue));
@@ -543,6 +550,10 @@ function proposalBody(p, author) {
     evidence: p.evidence || '',
     summary: p.summary || '',
     source_report_path: p.source_report_path || '',
+    source_submission_id: p.source_submission_id || '',
+    source_analysis_job_id: p.source_analysis_job_id || '',
+    source_revision: p.source_revision || null,
+    base_progress: p.base_progress ?? null,
     ai_generated: !!p.ai_generated,
     ai_confidence: p.ai_confidence == null ? null : Number(p.ai_confidence),
     ai_rationale: p.ai_rationale || '',
@@ -560,6 +571,7 @@ function parseProposalIssue(issue) {
   let review_status = 'PENDING';
   if (issue.title.startsWith('[APPROVED]')) review_status = 'APPROVED';
   else if (issue.title.startsWith('[REJECTED]')) review_status = 'REJECTED';
+  else if (issue.title.startsWith('[SUPERSEDED]')) review_status = 'SUPERSEDED';
   return {
     issue_number: issue.number,
     title: issue.title,
@@ -580,6 +592,7 @@ async function listProposals(repo, token) {
 }
 
 function applyProposalToRecord(item, p) {
+  item.last_update_proposal = p.issue_number;
   item.actual_progress = Number(p.progress);
   item.status = p.status;
   item.blocker = p.blocker || '';
@@ -604,7 +617,7 @@ async function updateSubtaskIssueStatus(repo, subtask, p, token) {
   });
 }
 
-async function approveProposal(repo, issueNumber, token) {
+async function approveProposal(repo, issueNumber, token, env = {}, payload = {}) {
   const issue = await github(`/repos/${repo}/issues/${issueNumber}`, token);
   const p = parseProposalIssue(issue);
   if (!p) throw new Error('Invalid weekly proposal issue');
@@ -614,14 +627,18 @@ async function approveProposal(repo, issueNumber, token) {
     const file = await getJsonFile(repo, 'project/work_packages.json', token);
     const idx = (file.json.work_packages || []).findIndex(x => x.id === p.target_id);
     if (idx < 0) throw new Error(`WP not found: ${p.target_id}`);
+    if (typeof env.LOCAL_WEEKLY_REVIEW_GUARD === 'function') await env.LOCAL_WEEKLY_REVIEW_GUARD(
+      p, payload.weekly_review_job_id, 'approve', file.json.work_packages[idx], payload.expected_current);
     applyProposalToRecord(file.json.work_packages[idx], p);
-    await putJsonFile(repo, 'project/work_packages.json', file.json, token, `PM Approve: weekly update ${p.target_id}`);
+    await putJsonFile(repo, 'project/work_packages.json', file.json, token, `PM Approve: weekly update ${p.target_id}`, file.sha);
   } else if (String(p.target_type).toUpperCase() === 'SUBTASK') {
     const file = await getJsonFile(repo, 'project/subtasks.json', token);
     const idx = (file.json.subtasks || []).findIndex(x => x.id === p.target_id);
     if (idx < 0) throw new Error(`Subtask not found: ${p.target_id}`);
+    if (typeof env.LOCAL_WEEKLY_REVIEW_GUARD === 'function') await env.LOCAL_WEEKLY_REVIEW_GUARD(
+      p, payload.weekly_review_job_id, 'approve', file.json.subtasks[idx], payload.expected_current);
     applyProposalToRecord(file.json.subtasks[idx], p);
-    await putJsonFile(repo, 'project/subtasks.json', file.json, token, `PM Approve: weekly update ${p.target_id}`);
+    await putJsonFile(repo, 'project/subtasks.json', file.json, token, `PM Approve: weekly update ${p.target_id}`, file.sha);
     await updateSubtaskIssueStatus(repo, file.json.subtasks[idx], p, token);
   } else {
     throw new Error(`Unsupported target_type: ${p.target_type}`);
@@ -800,7 +817,36 @@ export default {
       if (approveMatch && request.method === 'POST') {
         const access = await repoAccess(repo, token);
         if (!access.can_approve) return json({ error: 'forbidden', message: 'PM permission required' }, 403, C);
-        return json(await approveProposal(repo, Number(approveMatch[1]), token), 200, C);
+        return json(await approveProposal(repo, Number(approveMatch[1]), token, env, await request.json().catch(()=>({}))), 200, C);
+      }
+
+      const previewMatch = url.pathname.match(/^\/api\/reports\/proposals\/(\d+)\/preview$/);
+      if (previewMatch && request.method === 'GET') {
+        const access = await repoAccess(repo, token);
+        if (!access.can_approve) return json({error:'PM permission required'},403,C);
+        const issue = await github(`/repos/${repo}/issues/${Number(previewMatch[1])}`,token);
+        const proposal = parseProposalIssue(issue);
+        if (!proposal) return json({error:'Invalid weekly proposal'},400,C);
+        const wp = proposal.target_type === 'WP';
+        const file = await getJsonFile(repo, wp?'project/work_packages.json':'project/subtasks.json',token);
+        const record = (file.json[wp?'work_packages':'subtasks']||[]).find(r=>r.id===proposal.target_id)||null;
+        return json({proposal,record},200,C);
+      }
+
+      const supersedeMatch = url.pathname.match(/^\/api\/reports\/proposals\/(\d+)\/supersede$/);
+      if (supersedeMatch && request.method === 'POST') {
+        const access = await repoAccess(repo, token);
+        if (!access.can_approve || typeof env.LOCAL_WEEKLY_REVIEW_GUARD !== 'function') return json({error:'forbidden'},403,C);
+        const number = Number(supersedeMatch[1]);
+        const issue = await github(`/repos/${repo}/issues/${number}`,token);
+        const proposal = parseProposalIssue(issue);
+        if (!proposal) throw new Error('Invalid weekly proposal');
+        if (proposal.review_status !== 'PENDING') return json({ok:true,unchanged:true},200,C);
+        await env.LOCAL_WEEKLY_REVIEW_GUARD(proposal,null,'supersede');
+        await github(`/repos/${repo}/issues/${number}`,token,{method:'PATCH',body:JSON.stringify({
+          title:`[SUPERSEDED] ${issue.title}`,state:'closed',state_reason:'not_planned'
+        })});
+        return json({ok:true},200,C);
       }
 
       const rejectMatch = url.pathname.match(/^\/api\/reports\/proposals\/(\d+)\/reject$/);
@@ -808,10 +854,14 @@ export default {
         const access = await repoAccess(repo, token);
         if (!access.can_approve) return json({ error: 'forbidden', message: 'PM permission required' }, 403, C);
         const issueNumber = Number(rejectMatch[1]);
-        const reason = (await request.json().catch(() => ({}))).reason || '';
+        const reviewPayload = await request.json().catch(() => ({}));
+        const reason = reviewPayload.reason || '';
         const issue = await github(`/repos/${repo}/issues/${issueNumber}`, token);
         const p = parseProposalIssue(issue);
         if (!p) return json({ error: 'invalid weekly proposal' }, 400, C);
+        if (p.review_status !== 'PENDING') throw new Error(`Proposal already ${p.review_status}`);
+        if (typeof env.LOCAL_WEEKLY_REVIEW_GUARD === 'function') await env.LOCAL_WEEKLY_REVIEW_GUARD(
+          p,reviewPayload.weekly_review_job_id,'reject');
         const cleanTitle = issue.title.replace(/^\[(APPROVED|REJECTED)\]\s*/, '');
         const body = `${issue.body || ''}\n\n## PM Review\n**Rejected:** ${reason || 'No reason provided'}`;
         await github(`/repos/${repo}/issues/${issueNumber}`, token, { method: 'PATCH', body: JSON.stringify({ title: `[REJECTED] ${cleanTitle}`, body, state: 'closed', state_reason: 'not_planned' }) });

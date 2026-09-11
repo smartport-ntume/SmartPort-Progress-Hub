@@ -28,7 +28,7 @@ flowchart TD
     A -->|"authorized job only"| C["Local Codex CLI"]
 ```
 
-- Private Git 是正式資料來源；Supabase 只保存登入權限、公開介面所需快照、工作佇列及稽核資料。
+- Private Git 保存正式進度與原始 Word；Supabase 保存登入權限、介面快照、工作佇列、週報批次與版本回饋、稽核資料。
 - Windows Agent 持有 Private Git、GitHub Issues 與 Codex 權限，只建立對外 HTTPS / WebSocket 連線，不開公開 port。
 - 開啟網頁與讀取既有快照不會啟動 Codex，也不需要 Agent 當下在線。
 - Agent 離線時，需要寫入或分析的工作會留在 `gateway_jobs`；Agent 恢復連線後依序處理。
@@ -97,6 +97,30 @@ WEEKLY_REMINDER_ENABLED=false
 ```
 
 Webhook 是密鑰，只能放在 `.env.local`。每週不需要再執行 SQL、手動建立 Codex 指令或新增 Windows 排程；原本常駐的 `npm start` Agent 會負責排程。當週的隨機 token 網址就是繳交憑證，拿到網址的人可以選擇任一姓名，因此只能發布在受控的 Discord 頻道，不能轉貼；需要不可否認性時才應改成每人登入或個人 PIN。
+
+### PM 週報管理中心與成員回饋
+
+PM 登入後，**Workflow → Weekly Reports** 首先顯示自動週報批次的管理中心。原有的手動產生／上傳與提案紀錄收在下方展開區。
+
+- 依週次、成員及狀態查看未繳、待審、退回補件、失敗與已核准；可載入更早週次。
+- 點選某人的週報，查看原始 Word 連結、完整度／證據品質／時程一致性分數、缺漏、建議、提交版本及批改執行紀錄。
+- 勾選要採用的進度更新，核對目前值與提案值後，按 **核准勾選項目並結案**。未勾選項目記為未採用；沒有進度更新的週報也可以結案。**退回補件** 必須填寫原因，不寫入正式進度；退回後需重新批改或補交新版才能再次審核。
+- **重新批改原始週報** 會使用已歸檔的 Word，不依賴已刪除的 Storage 暫存；需要 `can_trigger_codex`。已核准版本不能重新批改，需補交新版。
+- **補發 Discord** 會重送當週附件與原連結；**展延截止** 以台灣時間操作，補交期限至少延至新截止日七天後。展延不自動發送訊息，需通知時再按補發。
+
+成員沿用 Discord 的免密碼入口，選擇姓名即可看到分數、缺漏、建議、PM 回饋及歷史版本。批改完成、PM 審核中、退回補件、已核准是不同狀態。入口仍是原本的共用批次憑證：持有連結者可以切換成員查看回饋，請維持受控頻道使用；本版沒有增加 Discord 帳號綁定。
+
+同一人同一批次補交時，系統產生新版本，舊的未核准提案失效，已核准歷史保留。審核排入佇列後會鎖住該版本，防止補交與核准互相覆蓋。Agent 會在寫入前重新確認工作進度及狀態；若審核中斷，管理中心顯示 **重試剩餘審核**，保留已完成決定，並可取消尚未採用的過時項目。批次更新可能包含多次 Git／Issue 寫入，因此保留明確的部分完成紀錄。
+
+批改回饋保存在 `weekly_report_submissions`，執行歷史保存在 `weekly_report_analysis_runs`，不隨 30 天工作佇列清理而刪除。升級會取回仍存在於工作佇列中的舊批改結果；已經被清除的舊評分無法還原。
+
+**既有系統升級順序：**
+
+1. 先停止 Windows Agent，於 Supabase SQL Editor **執行一次** `supabase/migrations/202609110002_weekly_review_cycle.sql`（前三份 Gateway／team／weekly 及免密碼入口 migration 必須已執行）。
+2. 合併並取得此版程式，執行 `npm install`、`npm run check`、`npm test`、`npm run doctor`。
+3. 重啟 Agent，重新整理主網站與週報入口。Doctor 會檢查 `Weekly review cycle migration`。
+
+測試使用本機 PGlite PostgreSQL 執行完整 migration 與角色、版本、重試流程，不會連線到正式 Supabase 或發送 Discord 訊息。
 
 ## 維運者快速開始
 

@@ -407,6 +407,24 @@
         return data?.payload || { proposals: [] };
       },
       async createProposal(payload) { return enqueueAndWait('create_manual_proposal', payload); },
+      async listWeeklyReports(before = null) {
+        const { data, error } = await requireClient().rpc('list_pm_weekly_reports', { p_before: before });
+        if (error) throw errorFrom(error);
+        return data;
+      },
+      async getWeeklyReport(id) {
+        const { data, error } = await requireClient().rpc('get_pm_weekly_report', { p_submission_id: id });
+        if (error) throw errorFrom(error);
+        return data;
+      },
+      async weeklyReportAction(action, id, payload = {}, key = crypto.randomUUID()) {
+        const { data, error } = await requireClient().rpc('enqueue_weekly_report_action', {
+          p_action: action, p_id: id, p_payload: payload, p_idempotency_key: key
+        });
+        if (error) throw errorFrom(error);
+        const job = Array.isArray(data) ? data[0] : data;
+        return { job: normalizeJob(job) };
+      },
       async approveProposal(issueNumber) {
         return enqueueAndWait('approve_proposal', { issue_number: Number(issueNumber) });
       },

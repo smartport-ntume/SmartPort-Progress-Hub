@@ -69,6 +69,9 @@ if (!problems.length) {
     });
     const { error } = await supabase.from('gateway_jobs').select('id').limit(1);
     add('Supabase migration', !error, error ? error.message : 'gateway_jobs is available');
+    const review = await supabase.rpc('smartport_weekly_review_version');
+    add('Weekly review cycle migration', !review.error && Number(review.data) >= 1,
+      review.error ? 'Run 202609110002_weekly_review_cycle.sql: ' + review.error.message : `version ${review.data}`);
     if (config.weeklyAutomation.enabled) {
       const weekly = await supabase.from('weekly_report_batches').select('id').limit(1);
       add(
