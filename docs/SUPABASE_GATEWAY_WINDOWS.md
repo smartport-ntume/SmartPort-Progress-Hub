@@ -249,13 +249,18 @@ npm start
 ```powershell
 Set-Location "C:\Users\Vincent Huang\SmartPort-Progress-Hub-Agent"
 git pull --ff-only origin main
+npm install
 npm run check
 npm test
 npm run doctor
 npm start
 ```
 
-確認各命令成功才繼續下一個。這次沒有新增套件或 SQL。接著在網站按 `Ctrl+F5`，到 **Workflow → Weekly Reports** 選擇有問題的成員，按 **重新批改原始週報**，逐份重跑即可。原始 Word 已歸檔，無需請成員重交；新回饋會使用繁體中文。開啟明細後，舊的輸入讀取失敗結果會顯示「批改未完成」，不再顯示假 0 分或允許核准。
+確認各命令成功才繼續下一個。這次僅新增供 DOM 互動測試使用的開發套件，沒有新增 SQL。接著在網站按 `Ctrl+F5`，到 **Workflow → Weekly Reports** 選擇有問題的成員，按 **重新批改原始週報**，逐份重跑即可。原始 Word 已歸檔，無需請成員重交；新回饋會使用繁體中文。開啟明細後，舊的輸入讀取失敗結果會顯示「批改未完成」，不再顯示假 0 分或允許核准。
+
+`Not assessed` 或 `Unable to assess ... without file access` 也屬於這類錯誤，即使檔名只出現在「需要補充」也能辨識。批改一份週報時可立即切換其他成員，繼續排入重批，不必等待前一份結束。若顯示 **解除失敗審核**，先按該按鈕解除尚未寫入進度的失敗審核，再重新批改。
+
+「進度更新 0 項」會區分批改未完成與已完成但沒有可採用提案：前者要先重批；後者請查看缺漏及批改注意事項，必要時退回補件。按 **核准週報（不更新進度）** 只結案週報，不會修改甘特圖進度。
 
 ### 星期一沒有收到 Discord 週報附件或上傳連結
 
