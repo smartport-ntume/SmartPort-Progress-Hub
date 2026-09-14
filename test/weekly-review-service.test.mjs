@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { WeeklyReviewService, selectedProposalNumbers, assertExpectedProgress } from '../local-server/weekly-review-service.mjs';
 import { GatewayJobHandler } from '../local-server/gateway-job-handler.mjs';
 import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
+import { screenshotFailures } from './fixtures/weekly-input-failures.mjs';
 
 function database(tables) {
   return { from(table) {
@@ -99,6 +100,23 @@ test('an old zero-score input refusal cannot be approved and its review lock is 
   assert.deepEqual(f.writes,[]);assert.equal(f.row.status,'failed');assert.equal(f.row.review_status,'PENDING');
   assert.equal(f.row.review_job_id,null);assert.match(f.row.error,/重新批改/);
   assert.ok(f.row.analysis_result.analysis);
+});
+
+test('the reported legacy failures release fresh and failed review locks without writing progress',async()=>{
+  for(const analysis of screenshotFailures)for(const reviewStatus of ['REVIEWING','REVIEW_FAILED']){
+    const f=fixture();f.row.analysis_result={analysis,proposals:[]};f.job.payload.issue_numbers=[];
+    f.row.review_status=reviewStatus;f.row.review_result={decisions:[]};
+    await assert.rejects(()=>f.service.review(f.job),/weekly_analysis_incomplete/);
+    assert.deepEqual(f.writes,[]);assert.equal(f.row.status,'failed');assert.equal(f.row.review_status,'PENDING');
+    assert.equal(f.row.review_job_id,null);
+  }
+});
+
+test('invalid input detection never unlocks a partially applied review for regrading',async()=>{
+  const f=fixture();f.row.analysis_result.analysis=screenshotFailures[0];
+  f.row.review_status='REVIEW_FAILED';f.row.review_result={decisions:[{issue_number:1,status:'APPROVED'}]};
+  await assert.rejects(()=>f.service.review(f.job),/weekly_analysis_incomplete/);
+  assert.deepEqual(f.writes,[]);assert.equal(f.row.review_status,'REVIEW_FAILED');assert.equal(f.row.review_job_id,'r1');
 });
 
 test('server guards reject superseded reports, forged review jobs and revoked PM permissions',async()=>{

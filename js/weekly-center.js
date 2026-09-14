@@ -16,15 +16,28 @@
       <label>狀態<select data-field="filter"><option value="all">全部成員</option><option value="missing">尚未繳交</option><option value="pending">待 PM 審核</option><option value="failed">處理失敗</option><option value="returned">退回補件</option><option value="approved">已核准</option></select></label>
       <button class="btn" data-action="resend">補發 Discord</button><label>截止時間（台灣）<input type="datetime-local" data-field="deadline"></label><button class="btn" data-action="extend">展延截止</button>
       <button class="btn" data-action="older">更早週次</button></div>
-      <div class="weekly-center-message" data-field="message" role="status" aria-live="polite"></div><div class="weekly-center-counts" data-field="counts"></div>
+      <div class="weekly-center-message" data-field="message" role="status" aria-live="polite"></div><div class="weekly-center-message" data-field="jobs" role="status" aria-live="polite"></div><div class="weekly-center-counts" data-field="counts"></div>
       <div class="weekly-center-grid"><div class="weekly-center-roster" data-field="roster"></div><section class="weekly-center-detail" data-field="detail">選擇成員查看週報。</section></div>`;
     parent.append(root,manual);
     const el=name=>root.querySelector(`[data-field="${name}"]`);
-    let batches=[],batchId='',memberId='',detail=null,snapshot={},busy=false,sequence=0;
+    let batches=[],batchId='',memberId='',detail=null,snapshot={},busy=false,sequence=0,loadSequence=0;
     const active=()=>batches.find(b=>b.id===batchId);
-    const jobKey='smartport.weeklyCenterJob';
+    const jobKey='smartport.weeklyCenterJobs';
+    const pendingJobs=new Map(),watching=new Set();
+    const pendingFor=id=>[...pendingJobs.values()].some(job=>job.targetId===id);
+    function saveJobs(){
+      try{sessionStorage.setItem(jobKey,JSON.stringify([...pendingJobs.entries()]));}catch(_){/* The queue also remains in Supabase. */}
+    }
     const message=(text,error=false)=>{el('message').textContent=text;el('message').classList.toggle('error',error);};
-    function controls(){root.querySelectorAll('[data-action]').forEach(b=>{b.disabled=busy||(!active()&&!['refresh','older'].includes(b.dataset.action));});}
+    function controls(){
+      el('jobs').textContent=pendingJobs.size?`有 ${pendingJobs.size} 項操作等待完成，可繼續查看或處理其他成員。`:'';
+      root.querySelectorAll('[data-action]').forEach(b=>{
+        const name=b.dataset.action;
+        if(['refresh','older'].includes(name)){b.disabled=busy;return;}
+        const target=['resend','extend'].includes(name)?batchId:detail?.submission.id;
+        b.disabled=busy||!active()||pendingFor(target);
+      });
+    }
     function renderRoster(){
       const batch=active();if(!batch){el('roster').innerHTML='';el('counts').textContent='尚無自動週報批次。';el('detail').textContent='每週週報建立後，會列在這裡。';controls();return;}
       const people=(batch.members||[]).map(m=>({member:m,row:model().latest(batch.submissions||[],m.id)}));
@@ -42,7 +55,8 @@
       const review=feedbackReady?analysis.review||{}:{};
       const expected=model().expected(proposals,snapshot);
       const editable=row.is_current!==false&&feedbackReady&&row.review_status==='PENDING';
-      const resuming=row.is_current!==false&&!assessmentIssue&&row.review_status==='REVIEW_FAILED';
+      const resuming=row.is_current!==false&&row.review_status==='REVIEW_FAILED';
+      const recovering=resuming&&assessmentIssue&&!(row.review_result?.decisions||[]).length;
       const decided=new Map((row.review_result?.decisions||[]).map(p=>[Number(p.issue_number),p.status]));
       const priorSelected=new Set(row.review_result?.request?.issue_numbers||[]);
       const link=safeLink(row.report_html_url);
@@ -56,14 +70,15 @@
         ${assessmentIssue?`<p class="weekly-center-message error">${esc(assessmentIssue)}</p>`:''}
         ${feedbackReady&&(review.overall_assessment||analysis.report_summary)?`<p class="weekly-center-feedback">${esc(review.overall_assessment||analysis.report_summary)}</p>`:''}
         ${Object.keys(review).length?`<div class="weekly-center-scores">${[['completeness_score','完整度'],['evidence_score','證據品質'],['schedule_alignment_score','時程一致性']].map(([k,label])=>`<div><b>${esc(review[k]??'—')}</b>${label}</div>`).join('')}</div>`:''}
-        ${list('需要補充',review.missing_items)}${list('建議下一步',review.actions)}
+        ${list('需要補充',review.missing_items)}${list('建議下一步',review.actions)}${feedbackReady?list('批改注意事項',analysis.warnings):''}
         <h3>進度更新（${proposals.length} 項）</h3>
-        ${editable||resuming?'<button class="btn" data-action="select-all">全選可核准項目</button>':''}
-        ${proposals.map(p=>{const before=expected[p.issue_number],terminal=decided.get(Number(p.issue_number));return `<article class="weekly-center-change"><label><input type="checkbox" data-proposal="${p.issue_number}" ${resuming&&(terminal==='APPROVED'||(priorSelected.has(Number(p.issue_number))&&before&&terminal!=='REJECTED'))?'checked':''} ${(!editable&&!resuming)||!before||(resuming&&terminal)?'disabled':''}><span><b>${esc(p.target_id)} · ${esc(p.target_type)}</b><br>進度 ${esc(before?.progress??'找不到工作')}% → ${esc(p.progress)}%<br><small>${esc(before?.status||'—')} → ${esc(p.status)}${terminal?` · ${terminal==='APPROVED'?'已核准':'未採用'}`:''}</small></span></label><p>${esc(p.summary||'')}</p><details><summary>查看證據與批改依據</summary><p>${esc(p.evidence||'未提供證據')}</p><p>${esc(p.ai_rationale||'')}</p></details></article>`;}).join('')||`<p class="muted">${feedbackReady?'這份週報沒有進度更新提案，仍可核准報告或退回補件。':'尚無有效的批改提案，請等待批改完成或重新批改。'}</p>`}
+        ${(editable||resuming&&!assessmentIssue)&&proposals.length?'<button class="btn" data-action="select-all">全選可核准項目</button>':''}
+        ${proposals.map(p=>{const before=expected[p.issue_number],terminal=decided.get(Number(p.issue_number));return `<article class="weekly-center-change"><label><input type="checkbox" data-proposal="${p.issue_number}" ${resuming&&(terminal==='APPROVED'||(priorSelected.has(Number(p.issue_number))&&before&&terminal!=='REJECTED'))?'checked':''} ${assessmentIssue||(!editable&&!resuming)||!before||(resuming&&terminal)?'disabled':''}><span><b>${esc(p.target_id)} · ${esc(p.target_type)}</b><br>進度 ${esc(before?.progress??'找不到工作')}% → ${esc(p.progress)}%<br><small>${esc(before?.status||'—')} → ${esc(p.status)}${terminal?` · ${terminal==='APPROVED'?'已核准':'未採用'}`:''}</small></span></label><p>${esc(p.summary||'')}</p><details><summary>查看證據與批改依據</summary><p>${esc(p.evidence||'未提供證據')}</p><p>${esc(p.ai_rationale||'')}</p></details></article>`;}).join('')||`<p class="muted">${assessmentIssue?'批改未完成，尚未產生可勾選的進度更新。請重新批改原始週報。':feedbackReady?'批改已完成，但沒有可採用的進度更新。請查看上方缺漏與批改注意事項；可核准週報或退回補件，正式進度不會變更。':'批改完成後，有證據支持的進度更新才會顯示在這裡。'}</p>`}
         <label>PM 回饋<textarea class="weekly-center-notes" data-field="feedback" maxlength="4000" ${!editable?'readonly':''} placeholder="退回時請說明需要補充的內容">${esc(row.pm_feedback||row.review_result?.request?.feedback||'')}</textarea></label>
-        <div class="weekly-center-actions">${editable?'<button class="btn primary" data-action="approve">核准勾選項目並結案</button><button class="btn danger" data-action="return">退回補件</button>':''}${resuming?'<button class="btn primary" data-action="resume_review">重試剩餘審核</button>':''}
+        <div class="weekly-center-actions">${editable?`<button class="btn primary" data-action="approve">${proposals.length?'核准勾選項目並結案':'核准週報（不更新進度）'}</button><button class="btn danger" data-action="return">退回補件</button>`:''}${resuming&&(!assessmentIssue||recovering)?`<button class="btn primary" data-action="resume_review">${recovering?'解除失敗審核':'重試剩餘審核'}</button>`:''}
         ${row.is_current!==false&&!['APPROVED','REVIEWING','REVIEW_FAILED'].includes(row.review_status)&&!['queued','running'].includes(row.status)&&me.can_trigger_codex?'<button class="btn" data-action="retry">重新批改原始週報</button>':''}</div>
         ${editable?'<p class="muted">核准後，勾選項目寫入正式進度；未勾選項目記為未採用。退回補件不寫入進度。</p>':''}
+        ${recovering?'<p class="muted">這次審核尚未寫入任何進度。解除後可重新批改原始週報。</p>':''}
         <div class="weekly-center-history"><b>提交版本</b><div>${versions.map(v=>`<button class="btn" data-version="${v.id}" ${v.id===row.id?'disabled':''}>第 ${v.revision||1} 版 · ${model().status(v).label}</button>`).join('')}</div></div>
         ${detail.runs?.length?`<details class="weekly-center-history"><summary>批改執行紀錄（${detail.runs.length}）</summary>${detail.runs.map(r=>`<p class="muted">${esc(stamp(r.created_at))} · ${esc(r.status)}${r.error?` · ${esc(r.error)}`:''}</p>`).join('')}</details>`:''}`;
       controls();
@@ -75,25 +90,45 @@
         if(seq!==sequence)return;
         detail=report;snapshot=current;memberId=report.submission.member_id;
         const listed=active()?.submissions?.find(row=>row.id===report.submission.id);
-        if(listed)listed.analysis_result=report.submission.analysis_result;
+        if(listed)Object.assign(listed,report.submission);
         renderRoster();renderDetail();
       }catch(error){if(seq===sequence)el('detail').textContent=error.message;}
     }
-    async function load(older=false){
+    async function load(older=false,refreshDetail=true){
+      const seq=++loadSequence;
       const old=older&&batches.length?batches.at(-1).report_date:null;
       const data=await API.listWeeklyReports(old);
+      if(seq!==loadSequence)return;
+      // Preserve already inspected assessments while the same analysis is current.
+      for(const batch of data.batches||[])for(const row of batch.submissions||[]){
+        const previous=batches.find(b=>b.id===batch.id)?.submissions?.find(s=>s.id===row.id);
+        if(previous&&previous.status===row.status&&(previous.analysis_job_key||previous.job_id)===(row.analysis_job_key||row.job_id))row.analysis_result=previous.analysis_result;
+      }
       batches=older?[...batches,...data.batches.filter(b=>!batches.some(a=>a.id===b.id))]:data.batches||[];
       if(!active())batchId=batches[0]?.id||'';
       el('batch').innerHTML=batches.map(b=>`<option value="${b.id}">${esc(b.week_key)} · ${esc(b.report_date)}</option>`).join('');el('batch').value=batchId;
       el('deadline').value=model().taipeiInput(active()?.due_at);
       renderRoster();
-      if(memberId){const row=model().latest(active()?.submissions||[],memberId);if(row)await openReport(row.id);else {detail=null;el('detail').textContent='這位成員尚未繳交。';}}
+      if(memberId&&refreshDetail){const row=model().latest(active()?.submissions||[],memberId);if(row)await openReport(row.id);else {detail=null;el('detail').textContent='這位成員尚未繳交。';}}
     }
     async function watch(jobId){
-      busy=true;controls();message('操作已排入佇列；本機 Agent 上線後會處理。');
-      try{await API.waitForAnalysisJob(jobId);message('已完成。');}
-      catch(error){message(error.message,true);}
-      finally{sessionStorage.removeItem(jobKey);busy=false;await load().catch(e=>message(e.message,true));await onChange?.();controls();}
+      if(watching.has(jobId))return;
+      watching.add(jobId);
+      const pending=pendingJobs.get(jobId)||{};
+      try{await API.waitForAnalysisJob(jobId);message(`${pending.label||'操作'}已完成。`);}
+      catch(error){
+        let released=false;
+        if(pending.action==='resume_review'){
+          try{const report=await API.getWeeklyReport(pending.targetId);released=report.submission.status==='failed'&&report.submission.review_status==='PENDING'&&!report.submission.review_job_id;}catch(_){}
+        }
+        message(released?`${pending.label} 的失敗審核已解除，現在可以重新批改原始週報。`:`${pending.label||'操作'}：${error.message}`,!released);
+      }
+      finally{
+        watching.delete(jobId);pendingJobs.delete(jobId);saveJobs();controls();
+        // Completing another member's job must not erase the PM's current selection or notes.
+        await load(false,!detail||detail.submission.id===pending.targetId).catch(e=>message(e.message,true));
+        try{await onChange?.();}catch(error){message(error.message,true);}
+      }
     }
     async function action(name){
       if(busy)return;
@@ -102,6 +137,8 @@
       if(name==='select-all'){el('detail').querySelectorAll('[data-proposal]:not(:disabled)').forEach(b=>b.checked=true);return;}
       const batch=active();if(!batch)return;
       let id=batch.id,payload={};
+      const target=['resend','extend'].includes(name)?batch.id:detail?.submission.id;
+      if(pendingFor(target))return;
       if(name==='resend'){if(!confirm(`補發 ${batch.week_key} 的全部 Word 附件與原繳交連結到 Discord？`))return;}
       else if(name==='extend'){
         const due=new Date(el('deadline').value+'+08:00');
@@ -110,18 +147,29 @@
       }else{
         if(!detail)return;const row=detail.submission;id=row.id;
         if(['approve','return','resume_review'].includes(name)){
-          const issue=model().assessmentIssue(row.analysis_result?.analysis);if(issue)throw new Error(issue);
+          const issue=model().assessmentIssue(row.analysis_result?.analysis);
+          const canRelease=name==='resume_review'&&row.review_status==='REVIEW_FAILED'&&!(row.review_result?.decisions||[]).length;
+          if(issue&&!canRelease)throw new Error(issue);
         }
         const selected=[...el('detail').querySelectorAll('[data-proposal]:checked')].map(b=>Number(b.dataset.proposal));
         const feedback=el('feedback')?.value.trim()||'';
         payload={analysis_job_id:row.analysis_job_key||row.job_id,issue_numbers:selected,feedback,expected:model().expected(row.analysis_result?.proposals||[],snapshot)};
         if(name==='return'&&!feedback)throw new Error('請先填寫退回補件的原因。');
         const prompts={approve:`核准 ${row.member_name} 第 ${row.revision} 版，採用 ${selected.length} 項進度更新並結案？`,return:'退回這份週報，讓成員依回饋補交？',retry:'以原始 Word 重新批改？原有未核准提案將標記為已取代。',resume_review:'依目前勾選項目重試剩餘審核？已完成的核准會保留。'};
+        if(name==='resume_review'&&model().assessmentIssue(row.analysis_result?.analysis))prompts.resume_review='解除尚未寫入進度的失敗審核，讓這份週報可以重新批改？';
         if(!prompts[name]||!confirm(prompts[name]))return;
       }
+      const label=['resend','extend'].includes(name)?batch.week_key:(batch.members||[]).find(m=>m.id===detail?.submission.member_id)?.name||'週報';
       busy=true;controls();
-      try{const queued=await API.weeklyReportAction(name,id,payload);sessionStorage.setItem(jobKey,queued.job.id);await watch(queued.job.id);}
-      catch(error){busy=false;controls();throw error;}
+      try{
+        const queued=await API.weeklyReportAction(name,id,payload);
+        pendingJobs.set(queued.job.id,{targetId:id,label,action:name});saveJobs();
+        message(`${label} 已排入佇列；本機 Agent 上線後會處理。可繼續處理其他成員。`);
+        // Release the page immediately after enqueueing; only this target stays locked.
+        busy=false;controls();
+        void watch(queued.job.id);
+        await load(false,detail?.submission.id===id);
+      }finally{busy=false;controls();}
     }
     root.addEventListener('click',event=>{
       const person=event.target.closest('[data-member]'),version=event.target.closest('[data-version]'),button=event.target.closest('[data-action]');
@@ -131,7 +179,16 @@
     });
     el('batch').addEventListener('change',()=>{++sequence;batchId=el('batch').value;memberId='';detail=null;el('detail').textContent='選擇成員查看週報。';el('deadline').value=model().taipeiInput(active()?.due_at);renderRoster();});
     el('filter').addEventListener('change',renderRoster);
-    try{await load();const pending=sessionStorage.getItem(jobKey);if(pending)watch(pending);}
+    try{
+      try{
+        const saved=JSON.parse(sessionStorage.getItem(jobKey)||'[]');
+        if(Array.isArray(saved))for(const item of saved)if(Array.isArray(item)&&typeof item[0]==='string'&&item[1]&&typeof item[1]==='object')pendingJobs.set(item[0],item[1]);
+        const legacy=sessionStorage.getItem('smartport.weeklyCenterJob');
+        if(legacy)pendingJobs.set(legacy,{label:'週報'});
+        sessionStorage.removeItem('smartport.weeklyCenterJob');saveJobs();
+      }catch(_){/* A malformed/blocked session cache must not disable the PM center. */}
+      await load();for(const jobId of pendingJobs.keys())void watch(jobId);
+    }
     catch(error){message(`週報管理尚未就緒：${error.message}`,true);}
   }
   window.SmartPortWeeklyCenter={mount};
