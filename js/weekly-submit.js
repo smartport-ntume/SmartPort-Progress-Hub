@@ -120,10 +120,14 @@
       if (!rows.length) { panel.innerHTML = '<h3>批改與 PM 回饋</h3><p>上傳週報後，可在這裡查看缺漏、修改建議及審核結果。</p>'; return; }
       const list = (label,items) => Array.isArray(items)&&items.length ? `<b>${label}</b><ul>${items.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>` : '';
       const content = row => {
-        const review = row.review || {};
+        const assessmentIssue = row.status === 'completed'
+          ? window.SmartPortWeeklyReview.assessmentIssue({ review: row.review, report_summary: row.summary }) : '';
+        const feedbackReady = row.status === 'completed' && !assessmentIssue;
+        const review = feedbackReady ? row.review || {} : {};
         return `<p><b>${esc(statusLabel(row))}</b> · ${esc(dateTime(row.submitted_at))}</p>
           ${row.is_current===false?'<p class="muted">這是歷史版本，請依最新一版的結果處理。</p>':''}
-          ${review.overall_assessment||row.summary?`<p>${esc(review.overall_assessment||row.summary)}</p>`:''}
+          ${assessmentIssue?'<p>這次批改未完成，已繳交的週報仍保留，請聯絡 PM 重新批改。</p>':''}
+          ${feedbackReady&&(review.overall_assessment||row.summary)?`<p>${esc(review.overall_assessment||row.summary)}</p>`:''}
           ${Object.keys(review).length?`<div class="feedback-scores">${[['completeness_score','完整度'],['evidence_score','證據品質'],['schedule_alignment_score','時程一致性']].map(([key,label])=>`<span><b>${esc(review[key]??'—')}</b>${label}</span>`).join('')}</div>`:''}
           ${list('需要補充',review.missing_items)}${list('建議下一步',review.actions)}
           ${row.pm_feedback?`<div class="feedback-pm"><b>PM 回饋</b><p>${esc(row.pm_feedback)}</p></div>`:''}

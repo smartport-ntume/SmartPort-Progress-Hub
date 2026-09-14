@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { WeeklyReviewService, selectedProposalNumbers, assertExpectedProgress } from '../local-server/weekly-review-service.mjs';
 import { GatewayJobHandler } from '../local-server/gateway-job-handler.mjs';
+import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
 
 function database(tables) {
   return { from(table) {
@@ -23,7 +24,9 @@ function fixture() {
   const proposals=[1,2].map(n=>({issue_number:n,target_type:'SUBTASK',target_id:'C'+n,progress:20*n,status:'On Track',
     source_report_path:'weekly_reports/report.docx',source_submission_id:'s1',source_analysis_job_id:'a1',review_status:'PENDING'}));
   const row={id:'s1',batch_id:'b1',member_id:'m1',is_current:true,job_id:'a1',analysis_job_key:'a1',status:'completed',
-    report_path:'weekly_reports/report.docx',review_job_id:'r1',review_status:'REVIEWING',analysis_result:{proposals:structuredClone(proposals)}};
+    report_path:'weekly_reports/report.docx',review_job_id:'r1',review_status:'REVIEWING',analysis_result:{analysis:{review:{
+      completeness_score:80,evidence_score:75,schedule_alignment_score:90,overall_assessment:'有成果與證據'
+    }},proposals:structuredClone(proposals)}};
   const job={id:'r1',actor_id:'pm',actor_login:'pm',kind:'review_weekly_submission',status:'running',payload:{
     submission_id:'s1',analysis_job_id:'a1',decision:'approve',issue_numbers:[1,2],feedback:'checked',
     expected:{1:{progress:0,status:'On Track'},2:{progress:0,status:'On Track'}}}};
@@ -88,6 +91,16 @@ test('a report with no proposed updates still supports a PM decision',async()=>{
   await f.service.review(f.job);assert.equal(f.row.review_status,'APPROVED');assert.deepEqual(f.writes,[]);
 });
 
+test('an old zero-score input refusal cannot be approved and its review lock is released for reanalysis',async()=>{
+  const f=fixture();f.row.analysis_result.proposals=[];f.job.payload.issue_numbers=[];
+  f.row.analysis_result.analysis={report_summary:'Unable to assess the report without reading weekly-report.txt and project-context.json.',
+    review:{overall_assessment:'Report contents were unavailable for review.',completeness_score:0,evidence_score:0,schedule_alignment_score:0}};
+  await assert.rejects(()=>f.service.review(f.job),/weekly_analysis_incomplete/);
+  assert.deepEqual(f.writes,[]);assert.equal(f.row.status,'failed');assert.equal(f.row.review_status,'PENDING');
+  assert.equal(f.row.review_job_id,null);assert.match(f.row.error,/重新批改/);
+  assert.ok(f.row.analysis_result.analysis);
+});
+
 test('server guards reject superseded reports, forged review jobs and revoked PM permissions',async()=>{
   const f=fixture();
   await assert.rejects(()=>f.service.guardProposal(f.proposals[0],null,'approve'),/週報管理中心/);
@@ -129,4 +142,13 @@ test('portal and PM center share report-level status and choose the current subm
   const rows=[{member_id:'m1',revision:1,review_status:'APPROVED',is_current:false},{member_id:'m1',revision:2,status:'queued',is_current:true}];
   assert.equal(model.latest(rows,'m1').revision,2);
   assert.equal(model.taipeiInput('2026-09-14T05:00:00Z'),'2026-09-14T13:00');
+  const refusal={report_summary:'Unable to assess the report without reading weekly-report.txt and project-context.json.',review:{
+    overall_assessment:'Scores omitted because inputs could not be read.',completeness_score:0,evidence_score:0,schedule_alignment_score:0}};
+  const valid={review:{overall_assessment:'空白範本缺少成果',completeness_score:0,evidence_score:0,schedule_alignment_score:0}};
+  for(const analysis of [refusal,valid,{review:null},{...valid,assessment_status:'input_unavailable'}]) {
+    assert.equal(model.assessmentIssue(analysis),weeklyAssessmentIssue(analysis));
+  }
+  assert.equal(model.status({status:'completed',review_status:'PENDING',analysis_result:{analysis:refusal}}).label,'批改未完成');
+  assert.equal(model.status({status:'completed',review:refusal.review,summary:refusal.report_summary}).key,'failed');
+  assert.equal(model.status({status:'completed',analysis_result:{analysis:valid}}).key,'pending');
 });

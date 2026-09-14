@@ -240,6 +240,23 @@ npm start
 
 確認 `agent_state` 最近狀態及 `.env.local` 的 URL/key。
 
+### 顯示「Unable to assess」或「無法讀取 weekly-report.txt」，分數卻全部為 0
+
+這是批改輸入沒有被讀取的錯誤結果，不代表成員真的得到 0 分。新版 Agent 改成直接把週報文字、專案 context 與輸出格式傳給 Codex，並拒收缺少評分的結果；不需要放寬沙箱權限。
+
+合併此修復後，在正在執行 Agent 的 PowerShell 按 `Ctrl+C`，再執行：
+
+```powershell
+Set-Location "C:\Users\Vincent Huang\SmartPort-Progress-Hub-Agent"
+git pull --ff-only origin main
+npm run check
+npm test
+npm run doctor
+npm start
+```
+
+確認各命令成功才繼續下一個。這次沒有新增套件或 SQL。接著在網站按 `Ctrl+F5`，到 **Workflow → Weekly Reports** 選擇有問題的成員，按 **重新批改原始週報**，逐份重跑即可。原始 Word 已歸檔，無需請成員重交；新回饋會使用繁體中文。開啟明細後，舊的輸入讀取失敗結果會顯示「批改未完成」，不再顯示假 0 分或允許核准。
+
 ### 星期一沒有收到 Discord 週報附件或上傳連結
 
 在 Windows 執行：

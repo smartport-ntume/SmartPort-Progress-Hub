@@ -1,3 +1,5 @@
+import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
+
 function checked(result, operation) {
   if (result?.error) throw new Error(`${operation}: ${result.error.message || result.error}`);
   return result?.data;
@@ -138,6 +140,17 @@ export class WeeklyReviewService {
     if (row.is_current === false || row.status !== 'completed' || row.review_job_id !== job.id
       || payload.analysis_job_id !== (row.analysis_job_key || row.job_id)) {
       throw new Error('weekly_review_version_changed');
+    }
+    const assessmentIssue = weeklyAssessmentIssue(row.analysis_result?.analysis);
+    if (assessmentIssue) {
+      // No baseline writes have occurred. Release a fresh review reservation so
+      // an old browser cannot trap an invalid assessment in REVIEW_FAILED.
+      if (!(row.review_result?.decisions || []).length) {
+        checked(await this.supabase.from('weekly_report_submissions').update({
+          status: 'failed', review_status: 'PENDING', review_job_id: null, error: assessmentIssue
+        }).eq('id', row.id).eq('review_job_id', job.id).eq('is_current', true), 'weekly_invalid_assessment');
+      }
+      throw new Error('weekly_analysis_incomplete: ' + assessmentIssue);
     }
     const analysisProposals = row.analysis_result?.proposals || [];
     const selected = selectedProposalNumbers(payload.issue_numbers, analysisProposals);

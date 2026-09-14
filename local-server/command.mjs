@@ -14,7 +14,8 @@ export function runCommand(command, args = [], options = {}) {
     env = process.env,
     timeoutMs = 120_000,
     maxOutputBytes = 4 * 1024 * 1024,
-    allowNonZero = false
+    allowNonZero = false,
+    input
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -22,7 +23,7 @@ export function runCommand(command, args = [], options = {}) {
       cwd,
       env,
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: [input == null ? 'ignore' : 'pipe', 'pipe', 'pipe']
     });
     let stdout = '';
     let stderr = '';
@@ -67,5 +68,16 @@ export function runCommand(command, args = [], options = {}) {
         resolve(result);
       }
     });
+
+    if (input != null) {
+      child.stdin.once('error', error => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.kill('SIGTERM');
+        reject(new CommandError('Unable to send command input: ' + command, { command, code: error.code }));
+      });
+      child.stdin.end(input, 'utf8');
+    }
   });
 }

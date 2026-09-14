@@ -1,4 +1,5 @@
 import { corsHeaders, safeReturnUrl } from './cors.js';
+import { weeklyAssessmentIssue } from './weekly-assessment.js';
 import {
   normalizeTeamConfig,
   referencedTeamIds,
@@ -447,12 +448,13 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     subtasks:scopedSubs.map(x=>({id:x.id,parent_wp:x.parent_wp,name:x.name,owner_team:x.owner_team,start:x.start,end:x.end,target_cp:x.target_cp||'',actual_progress:x.actual_progress??null,status:x.status||'Not Updated',description:x.description||'',expected_evidence:x.expected_evidence||[]}))
   };
   const schema={
-    type:'object',additionalProperties:false,required:['report_summary','review','warnings','proposals'],properties:{
+    type:'object',additionalProperties:false,required:['assessment_status','report_summary','review','warnings','proposals'],properties:{
+      assessment_status:{type:'string',enum:['completed','input_unavailable']},
       report_summary:{type:'string',maxLength:8000},
-      review:{type:'object',additionalProperties:false,required:['overall_assessment','completeness_score','evidence_score','schedule_alignment_score','strengths','missing_items','actions'],properties:{
+      review:{anyOf:[{type:'object',additionalProperties:false,required:['overall_assessment','completeness_score','evidence_score','schedule_alignment_score','strengths','missing_items','actions'],properties:{
         overall_assessment:{type:'string',maxLength:8000},completeness_score:{type:'number',minimum:0,maximum:100},evidence_score:{type:'number',minimum:0,maximum:100},schedule_alignment_score:{type:'number',minimum:0,maximum:100},
         strengths:{type:'array',maxItems:20,items:{type:'string',maxLength:2000}},missing_items:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},actions:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}}
-      }},
+      }},{type:'null'}]},
       warnings:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},
       proposals:{type:'array',maxItems:200,items:{type:'object',additionalProperties:false,required:['target_type','target_id','progress','status','blocker','evidence','summary','confidence','rationale'],properties:{
         target_type:{type:'string',enum:['WP','SUBTASK']},target_id:{type:'string',maxLength:128},progress:{type:'number',minimum:0,maximum:100},
@@ -479,7 +481,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
         method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
         body:JSON.stringify({
           model:env.OPENAI_MODEL||'gpt-5-mini',store:false,
-          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence. Scores are 0 to 100 and feedback must be specific and concise. Template prompts and blank fields are not evidence. Then convert only report-supported facts into proposed project updates. Prefer SUBTASK updates; use WP only for whole-package evidence. progress is an absolute percentage and must never decrease. Do not invent evidence, blockers, tests, completion, dates, targets, or work outside owner_teams and required scope. Return an empty proposals array when evidence is insufficient.',
+          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. Write feedback in Traditional Chinese; keep IDs and enum values unchanged. Set assessment_status to completed only after reading the report and project context; if either is inaccessible, use input_unavailable with review=null and no proposals, never invented zero scores. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence. Scores are 0 to 100 and feedback must be specific and concise. Template prompts and blank fields are not evidence. Then convert only report-supported facts into proposed project updates. Prefer SUBTASK updates; use WP only for whole-package evidence. progress is an absolute percentage and must never decrease. Do not invent evidence, blockers, tests, completion, dates, targets, or work outside owner_teams and required scope. Return an empty proposals array when evidence is insufficient.',
           input:[{role:'user',content:[
             {type:'input_text',text:`Map this SmartPort weekly report into proposed WP/Subtask progress updates. Project context JSON:\n${JSON.stringify(context)}`},
             {type:'input_file',file_id:uploaded.id}
@@ -494,6 +496,8 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     if(!raw)throw new Error('OpenAI_returned_no_structured_output');
     try{analysis=JSON.parse(raw)}catch(_){throw new Error('OpenAI_structured_output_parse_failed')}
   }
+  const assessmentIssue=weeklyAssessmentIssue(analysis,{requireStatus:true});
+  if(assessmentIssue)throw new Error('weekly_analysis_incomplete: '+assessmentIssue);
   analysis.warnings=Array.isArray(analysis.warnings)?analysis.warnings:[];
   analysis.warnings.unshift(...scopeWarnings);
   analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals:[];
@@ -529,7 +533,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     created.push(parseProposalIssue(issue));
   }
   const model=useLocalCodex?(env.LOCAL_CODEX_MODEL||'Codex account'):(env.OPENAI_MODEL||'gpt-5-mini');
-  return{analysis:{report_summary:analysis.report_summary||'',review:analysis.review||null,warnings:analysis.warnings,analysis_id:analysisId,model},proposals:created,report:{path:reportPath,filename,member_id:memberId,member_name:memberName,owner_teams:ownerTeams}};
+  return{analysis:{assessment_status:analysis.assessment_status,report_summary:analysis.report_summary||'',review:analysis.review,warnings:analysis.warnings,analysis_id:analysisId,model},proposals:created,report:{path:reportPath,filename,member_id:memberId,member_name:memberName,owner_teams:ownerTeams}};
 }
 
 function proposalBody(p, author) {

@@ -36,10 +36,13 @@
     }
     function renderDetail(){
       if(!detail)return;
-      const row=detail.submission,analysis=row.analysis_result?.analysis||{},review=analysis.review||{},proposals=row.analysis_result?.proposals||[];
+      const row=detail.submission,analysis=row.analysis_result?.analysis||{},proposals=row.analysis_result?.proposals||[];
+      const assessmentIssue=row.status==='completed'?model().assessmentIssue(analysis):'';
+      const feedbackReady=row.status==='completed'&&!assessmentIssue;
+      const review=feedbackReady?analysis.review||{}:{};
       const expected=model().expected(proposals,snapshot);
-      const editable=row.is_current!==false&&row.status==='completed'&&row.review_status==='PENDING';
-      const resuming=row.is_current!==false&&row.review_status==='REVIEW_FAILED';
+      const editable=row.is_current!==false&&feedbackReady&&row.review_status==='PENDING';
+      const resuming=row.is_current!==false&&!assessmentIssue&&row.review_status==='REVIEW_FAILED';
       const decided=new Map((row.review_result?.decisions||[]).map(p=>[Number(p.issue_number),p.status]));
       const priorSelected=new Set(row.review_result?.request?.issue_numbers||[]);
       const link=safeLink(row.report_html_url);
@@ -50,12 +53,13 @@
         <p class="muted">${esc(detail.week_key)} · ${esc(stamp(row.submitted_at))}${row.is_current===false?' · 歷史版本':''}</p>
         ${link?`<a href="${esc(link)}" target="_blank" rel="noopener">開啟原始 Word 週報</a>`:'<p class="muted">原始週報尚未完成歸檔。</p>'}
         ${row.error?`<p class="weekly-center-message error">${esc(row.error)}</p>`:''}
-        ${review.overall_assessment||analysis.report_summary?`<p class="weekly-center-feedback">${esc(review.overall_assessment||analysis.report_summary)}</p>`:''}
+        ${assessmentIssue?`<p class="weekly-center-message error">${esc(assessmentIssue)}</p>`:''}
+        ${feedbackReady&&(review.overall_assessment||analysis.report_summary)?`<p class="weekly-center-feedback">${esc(review.overall_assessment||analysis.report_summary)}</p>`:''}
         ${Object.keys(review).length?`<div class="weekly-center-scores">${[['completeness_score','完整度'],['evidence_score','證據品質'],['schedule_alignment_score','時程一致性']].map(([k,label])=>`<div><b>${esc(review[k]??'—')}</b>${label}</div>`).join('')}</div>`:''}
         ${list('需要補充',review.missing_items)}${list('建議下一步',review.actions)}
         <h3>進度更新（${proposals.length} 項）</h3>
         ${editable||resuming?'<button class="btn" data-action="select-all">全選可核准項目</button>':''}
-        ${proposals.map(p=>{const before=expected[p.issue_number],terminal=decided.get(Number(p.issue_number));return `<article class="weekly-center-change"><label><input type="checkbox" data-proposal="${p.issue_number}" ${resuming&&(terminal==='APPROVED'||(priorSelected.has(Number(p.issue_number))&&before&&terminal!=='REJECTED'))?'checked':''} ${(!editable&&!resuming)||!before||(resuming&&terminal)?'disabled':''}><span><b>${esc(p.target_id)} · ${esc(p.target_type)}</b><br>進度 ${esc(before?.progress??'找不到工作')}% → ${esc(p.progress)}%<br><small>${esc(before?.status||'—')} → ${esc(p.status)}${terminal?` · ${terminal==='APPROVED'?'已核准':'未採用'}`:''}</small></span></label><p>${esc(p.summary||'')}</p><details><summary>查看證據與批改依據</summary><p>${esc(p.evidence||'未提供證據')}</p><p>${esc(p.ai_rationale||'')}</p></details></article>`;}).join('')||'<p class="muted">這份週報沒有進度更新提案，仍可核准報告或退回補件。</p>'}
+        ${proposals.map(p=>{const before=expected[p.issue_number],terminal=decided.get(Number(p.issue_number));return `<article class="weekly-center-change"><label><input type="checkbox" data-proposal="${p.issue_number}" ${resuming&&(terminal==='APPROVED'||(priorSelected.has(Number(p.issue_number))&&before&&terminal!=='REJECTED'))?'checked':''} ${(!editable&&!resuming)||!before||(resuming&&terminal)?'disabled':''}><span><b>${esc(p.target_id)} · ${esc(p.target_type)}</b><br>進度 ${esc(before?.progress??'找不到工作')}% → ${esc(p.progress)}%<br><small>${esc(before?.status||'—')} → ${esc(p.status)}${terminal?` · ${terminal==='APPROVED'?'已核准':'未採用'}`:''}</small></span></label><p>${esc(p.summary||'')}</p><details><summary>查看證據與批改依據</summary><p>${esc(p.evidence||'未提供證據')}</p><p>${esc(p.ai_rationale||'')}</p></details></article>`;}).join('')||`<p class="muted">${feedbackReady?'這份週報沒有進度更新提案，仍可核准報告或退回補件。':'尚無有效的批改提案，請等待批改完成或重新批改。'}</p>`}
         <label>PM 回饋<textarea class="weekly-center-notes" data-field="feedback" maxlength="4000" ${!editable?'readonly':''} placeholder="退回時請說明需要補充的內容">${esc(row.pm_feedback||row.review_result?.request?.feedback||'')}</textarea></label>
         <div class="weekly-center-actions">${editable?'<button class="btn primary" data-action="approve">核准勾選項目並結案</button><button class="btn danger" data-action="return">退回補件</button>':''}${resuming?'<button class="btn primary" data-action="resume_review">重試剩餘審核</button>':''}
         ${row.is_current!==false&&!['APPROVED','REVIEWING','REVIEW_FAILED'].includes(row.review_status)&&!['queued','running'].includes(row.status)&&me.can_trigger_codex?'<button class="btn" data-action="retry">重新批改原始週報</button>':''}</div>
@@ -69,7 +73,10 @@
       try {
         const [report,current]=await Promise.all([API.getWeeklyReport(id),API.loadSnapshot()]);
         if(seq!==sequence)return;
-        detail=report;snapshot=current;memberId=report.submission.member_id;renderRoster();renderDetail();
+        detail=report;snapshot=current;memberId=report.submission.member_id;
+        const listed=active()?.submissions?.find(row=>row.id===report.submission.id);
+        if(listed)listed.analysis_result=report.submission.analysis_result;
+        renderRoster();renderDetail();
       }catch(error){if(seq===sequence)el('detail').textContent=error.message;}
     }
     async function load(older=false){
@@ -102,6 +109,9 @@
         payload={due_at:due.toISOString()};if(!confirm(`截止時間展延至 ${stamp(due)}，補交期至少延至七天後？`))return;
       }else{
         if(!detail)return;const row=detail.submission;id=row.id;
+        if(['approve','return','resume_review'].includes(name)){
+          const issue=model().assessmentIssue(row.analysis_result?.analysis);if(issue)throw new Error(issue);
+        }
         const selected=[...el('detail').querySelectorAll('[data-proposal]:checked')].map(b=>Number(b.dataset.proposal));
         const feedback=el('feedback')?.value.trim()||'';
         payload={analysis_job_id:row.analysis_job_key||row.job_id,issue_numbers:selected,feedback,expected:model().expected(row.analysis_result?.proposals||[],snapshot)};

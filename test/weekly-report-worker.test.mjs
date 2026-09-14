@@ -119,6 +119,7 @@ test('personal weekly analysis derives categories and required scope from Privat
     LOCAL_CODEX_RUNNER: async ({ context }) => {
       capturedContext = context;
       return {
+        assessment_status: 'completed',
         report_summary: 'Reviewed',
         review: {
           overall_assessment: 'Needs evidence.',
