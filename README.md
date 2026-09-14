@@ -68,6 +68,10 @@ supabase/migrations/202609080001_team_config.sql
 
 這是「在本機執行 Codex CLI」，不是離線模型。分析時，抽出的週報文字與必要 project context 會由 Codex CLI 傳送至 OpenAI 服務。
 
+Agent 將完整週報文字、專案 context 與輸出格式直接透過標準輸入交給 `codex exec -`，不再依賴模型執行讀檔指令，也避免長篇中文週報超過 Windows 命令列長度限制（[官方 CLI 說明](https://learn.chatgpt.com/docs/developer-commands?surface=cli)）。仍使用隔離、唯讀工作目錄及既有 Codex 登入；回饋要求使用繁體中文。只有明確完成評閱且三項分數均為有效數字，才接受為批改完成；無法取得輸入、缺少評分或回傳空值時，會顯示批改失敗，不再補成 0 分。
+
+若既有週報顯示 `Unable to assess ... weekly-report.txt / project-context.json` 和三項 0 分，請更新並重啟 Agent、重新整理網站，選擇該成員後按 **重新批改原始週報**。已歸檔的 Word 可直接重跑，不需重新上傳、不需新增 SQL。本次修正會在讀取明細時辨識這類舊結果、隱藏無效分數並禁止核准，完成重跑後才取代批改結果；真正讀完但內容不足的週報仍可得到 0 分。
+
 ### 每週自動建立、Discord 發布與收件
 
 啟用後，持續運行的 Windows Agent 會在每週一 13:00（`Asia/Taipei`）建立當週批次，從 Private Git 凍結當下的甘特圖、Checkpoint 與成員分工，為每位應繳成員產生個人 `.docx`，並直接附加到 Discord 訊息。成員在 Discord 下載與自己姓名相同的 Word，填寫後直接開啟訊息中的當週專用網址、選擇姓名並上傳；不需要 GitHub 帳號或訪客密碼。入口頁會在背景建立獨立的 Supabase 匿名工作階段，也可重新下載同一格式的空白週報，並顯示全員的繳交／批改狀態；Agent 離線時工作留在 Supabase，恢復後再自動批改，最後仍進入既有 PM Review Queue。
