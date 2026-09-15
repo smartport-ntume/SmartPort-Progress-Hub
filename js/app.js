@@ -28,7 +28,7 @@
   function weightOf(t){return t?.weight ?? 1}
   function statusOf(t){return t?.status || 'Not Updated'}
   function lastWeekOf(t){return t?.last_week ?? t?.lastWeek ?? ''}
-  function thisWeekOf(t){return t?.this_week ?? t?.thisWeek ?? t?.last_update_summary ?? ''}
+  function thisWeekOf(t){return t?.this_week || t?.thisWeek || t?.last_update_summary || ''}
   function blockerOf(t){if(t?.blocker!=null)return String(t.blocker);if(Array.isArray(t?.blockers))return t.blockers.join('\n');return''}
   function pmCommentOf(t){if(t?.pm_comment!=null)return String(t.pm_comment);if(t?.pmComment!=null)return String(t.pmComment);if(Array.isArray(t?.pm_comments))return t.pm_comments.join('\n');if(Array.isArray(t?.pmComments))return t.pmComments.join('\n');return''}
   function actualEvidenceOf(t){const v=t?.actual_evidence ?? t?.evidence_note ?? t?.evidenceNote ?? '';return Array.isArray(v)?v.join('\n'):String(v||'')}

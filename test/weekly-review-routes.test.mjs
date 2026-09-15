@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import app from '../worker/src/public.js';
 import { WeeklyReportAutomation } from '../local-server/weekly-report-automation.mjs';
+import { weeklyRecordVersion } from '../worker/src/weekly-proposal.js';
+import { assertExpectedProgress } from '../local-server/weekly-review-service.mjs';
 
 test('internal proposal routes enforce the report guard before any baseline or issue mutation',async t=>{
   const original=globalThis.fetch;t.after(()=>globalThis.fetch=original);
@@ -45,6 +47,7 @@ test('manual Discord resend reuses the batch token and does not reset delivery o
   const query={select(){return this;},eq(){return this;},async maybeSingle(){return {data:{...batch}};},
     update(patch){Object.assign(batch,patch);resets++;return this;},then(resolve,reject){return Promise.resolve({data:null,error:null}).then(resolve,reject);}};
   const automation=new WeeklyReportAutomation({supabase:{from(){return query;}},projectStore:{},options:{enabled:true}});
+  automation.reviewGate=async()=>({ready:true,review:null});
   let sends=0;
   automation.sendDiscord=async row=>{assert.equal(row.token,'original-token');if(row.discord_message_sent_at)return {alreadySent:true};sends++;batch.discord_message_sent_at='2026-09-14T05:01:00Z';return {sent:true};};
   await automation.resendBatch('batch-1','job-1');await automation.resendBatch('batch-1','job-1');
@@ -77,4 +80,35 @@ test('approval uses the reviewed file SHA and stops when the baseline changes be
     LOCAL_WEEKLY_REVIEW_GUARD:async()=>{sha='concurrent';}},{});
   assert.ok(response.status>=400);assert.match(await response.text(),/SHA mismatch/);
   assert.equal(reads,1);assert.equal(baselineWrites,0);assert.equal(issueWrites,0);
+});
+
+test('approving a work record through the API preserves null progress and linked issue status',async t=>{
+  const original=globalThis.fetch;t.after(()=>globalThis.fetch=original);
+  const p={schema_version:'1.1',target_type:'SUBTASK',target_id:'C3.4',report_date:'2026-09-14',progress:null,status:null,blocker:null,
+    source_report_path:'weekly_reports/report.docx',source_submission_id:'s1',evidence:'遠端停止已測試',summary:'完成遠端測試',verification_note:'本地停止待驗證'};
+  const issue={number:1,title:'[WEEKLY-AI] C3.4',body:`<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\n${JSON.stringify(p)}\n-->`};
+  const record={id:'C3.4',github_issue:88,actual_progress:null,status:'In Progress',blocker:'等待本地整合',actual_evidence:'既有測試記錄'};
+  let saved,linkedBody;
+  globalThis.fetch=async(input,init={})=>{
+    const path=new URL(String(input)).pathname;
+    if(path==='/repos/example/project')return Response.json({permissions:{push:true}});
+    if(path.endsWith('/issues/1')){if(init.method==='PATCH')Object.assign(issue,JSON.parse(init.body));return Response.json(issue);}
+    if(path.endsWith('/issues/88')){if(init.method==='PATCH')linkedBody=JSON.parse(init.body).body;return Response.json({body:'## Project Status\nOld status'});}
+    if(path.endsWith('/contents/project/subtasks.json')){
+      if(init.method==='PUT'){saved=JSON.parse(Buffer.from(JSON.parse(init.body).content,'base64').toString());return Response.json({content:{sha:'new'}});}
+      return Response.json({sha:'old',content:Buffer.from(JSON.stringify({subtasks:[record]})).toString('base64')});
+    }
+    throw new Error('unexpected '+path);
+  };
+  const expected={progress:null,status:'In Progress',record_version:weeklyRecordVersion(record)};
+  const response=await app.fetch(new Request('http://local-agent/api/reports/proposals/1/approve',{
+    method:'POST',headers:{Authorization:'Bearer secret','Content-Type':'application/json'},body:JSON.stringify({expected_current:expected})
+  }),{PROJECT_REPO:'example/project',INTERNAL_AGENT_BEARER:'secret',LOCAL_GITHUB_TOKEN:'token',
+    LOCAL_WEEKLY_REVIEW_GUARD:async(proposal,job,action,current,wanted)=>assertExpectedProgress(proposal,current,wanted)},{});
+  assert.equal(response.status,200,await response.text());
+  assert.equal(saved.subtasks[0].actual_progress,null);assert.equal(saved.subtasks[0].status,'In Progress');
+  assert.equal(saved.subtasks[0].blocker,'等待本地整合');assert.match(saved.subtasks[0].actual_evidence,/既有測試記錄/);
+  assert.match(saved.subtasks[0].last_update_summary,/本地停止待驗證/);
+  assert.match(linkedBody,/Actual Progress:\*\* 未填/);assert.doesNotMatch(linkedBody,/0%|null/);
+  assert.match(issue.title,/^\[APPROVED\]/);
 });

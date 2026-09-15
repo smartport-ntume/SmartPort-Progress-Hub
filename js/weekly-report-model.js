@@ -164,6 +164,13 @@
     });
 
     const periodStart = addDays(reportDate, -6);
+    const previous = options.previousReview;
+    const feedback = previous?.members?.find(row => row.member_id === memberId);
+    const previousReview = feedback && ['APPROVED','CHANGES_REQUESTED'].includes(feedback.review_status) ? {
+      weekKey: clean(previous.week_key, 32), reportDate: clean(previous.report_date, 20),
+      revision: Number(feedback.revision || 1), reviewStatus: feedback.review_status,
+      feedback: clean(feedback.pm_feedback, 4000), reviewedAt: clean(feedback.reviewed_at, 40)
+    } : null;
     const filenameMember = clean(member.name, 60).replace(/[\\/:*?"<>|\s]+/g, '_') || 'member';
     return {
       schemaVersion: '1.0',
@@ -177,6 +184,7 @@
       periodDisplay: `${displayDate(periodStart)} ～ ${displayDate(reportDate)}`,
       weekId: isoWeek(reportDate),
       nextCheckpoint,
+      previousReview,
       cutoffDate: nextCheckpoint?.date || '',
       tasks,
       currentTasks: tasks.filter(item => item.scope !== 'UPCOMING'),

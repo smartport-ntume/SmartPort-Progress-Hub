@@ -59,9 +59,11 @@ test('whole-report review validates selection and every current progress before 
 
 test('selected changes are approved together and unselected changes are rejected',async()=>{
   const f=fixture();f.job.payload.issue_numbers=[1];
+  let wakeups=0;f.service.automation={wakeAfterReview(){assert.equal(f.row.pm_feedback,'checked');assert.equal(f.row.review_status,'APPROVED');wakeups++;}};
   const result=await f.service.review(f.job);
   assert.equal(result.review_status,'APPROVED');assert.deepEqual(f.writes,[[1,'approve'],[2,'reject']]);
   assert.equal(f.row.pm_feedback,'checked');assert.equal(f.row.review_result.decisions.length,2);
+  assert.equal(wakeups,1,'scheduler wakes only after the final PM result is saved');
 });
 
 test('failed whole-report review resumes only unfinished decisions',async()=>{

@@ -62,12 +62,22 @@
     return Object.fromEntries(proposals.map(p => {
       const rows = p.target_type === 'WP' ? snapshot.work_packages || [] : snapshot.subtasks || [];
       const record = rows.find(r => r.id === p.target_id);
-      return [p.issue_number, record ? { progress: Number(record.actual_progress ?? 0), status: String(record.status || '') } : null];
+      const before = record ? { progress: p.schema_version === '1.1' && record.actual_progress == null ? null : Number(record.actual_progress ?? 0), status: String(record.status || '') } : null;
+      if (before && p.schema_version === '1.1') before.record_version = weeklyRecordVersion(record);
+      return [p.issue_number, before];
     }));
+  }
+  // Same change token as worker/src/weekly-proposal.js; keeps large evidence out of review requests.
+  function weeklyRecordVersion(record) {
+    const text = JSON.stringify(['blocker','actual_evidence','last_update_summary','self_progress','last_update_proposal','last_update'].map(key => record[key] ?? null));
+    let hash = 14695981039346656037n;
+    for (let i = 0; i < text.length; i++) hash = BigInt.asUintN(64, (hash ^ BigInt(text.charCodeAt(i))) * 1099511628211n);
+    return `${text.length}:${hash.toString(16)}`;
   }
   function taipeiInput(value) {
     const date = new Date(value);
     return Number.isFinite(+date) ? new Date(+date + 8*3600000).toISOString().slice(0,16) : '';
   }
-  window.SmartPortWeeklyReview = { status, latest, expected, taipeiInput, assessmentIssue: weeklyAssessmentIssue };
+  function progressLabel(value, empty = '保留目前進度') { return value == null ? empty : `${value}%`; }
+  window.SmartPortWeeklyReview = { status, latest, expected, taipeiInput, progressLabel, assessmentIssue: weeklyAssessmentIssue };
 })();

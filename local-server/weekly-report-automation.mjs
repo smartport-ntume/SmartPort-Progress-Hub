@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { previousReviewHandoff, pendingReviewError } from './weekly-review-handoff.mjs';
 import {
   normalizeTeamConfig,
   referencedTeamIds,
@@ -216,7 +217,7 @@ export class WeeklyReportAutomation {
     return data;
   }
 
-  async projectPayload(schedule) {
+  async projectPayload(schedule, previousReview = null) {
     const [project, workPackages, subtasks, checkpoints, teamConfigValue, reference] = await Promise.all([
       this.projectStore.readJson('project/project.json'),
       this.projectStore.readJson('project/work_packages.json'),
@@ -252,6 +253,7 @@ export class WeeklyReportAutomation {
       week_key: schedule.weekKey,
       report_date: schedule.reportDate,
       due_at: schedule.dueAt.toISOString(),
+      previous_review: previousReview,
       project: arrays.project,
       work_packages: arrays.workPackages,
       subtasks: arrays.subtasks,
@@ -269,7 +271,26 @@ export class WeeklyReportAutomation {
     return payload;
   }
 
-  async batchFor(schedule) {
+  async reviewGate(schedule) {
+    const previous = await this.supabase.from('weekly_report_batches')
+      .select('id,week_key,report_date,payload,last_error')
+      .lt('report_date', schedule.reportDate).order('report_date', { ascending: false }).limit(1).maybeSingle();
+    if (previous.error) throw new Error('weekly_previous_batch_lookup_failed: ' + previous.error.message);
+    if (!previous.data) return previousReviewHandoff(null);
+    const submissions = await this.supabase.from('weekly_report_submissions')
+      .select('id,member_id,revision,is_current,status,review_status,pm_feedback,reviewed_at')
+      .eq('batch_id', previous.data.id);
+    if (submissions.error) throw new Error('weekly_previous_review_lookup_failed: ' + submissions.error.message);
+    const gate = previousReviewHandoff(previous.data, submissions.data || []);
+    if (gate.ready && String(previous.data.last_error || '').startsWith('下一期週報等待 ')) {
+      const cleared = await this.supabase.from('weekly_report_batches').update({ last_error: null })
+        .eq('id', previous.data.id).eq('last_error', previous.data.last_error);
+      if (cleared.error) throw new Error('weekly_previous_review_state_failed: ' + cleared.error.message);
+    }
+    return gate;
+  }
+
+  async batchFor(schedule, previousReview = null) {
     const existing = await this.supabase.from('weekly_report_batches')
       .select('id,token,discord_message_id,discord_message_sent_at,last_reminder_date,payload,due_at,accept_until,status')
       .eq('week_key', schedule.weekKey)
@@ -277,7 +298,7 @@ export class WeeklyReportAutomation {
     if (existing.error) throw new Error('weekly_batch_lookup_failed: ' + existing.error.message);
     if (existing.data) return { row: existing.data, created: false };
 
-    const [pm, payload] = await Promise.all([this.resolvePm(), this.projectPayload(schedule)]);
+    const [pm, payload] = await Promise.all([this.resolvePm(), this.projectPayload(schedule, previousReview)]);
     const token = randomBytes(24).toString('base64url');
     const inserted = await this.supabase.from('weekly_report_batches').insert({
       week_key: schedule.weekKey,
@@ -298,6 +319,18 @@ export class WeeklyReportAutomation {
 
   async sendDiscord(batch, schedule) {
     if (batch.discord_message_sent_at) return { alreadySent: true };
+    const gate = await this.reviewGate(schedule);
+    if (!gate.ready) throw pendingReviewError(gate);
+    const messageIds = discordMessageIds(batch.discord_message_id);
+    if (!messageIds.length) {
+      // Refresh only before the first attachment is delivered. Retries keep one consistent snapshot.
+      const payload = await this.projectPayload({ ...schedule, dueAt: new Date(batch.due_at) }, gate.review);
+      const saved = await this.supabase.from('weekly_report_batches').update({ payload }).eq('id', batch.id);
+      if (saved.error) throw new Error('weekly_handoff_save_failed: ' + saved.error.message);
+      batch.payload = payload;
+    } else if (JSON.stringify(batch.payload?.previous_review ?? null) !== JSON.stringify(gate.review)) {
+      throw new Error('上一期審核結果已變更，請確認後使用「補發 Discord」重新發送整批週報。');
+    }
     const portal = new URL(this.options.portalUrl);
     portal.hash = new URLSearchParams({ batch: batch.token }).toString();
     const members = batch.payload?.team_config?.members || [];
@@ -306,8 +339,10 @@ export class WeeklyReportAutomation {
       throw new Error('weekly_discord_attachments_incomplete');
     }
     const chunks = chunkWeeklyReportAttachments(attachments);
-    const messageIds = discordMessageIds(batch.discord_message_id);
     if (messageIds.length > chunks.length) throw new Error('weekly_discord_delivery_state_invalid');
+    const confirmed = await this.reviewGate(schedule);
+    if (!confirmed.ready) throw pendingReviewError(confirmed);
+    if (JSON.stringify(confirmed.review) !== JSON.stringify(gate.review)) throw new Error('上期 PM 回饋剛更新，稍後重新產生附件。');
     const checkpoint = nextCheckpoint(batch.payload?.checkpoints, schedule.reportDate);
     const checkpointText = checkpoint
       ? `${checkpoint.id || '下一個 CP'}｜${checkpoint.date}${checkpoint.name ? `｜${checkpoint.name}` : ''}`
@@ -319,6 +354,7 @@ export class WeeklyReportAutomation {
         `📎 附件 ${index + 1}/${chunks.length}（本則 ${chunks[index].length} 份）`,
         `⏰ 截止：${discordDate(new Date(batch.due_at), this.options.timezone)}`,
         `🎯 ${checkpointText}`,
+        ...(gate.review ? [`📝 已帶入 ${gate.review.week_key} 的個人 PM 回饋，請在 Word 的「上期 PM 回饋與本週回覆」逐項回應。`] : []),
         `📤 上傳入口：${portal.toString()}`,
         '上傳後會由本機 Codex 自動批改並送至 PM Review Queue；正式進度仍須 PM 核准。'
       ].join('\n') : [
@@ -433,9 +469,23 @@ export class WeeklyReportAutomation {
 
   async publish(schedule) {
     return this.withDeliveryLock(async () => {
-      const { row } = await this.batchFor(schedule);
-      try { return await this.sendDiscord(row, schedule); }
-      catch (error) { await this.recordError(row.id, error); throw error; }
+      let row;
+      try {
+        const delivered = await this.supabase.from('weekly_report_batches').select('id,discord_message_sent_at')
+          .eq('week_key', schedule.weekKey).maybeSingle();
+        if (delivered.error) throw new Error('weekly_batch_lookup_failed: ' + delivered.error.message);
+        if (delivered.data?.discord_message_sent_at) return { alreadySent: true };
+        const gate = await this.reviewGate(schedule);
+        if (!gate.ready) throw pendingReviewError(gate);
+        ({ row } = await this.batchFor(schedule, gate.review));
+        return await this.sendDiscord(row, schedule);
+      } catch (error) {
+        if (error.code === 'weekly_previous_review_pending') {
+          await this.recordError(error.gate.batchId, error);
+          return { deferred: true, blockingWeek: error.gate.weekKey, blocked: error.gate.blocked };
+        }
+        await this.recordError(row?.id, error); throw error;
+      }
     });
   }
 
@@ -454,6 +504,8 @@ export class WeeklyReportAutomation {
       if (!batch || batch.status !== 'OPEN' || +new Date(batch.accept_until) < +this.now()) {
         throw new Error('此批次已停止收件，請先展延截止時間');
       }
+      const gate = await this.reviewGate({ reportDate: batch.report_date });
+      if (!gate.ready) throw pendingReviewError(gate);
       if (batch.delivery_job_id !== jobId) {
         const reset = { delivery_job_id: jobId, discord_message_id: '', discord_message_sent_at: null, last_error: null };
         const updated = await this.supabase.from('weekly_report_batches').update(reset).eq('id', batch.id);
@@ -474,12 +526,21 @@ export class WeeklyReportAutomation {
     }), delay);
   }
 
+  wakeAfterReview() {
+    if (this.options.enabled && !this.stopped) this.arm(this.now());
+  }
+
   async tick() {
     if (this.stopped) return;
     const schedule = weeklySchedule(this.now(), this.options);
     if (schedule.shouldCatchUp) {
       try {
-        await this.publish(schedule);
+        const result = await this.publish(schedule);
+        if (result.deferred) {
+          this.logger.info(`[weekly] ${schedule.weekKey} waits for PM review of ${result.blockingWeek}`);
+          this.arm(new Date(+this.now() + RETRY_MS));
+          return;
+        }
       } catch (error) {
         this.logger.error(`[weekly] ${schedule.weekKey} publish failed:`, error?.message || String(error));
         this.arm(new Date(+this.now() + RETRY_MS));

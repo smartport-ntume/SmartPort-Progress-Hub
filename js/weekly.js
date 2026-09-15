@@ -219,7 +219,7 @@
       <td>${esc(p.report_member_name||p.author||p.submitted_by||'')}</td>
       <td>${esc(p.owner_team||'')}</td>
       <td><b>${esc(p.target_type||'')}</b> ${esc(p.target_id||'')}</td>
-      <td>${esc(p.progress)}%</td>
+      <td>${esc(window.SmartPortWeeklyReview.progressLabel(p.progress))}</td>
       <td>${esc(p.status||'')}</td>
       <td>${p.ai_generated?`<span class="revision-badge">AI</span>`:'Manual'}${p.source_report_path?`<div class="muted" title="${esc(p.source_report_path)}">Weekly report</div>`:''}</td>
       <td>${reviewBadge(p.review_status)}</td>
@@ -251,9 +251,9 @@
     box.innerHTML=pending.map(p=>`<div class="panel" style="margin-bottom:12px;box-shadow:none">
       <div class="panel-title"><span>#${esc(p.issue_number)} · ${esc(p.target_type)} ${esc(p.target_id)}</span><span>${p.ai_generated?'<span class="revision-badge">AI mapped</span> ':''}${reviewBadge('PENDING')}</span></div>
       <div style="padding:12px 14px">
-        <div class="grid2"><div><b>${esc(p.progress)}%</b> · ${esc(p.status)}</div><div class="muted">${esc(p.report_date)} · ${esc(p.owner_team)} · ${esc(p.report_member_name||p.author||'')}</div></div>
+        <div class="grid2"><div><b>${esc(window.SmartPortWeeklyReview.progressLabel(p.progress))}</b> · ${esc(p.status)}</div><div class="muted">${esc(p.report_date)} · ${esc(p.owner_team)} · ${esc(p.report_member_name||p.author||'')}</div></div>
         ${p.source_report_path?`<div class="field"><label>Source Report</label><div>${esc(p.source_report_path)}</div></div>`:''}
-        <div class="field"><label>Summary</label><div>${esc(p.summary||'—')}</div></div>
+        ${p.verification_note?`<div class="field"><label>待確認事項</label><div>${esc(p.verification_note)}</div></div>`:''}<div class="field"><label>Summary</label><div>${esc(p.summary||'—')}</div></div>
         ${p.ai_rationale?`<div class="field"><label>AI Mapping Rationale</label><div>${esc(p.ai_rationale)}</div></div>`:''}
         <div class="field"><label>Blocker</label><div>${esc(p.blocker||'—')}</div></div>
         <div class="field"><label>Evidence</label><div>${esc(p.evidence||'—')}</div></div>
@@ -285,7 +285,7 @@
       ${reviewList('需要補充',review.missing_items)}
       ${reviewList('建議下一步',review.actions)}
       <div class="muted">${analysis.model?`${esc(analysis.model)} · `:''}產生 ${created.length} 筆 Proposed Update${analysis.warnings?.length?` · ${analysis.warnings.length} warning(s)`:''}</div>
-      ${(created||[]).map(p=>`<div class="weekly-ai-proposal"><div class="weekly-ai-proposal-head"><span class="weekly-ai-proposal-id">${esc(p.target_type)} ${esc(p.target_id)} → ${esc(p.progress)}%</span><span class="ai-confidence">confidence ${Math.round(Number(p.ai_confidence||0)*100)}%</span></div><div class="weekly-ai-proposal-meta">${esc(p.status||'')} · ${esc(p.summary||'')}</div></div>`).join('')||'<div class="muted" style="margin-top:12px">週報沒有足夠資訊形成可審核的進度更新。</div>'}
+      ${(created||[]).map(p=>`<div class="weekly-ai-proposal"><div class="weekly-ai-proposal-head"><span class="weekly-ai-proposal-id">${esc(p.target_type)} ${esc(p.target_id)} → ${esc(window.SmartPortWeeklyReview.progressLabel(p.progress))}</span><span class="ai-confidence">confidence ${Math.round(Number(p.ai_confidence||0)*100)}%</span></div><div class="weekly-ai-proposal-meta">${esc(p.status??'保留目前狀態')} · ${esc(p.summary||'')}${p.verification_note?`<p>待確認：${esc(p.verification_note)}</p>`:''}</div></div>`).join('')||'<div class="muted" style="margin-top:12px">週報沒有足夠資訊形成可審核的進度更新。</div>'}
       ${analysis.warnings?.length?`<div class="alert" style="margin-top:12px"><b>AI warnings</b><br>${analysis.warnings.map(esc).join('<br>')}</div>`:''}`;
   }
 

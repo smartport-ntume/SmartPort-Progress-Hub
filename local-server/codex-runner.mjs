@@ -3,9 +3,7 @@ import path from 'node:path';
 import { runCommand } from './command.mjs';
 import { extractWeeklyReport } from './report-extractor.mjs';
 import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
-
-const STATUSES = new Set(['On Track', 'At Risk', 'Blocked', 'Delayed', 'Completed']);
-const TARGET_TYPES = new Set(['WP', 'SUBTASK']);
+import { normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES } from '../worker/src/weekly-proposal.js';
 
 function boundedString(value, field, maximum) {
   const text = String(value || '');
@@ -71,33 +69,7 @@ export function validateWeeklyAnalysis(value) {
   if (!Array.isArray(value.proposals)) throw new Error('codex_output_proposals_must_be_an_array');
   if (value.proposals.length > 200) throw new Error('codex_output_has_too_many_proposals');
 
-  const proposals = value.proposals.map((proposal, index) => {
-    const type = String(proposal?.target_type || '').toUpperCase();
-    const status = String(proposal?.status || '');
-    const progress = Number(proposal?.progress);
-    const confidence = Number(proposal?.confidence);
-    if (!TARGET_TYPES.has(type)) throw new Error('invalid_target_type_at_' + index);
-    const targetId = boundedString(proposal?.target_id, 'target_id', 128).trim();
-    if (!targetId) throw new Error('missing_target_id_at_' + index);
-    if (!Number.isFinite(progress) || progress < 0 || progress > 100) {
-      throw new Error('invalid_progress_at_' + index);
-    }
-    if (!STATUSES.has(status)) throw new Error('invalid_status_at_' + index);
-    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-      throw new Error('invalid_confidence_at_' + index);
-    }
-    return {
-      target_type: type,
-      target_id: targetId,
-      progress,
-      status,
-      blocker: boundedString(proposal.blocker, 'blocker', 4_000),
-      evidence: boundedString(proposal.evidence, 'evidence', 12_000),
-      summary: boundedString(proposal.summary, 'summary', 8_000),
-      confidence,
-      rationale: boundedString(proposal.rationale, 'rationale', 8_000)
-    };
-  });
+  const proposals = value.proposals.map(normalizeWeeklyProposal);
   return { assessment_status: 'completed', report_summary: reportSummary, review, warnings, proposals };
 }
 
@@ -199,13 +171,7 @@ export class CodexWeeklyRunner {
         'Grade completeness, evidence quality, and schedule alignment from 0 to 100.',
         'Check every required_scope_subtask_id and give specific missing items and actions.',
         'Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence.',
-        'Template prompts, unchecked boxes, and blank placeholder fields are not evidence.',
-        'Create evidence-supported proposed progress updates only.',
-        'Prefer a SUBTASK when a specific task is identifiable; use WP only for whole-package evidence.',
-        'Progress is the proposed absolute percentage, never a weekly delta, and must never decrease.',
-        'Do not invent evidence, blockers, tests, dates, completion, or project targets.',
-        'Only map records in project_context.owner_teams and the required scope in project_context.',
-        'Return an empty proposals array when evidence is insufficient.',
+        WEEKLY_PROPOSAL_RULES,
         'Set assessment_status to completed only after reviewing the supplied report and project context.',
         'If the inputs are inaccessible, set assessment_status to input_unavailable and review to null; never invent zero scores.',
         'A readable blank template or weak report can receive low or zero scores; that is different from inaccessible input.',

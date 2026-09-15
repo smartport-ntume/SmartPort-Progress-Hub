@@ -1,5 +1,6 @@
 import { corsHeaders, safeReturnUrl } from './cors.js';
 import { weeklyAssessmentIssue } from './weekly-assessment.js';
+import { applyWeeklyProposal, normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES, WEEKLY_PROPOSAL_STATUSES } from './weekly-proposal.js';
 import {
   normalizeTeamConfig,
   referencedTeamIds,
@@ -444,8 +445,8 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     owner_team:ownerTeams[0],
     owner_teams:ownerTeams,
     required_scope_subtask_ids:scopeSubtaskIds,
-    work_packages:scopedWps.map(w=>({id:w.id,name:w.name,owner:w.owner,start:w.start,end:w.end,actual_progress:w.actual_progress??null,status:w.status||'Not Updated',description:w.description||'',expected_evidence:w.evidence||[]})),
-    subtasks:scopedSubs.map(x=>({id:x.id,parent_wp:x.parent_wp,name:x.name,owner_team:x.owner_team,start:x.start,end:x.end,target_cp:x.target_cp||'',actual_progress:x.actual_progress??null,status:x.status||'Not Updated',description:x.description||'',expected_evidence:x.expected_evidence||[]}))
+    work_packages:scopedWps.map(w=>({id:w.id,name:w.name,owner:w.owner,start:w.start,end:w.end,actual_progress:w.actual_progress??null,self_progress:w.self_progress??null,blocker:w.blocker||'',last_update_summary:w.last_update_summary||'',status:w.status||'Not Updated',description:w.description||'',expected_evidence:w.evidence||[]})),
+    subtasks:scopedSubs.map(x=>({id:x.id,parent_wp:x.parent_wp,name:x.name,owner_team:x.owner_team,start:x.start,end:x.end,target_cp:x.target_cp||'',actual_progress:x.actual_progress??null,self_progress:x.self_progress??null,blocker:x.blocker||'',last_update_summary:x.last_update_summary||'',status:x.status||'Not Updated',description:x.description||'',expected_evidence:x.expected_evidence||[]}))
   };
   const schema={
     type:'object',additionalProperties:false,required:['assessment_status','report_summary','review','warnings','proposals'],properties:{
@@ -456,9 +457,9 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
         strengths:{type:'array',maxItems:20,items:{type:'string',maxLength:2000}},missing_items:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},actions:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}}
       }},{type:'null'}]},
       warnings:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},
-      proposals:{type:'array',maxItems:200,items:{type:'object',additionalProperties:false,required:['target_type','target_id','progress','status','blocker','evidence','summary','confidence','rationale'],properties:{
-        target_type:{type:'string',enum:['WP','SUBTASK']},target_id:{type:'string',maxLength:128},progress:{type:'number',minimum:0,maximum:100},
-        status:{type:'string',enum:['On Track','At Risk','Blocked','Delayed','Completed']},blocker:{type:'string',maxLength:4000},evidence:{type:'string',maxLength:12000},summary:{type:'string',maxLength:8000},confidence:{type:'number',minimum:0,maximum:1},rationale:{type:'string',maxLength:8000}
+      proposals:{type:'array',maxItems:200,items:{type:'object',additionalProperties:false,required:['target_type','target_id','progress','reported_progress','status','blocker','evidence','summary','confidence','rationale','verification_note'],properties:{
+        target_type:{type:'string',enum:['WP','SUBTASK']},target_id:{type:'string',maxLength:128},progress:{type:['number','null'],minimum:0,maximum:100},reported_progress:{type:['number','null'],minimum:0,maximum:100},
+        status:{type:['string','null'],enum:[...WEEKLY_PROPOSAL_STATUSES,null]},blocker:{type:['string','null'],maxLength:4000},evidence:{type:'string',maxLength:12000},summary:{type:'string',maxLength:8000},confidence:{type:'number',minimum:0,maximum:1},rationale:{type:'string',maxLength:8000},verification_note:{type:'string',maxLength:4000}
       }}}
     }
   };
@@ -481,7 +482,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
         method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
         body:JSON.stringify({
           model:env.OPENAI_MODEL||'gpt-5-mini',store:false,
-          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. Write feedback in Traditional Chinese; keep IDs and enum values unchanged. Set assessment_status to completed only after reading the report and project context; if either is inaccessible, use input_unavailable with review=null and no proposals, never invented zero scores. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence. Scores are 0 to 100 and feedback must be specific and concise. Template prompts and blank fields are not evidence. Then convert only report-supported facts into proposed project updates. Prefer SUBTASK updates; use WP only for whole-package evidence. progress is an absolute percentage and must never decrease. Do not invent evidence, blockers, tests, completion, dates, targets, or work outside owner_teams and required scope. Return an empty proposals array when evidence is insufficient.',
+          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. Write feedback in Traditional Chinese; keep IDs and enum values unchanged. Set assessment_status to completed only after reading the report and project context; if either is inaccessible, use input_unavailable with review=null and no proposals, never invented zero scores. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence. Scores are 0 to 100 and feedback must be specific and concise. ' + WEEKLY_PROPOSAL_RULES,
           input:[{role:'user',content:[
             {type:'input_text',text:`Map this SmartPort weekly report into proposed WP/Subtask progress updates. Project context JSON:\n${JSON.stringify(context)}`},
             {type:'input_file',file_id:uploaded.id}
@@ -500,7 +501,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   if(assessmentIssue)throw new Error('weekly_analysis_incomplete: '+assessmentIssue);
   analysis.warnings=Array.isArray(analysis.warnings)?analysis.warnings:[];
   analysis.warnings.unshift(...scopeWarnings);
-  analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals:[];
+  analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals.map(normalizeWeeklyProposal):[];
 
   const index=new Map();
   for(const w of wps)index.set(`WP:${w.id}`,{...w,_team:w.owner||''});
@@ -518,11 +519,13 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     if(enforceScope&&type==='SUBTASK'&&!scopeIdSet.has(id)){analysis.warnings.push(`Ignored ${id}: not in this report's required scope`);continue;}
     if(enforceScope&&type==='WP'&&!scopeWpIds.has(id)){analysis.warnings.push(`Ignored ${id}: no scoped Subtask belongs to this WP`);continue;}
     if(existingKeys.has(key)){analysis.warnings.push(`Skipped duplicate ${id}: this report already has a non-rejected proposal`);continue;}
-    const current=Number(target.actual_progress??0)||0;
-    const proposed=Math.max(current,Math.min(100,Number(a.progress)||0));
+    const current=target.actual_progress==null?null:Number(target.actual_progress);
+    const proposed=a.progress!==null&&current!==null&&a.progress<current?null:a.progress;
+    if(proposed!==a.progress)analysis.warnings.push(`${id}：自報進度低於目前進度，提案保留正式百分比，只更新工作紀錄。`);
     const p={
+      schema_version:'1.1',reported_progress:a.reported_progress,verification_note:a.verification_note,
       report_date:reportDate,owner_team:String(target._team),report_member_id:memberId,report_member_name:memberName,target_type:type,target_id:id,progress:proposed,status:a.status,
-      blocker:a.blocker||'',evidence:a.evidence||'',summary:a.summary||'',source_report_path:reportPath,ai_generated:true,
+      blocker:a.blocker,evidence:a.evidence||'',summary:a.summary||'',source_report_path:reportPath,ai_generated:true,
       ai_confidence:Number(a.confidence)||0,ai_rationale:a.rationale||'',analysis_id:analysisId,
       source_submission_id:payload.submission_id||'',source_analysis_job_id:payload.analysis_job_id||'',
       source_revision:payload.report_revision||null,base_progress:current
@@ -531,6 +534,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     const title=`[WEEKLY-AI][${reportDate}][${memberName||ownerTeams.join('+')}] ${type} ${id}`;
     const issue=await github(`/repos/${repo}/issues`,token,{method:'POST',body:JSON.stringify({title,body:proposalBody(p,author)})});
     created.push(parseProposalIssue(issue));
+    existingKeys.add(key);
   }
   const model=useLocalCodex?(env.LOCAL_CODEX_MODEL||'Codex account'):(env.OPENAI_MODEL||'gpt-5-mini');
   return{analysis:{assessment_status:analysis.assessment_status,report_summary:analysis.report_summary||'',review:analysis.review,warnings:analysis.warnings,analysis_id:analysisId,model},proposals:created,report:{path:reportPath,filename,member_id:memberId,member_name:memberName,owner_teams:ownerTeams}};
@@ -538,7 +542,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
 
 function proposalBody(p, author) {
   const payload = {
-    schema_version: '1.0',
+    schema_version: p.schema_version || '1.0',
     kind: 'weekly_progress_proposal',
     submitted_by: author,
     submitted_at: new Date().toISOString(),
@@ -548,9 +552,11 @@ function proposalBody(p, author) {
     report_member_name: p.report_member_name || '',
     target_type: p.target_type,
     target_id: p.target_id,
-    progress: Number(p.progress),
+    progress: p.progress == null ? null : Number(p.progress),
+    reported_progress: p.reported_progress ?? null,
+    verification_note: p.verification_note || '',
     status: p.status,
-    blocker: p.blocker || '',
+    blocker: p.blocker === null ? null : p.blocker || '',
     evidence: p.evidence || '',
     summary: p.summary || '',
     source_report_path: p.source_report_path || '',
@@ -563,7 +569,7 @@ function proposalBody(p, author) {
     ai_rationale: p.ai_rationale || '',
     analysis_id: p.analysis_id || ''
   };
-  return `## Weekly Progress Proposal\n\n- **Report Date:** ${payload.report_date}\n- **Report Member:** ${payload.report_member_name || '—'}\n- **Owner Team:** ${payload.owner_team}\n- **Target:** ${payload.target_type} ${payload.target_id}\n- **Proposed Progress:** ${payload.progress}%\n- **Status:** ${payload.status}\n- **Blocker:** ${payload.blocker || '—'}\n- **Evidence:** ${payload.evidence || '—'}\n- **Source Report:** ${payload.source_report_path || '—'}\n- **Origin:** ${payload.ai_generated ? 'AI mapped' : 'Manual'}${payload.ai_confidence == null ? '' : ` · confidence ${Math.round(payload.ai_confidence * 100)}%`}\n${payload.ai_rationale ? `- **AI Rationale:** ${payload.ai_rationale}\n` : ''}\n## Summary\n${payload.summary || '—'}\n\n<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\n${JSON.stringify(payload)}\n-->`;
+  return `## Weekly Progress Proposal\n\n- **Report Date:** ${payload.report_date}\n- **Report Member:** ${payload.report_member_name || '—'}\n- **Owner Team:** ${payload.owner_team}\n- **Target:** ${payload.target_type} ${payload.target_id}\n- **Proposed Progress:** ${payload.progress == null ? '保留目前進度' : payload.progress + '%'}\n- **Status:** ${payload.status ?? '保留目前狀態'}\n- **Self-reported Progress:** ${payload.reported_progress == null ? '—' : payload.reported_progress + '%'}\n- **Pending Verification:** ${payload.verification_note || '—'}\n- **Blocker:** ${payload.blocker === null ? '保留原值' : payload.blocker || '—'}\n- **Evidence:** ${payload.evidence || '—'}\n- **Source Report:** ${payload.source_report_path || '—'}\n- **Origin:** ${payload.ai_generated ? 'AI mapped' : 'Manual'}${payload.ai_confidence == null ? '' : ` · confidence ${Math.round(payload.ai_confidence * 100)}%`}\n${payload.ai_rationale ? `- **AI Rationale:** ${payload.ai_rationale}\n` : ''}\n## Summary\n${payload.summary || '—'}\n\n<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\n${JSON.stringify(payload)}\n-->`;
 }
 
 function parseProposalIssue(issue) {
@@ -596,22 +602,14 @@ async function listProposals(repo, token) {
 }
 
 function applyProposalToRecord(item, p) {
-  item.last_update_proposal = p.issue_number;
-  item.actual_progress = Number(p.progress);
-  item.status = p.status;
-  item.blocker = p.blocker || '';
-  item.actual_evidence = p.evidence || '';
-  item.last_update = p.report_date;
-  item.last_update_summary = p.summary || '';
-  item.last_update_by = p.submitted_by || '';
-  return item;
+  return applyWeeklyProposal(item, p);
 }
 
 async function updateSubtaskIssueStatus(repo, subtask, p, token) {
   if (!subtask.github_issue) return;
   const issue = await github(`/repos/${repo}/issues/${subtask.github_issue}`, token);
   const body = issue.body || '';
-  const replacement = `## Project Status\n\n- **Actual Progress:** ${Number(p.progress)}%\n- **Self-reported Progress:** ${Number(p.progress)}%\n- **Status:** ${p.status}\n- **Blocker:** ${p.blocker || '—'}\n- **Evidence:** ${p.evidence || '—'}\n- **Last Approved Update:** ${p.report_date}`;
+  const replacement = `## Project Status\n\n- **Actual Progress:** ${subtask.actual_progress == null ? '未填' : subtask.actual_progress + '%'}\n- **Self-reported Progress:** ${subtask.self_progress == null ? '未填' : subtask.self_progress + '%'}\n- **Status:** ${subtask.status || '—'}\n- **Blocker:** ${subtask.blocker || '—'}\n- **Evidence:** ${subtask.actual_evidence || '—'}\n- **Last Approved Update:** ${p.report_date}`;
   const next = body.match(/## Project Status[\s\S]*?(?=\n## |\n> |$)/)
     ? body.replace(/## Project Status[\s\S]*?(?=\n## |\n> |$)/, replacement)
     : `${body}\n\n${replacement}`;
