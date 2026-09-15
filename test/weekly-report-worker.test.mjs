@@ -18,11 +18,12 @@ function proposal(id, team = 'CTL') {
   };
 }
 
-test('personal weekly analysis derives categories and required scope from Private Git', async t => {
+for (const unknownProgress of [false,true]) test(unknownProgress ? 'reports with null baseline produce both self-reported completion and work-record candidates' : 'personal weekly analysis derives categories and required scope from Private Git', async t => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
 
   let capturedContext = null;
+  let capturedSchema = null;
   const createdIssueBodies = [];
   const workPackages = {
     work_packages: [
@@ -42,6 +43,7 @@ test('personal weekly analysis derives categories and required scope from Privat
       { id: 'other', parent_wp: 'WP-P1', name: 'Other member', owner_team: 'PER', end: '2026-09-15', actual_progress: 10 }
     ]
   };
+  if (unknownProgress) subtasks.subtasks.filter(row=>row.id!=='done').forEach(row=>row.actual_progress=null);
   const checkpoints = {
     checkpoints: [
       { id: 'CP0', date: '2026-09-07', name: 'Baseline' },
@@ -116,8 +118,8 @@ test('personal weekly analysis derives categories and required scope from Privat
     PROJECT_REPO: 'example/private-project',
     INTERNAL_AGENT_BEARER: 'internal-secret',
     LOCAL_GITHUB_TOKEN: 'github-token',
-    LOCAL_CODEX_RUNNER: async ({ context }) => {
-      capturedContext = context;
+    LOCAL_CODEX_RUNNER: async ({ context, schema }) => {
+      capturedContext = context; capturedSchema = schema;
       return {
         assessment_status: 'completed',
         report_summary: 'Reviewed',
@@ -131,7 +133,7 @@ test('personal weekly analysis derives categories and required scope from Privat
           actions: ['Update evidence']
         },
         warnings: [],
-        proposals: [proposal('due'), proposal('omitted', 'STM'), proposal('future'), proposal('other', 'PER')]
+        proposals: unknownProgress ? [{...proposal('due'),progress:100,reported_progress:100,verification_note:'自報 100%，待驗收'}, {...proposal('omitted','STM'),progress:null,status:null,blocker:null,summary:'已完成遠端測試，本地整合中',evidence:'本週遠端 E-stop 已測試',verification_note:'就緒程度不能換算整體完成度'}, proposal('future'),proposal('other','PER')] : [proposal('due'), proposal('omitted', 'STM'), proposal('future'), proposal('other', 'PER')]
       };
     }
   };
@@ -168,6 +170,15 @@ test('personal weekly analysis derives categories and required scope from Privat
   assert.deepEqual(result.report.owner_teams, ['CTL', 'STM']);
   assert.deepEqual(result.proposals.map(item => item.target_id), ['due', 'omitted']);
   assert.equal(createdIssueBodies.length, 2);
+  if(unknownProgress){
+    assert.deepEqual(capturedSchema.properties.proposals.items.properties.progress.type,['number','null']);
+    assert.equal(result.proposals[0].progress,100); assert.equal(result.proposals[0].reported_progress,100);
+    assert.match(result.proposals[0].verification_note,/待驗收/);
+    assert.equal(result.proposals[1].progress,null);assert.equal(result.proposals[1].base_progress,null);
+    assert.equal(result.proposals[1].status,null);assert.equal(result.proposals[1].blocker,null);
+    assert.equal(result.proposals[1].schema_version,'1.1');
+    assert.match(createdIssueBodies[1],/保留目前進度/);
+  }
   assert.ok(result.analysis.warnings.some(item => item.includes('Required scope restored from Private Git')));
   assert.ok(result.analysis.warnings.some(item => item.includes('future')));
   assert.ok(result.analysis.warnings.some(item => item.includes('outside this member')));

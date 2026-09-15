@@ -339,11 +339,21 @@
       paragraph('WEEKLY INDIVIDUAL PROGRESS REPORT', { bold: true, size: 18, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 260 } }),
       metaTable(model),
       spacer(120),
-      sectionBanner('CP', '下一個檢核點預覽　NEXT CHECKPOINT PREVIEW'),
+      ...(model.previousReview ? [
+        sectionBanner('PM', '上期 PM 回饋與本週回覆'),
+        table([
+          row([labelCell('上期審閱'), cell(`${model.previousReview.weekKey} · 第 ${model.previousReview.revision} 版 · ${model.previousReview.reviewStatus === 'APPROVED' ? '已核准' : '退回補件'}`)]),
+          row([labelCell('上期 PM 意見'), cell(model.previousReview.feedback || 'PM 已核准，未另填文字回饋。')], { cantSplit: false }),
+          row([labelCell('本週回覆與處理結果'), cell([responseParagraph('請逐項回覆上期 PM 意見：本週已處理的內容、佐證；未完成事項請填原因與預計完成日。', 8)])], { cantSplit: false })
+        ], [22, 78]),
+        paragraph('以上 PM 意見是上期審閱紀錄；本週成果請填在回覆欄及任務明細。', { color: MUTED, size: 18 }),
+        spacer(120)
+      ] : []),
+      sectionBanner('CP', '下一個檢核點預覽　NEXT CHECKPOINT PREVIEW', { pageBreakBefore: !!model.previousReview }),
       checkpointPreviewTable(model),
       spacer(120),
       paragraph(`系統已帶入 ${model.counts.total} 項工作：逾期 ${model.counts.overdue}、進行中 ${model.counts.active}、尚未開始 ${model.counts.upcoming}。下一檢核邊界：${checkpointSummary}。請勿刪除工作 ID，Codex 將依 ID 核對甘特圖。`, { color: MUTED, size: 18, spacing: { after: 160 } }),
-      sectionBanner('1', '本週整體狀態　OVERALL STATUS', { pageBreakBefore: true }),
+      sectionBanner('1', '本週整體狀態　OVERALL STATUS', { pageBreakBefore: !model.previousReview }),
       overallStatus(),
       spacer(160),
       sectionBanner('2', '本週任務總覽　SYSTEM GENERATED TASK SCOPE'),
@@ -385,9 +395,7 @@
       issuesTable(),
       spacer(160),
       sectionBanner('6', 'PM 審閱　PM REVIEW'),
-      pmReviewTable(),
-      spacer(100),
-      paragraph('藍底欄位由系統依甘特圖自動帶入；灰色提示欄位由成員或 PM 直接覆寫。', { color: MUTED, size: 17 })
+      pmReviewTable()
     );
 
     return new Document({

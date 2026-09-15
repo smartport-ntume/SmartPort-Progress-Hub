@@ -147,6 +147,7 @@
       subtasks: payload.subtasks,
       checkpoints: payload.checkpoints,
       checkpointReferences: payload.checkpoint_references,
+      previousReview: payload.previous_review,
       memberId,
       reportDate: payload.report_date || batch.report_date
     });

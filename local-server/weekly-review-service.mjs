@@ -1,4 +1,5 @@
 import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
+import { proposalAlreadyApplied, weeklyRecordVersion } from '../worker/src/weekly-proposal.js';
 
 function checked(result, operation) {
   if (result?.error) throw new Error(`${operation}: ${result.error.message || result.error}`);
@@ -17,16 +18,16 @@ export function selectedProposalNumbers(values, proposals) {
 
 export function assertExpectedProgress(proposal, record, expected) {
   if (!record) throw new Error('weekly_proposal_target_missing');
-  if (Number(record.last_update_proposal) === Number(proposal.issue_number)
-    && Number(record.actual_progress) === Number(proposal.progress)
-    && record.status === proposal.status && (record.blocker || '') === (proposal.blocker || '')
-    && (record.actual_evidence || '') === (proposal.evidence || '')) return;
-  const actual = Number(record.actual_progress ?? 0);
-  if (!expected || !Number.isFinite(Number(expected.progress))
-    || actual !== Number(expected.progress) || String(record.status || '') !== String(expected.status || '')) {
+  if (proposalAlreadyApplied(record, proposal)) return;
+  const preserveUnknown = proposal.schema_version === '1.1';
+  const actual = preserveUnknown && record.actual_progress == null ? null : Number(record.actual_progress ?? 0);
+  const wanted = preserveUnknown && expected?.progress === null ? null : Number(expected?.progress);
+  const textChanged = preserveUnknown && expected?.record_version !== weeklyRecordVersion(record);
+  if (!expected || (wanted !== null && !Number.isFinite(wanted)) || textChanged
+    || actual !== wanted || String(record.status || '') !== String(expected.status || '')) {
     throw new Error(`進度已變更：${proposal.target_id}。請重新整理後檢查差異，再重試審核。`);
   }
-  if (Number(proposal.progress) < actual) throw new Error(`提案進度低於目前進度：${proposal.target_id}`);
+  if (proposal.progress != null && actual !== null && Number(proposal.progress) < actual) throw new Error(`提案進度低於目前進度：${proposal.target_id}`);
 }
 
 export class WeeklyReviewService {
@@ -204,6 +205,7 @@ export class WeeklyReviewService {
     };
     checked(await this.supabase.from('weekly_report_submissions').update(review)
       .eq('id', row.id).eq('review_job_id', job.id).eq('is_current', true), 'weekly_review_save');
+    this.automation?.wakeAfterReview?.();
     return { ok: true, submission_id: row.id, ...review };
   }
 

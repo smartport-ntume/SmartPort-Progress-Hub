@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { weeklyRecordVersion } from '../worker/src/weekly-proposal.js';
 import { JSDOM } from 'jsdom';
 import { zeroAnalysis, screenshotFailures } from './fixtures/weekly-input-failures.mjs';
 
@@ -30,7 +31,7 @@ async function fixture(t,db=database(),storage={}){
     async listWeeklyReports(){return {batches:[{id:'b1',week_key:'2026-W37',report_date:'2026-09-14',due_at:'2026-09-21T04:00:00Z',members:db.members,
       submissions:db.rows.map(({analysis_result,...row})=>structuredClone(row))}]};},
     async getWeeklyReport(id){return {week_key:'2026-W37',submission:structuredClone(db.rows.find(r=>r.id===id)),runs:[]};},
-    async loadSnapshot(){return {subtasks:proposals.map(p=>({id:p.target_id,actual_progress:0,status:'On Track'})),work_packages:[]};},
+    async loadSnapshot(){return db.snapshot || {subtasks:proposals.map(p=>({id:p.target_id,actual_progress:0,status:'On Track'})),work_packages:[]};},
     async weeklyReportAction(action,id,payload){
       assert.equal([...db.jobs.values()].some(j=>j.target===id&&j.status==='queued'),false,'same report must not be enqueued twice');
       const row=db.rows.find(r=>r.id===id),job={id:'j'+db.next++,target:id,action,status:'queued'};
@@ -125,4 +126,36 @@ test('malformed saved jobs do not stop the PM center from loading',async t=>{
   const f=await fixture(t,undefined,{'smartport.weeklyCenterJobs':'invalid JSON'});
   await f.click('[data-member="m3"]');
   assert.equal(f.doc.querySelector('[data-action="retry"]').disabled,false);
+});
+
+
+test('PM can select work records with unknown completion and see self-report verification before approval',async t=>{
+  const db=database();
+  db.rows[0].analysis_result.proposals=[
+    {...proposals[0],schema_version:'1.1',progress:null,status:null,blocker:null,verification_note:'本地 E-stop 待驗證'},
+    {...proposals[1],schema_version:'1.1',progress:100,reported_progress:100,verification_note:'100% 為自報，待 PM 確認'}
+  ];
+  db.snapshot={subtasks:proposals.map(p=>({id:p.target_id,actual_progress:null,status:'In Progress'}))};
+  const f=await fixture(t,db);await f.click('[data-member="m1"]');
+  const detail=f.doc.querySelector('[data-field="detail"]');
+  assert.match(detail.textContent,/工作紀錄更新（百分比不變）/);
+  assert.match(detail.textContent,/未填 → 保留目前進度/);
+  assert.match(detail.textContent,/成員自報完成度：100%（待 PM 確認）/);
+  assert.match(detail.textContent,/本地 E-stop 待驗證/);
+  assert.doesNotMatch(detail.textContent,/null%/);
+  await f.click('[data-action="select-all"]');await f.click('[data-action="approve"]');
+  assert.deepEqual(db.calls[0].payload.issue_numbers,[1,2]);
+  assert.equal(db.calls[0].payload.expected['1'].progress,null);
+  assert.equal(db.calls[0].payload.expected['1'].record_version,weeklyRecordVersion(db.snapshot.subtasks[0]));
+});
+
+test('PM center identifies who blocks the next weekly handoff and shows readiness after review',async t=>{
+  const db=database();
+  db.rows.forEach(row=>{row.review_status='APPROVED';row.analysis_result.analysis=zeroAnalysis();});
+  db.rows[4].review_status='PENDING';
+  const f=await fixture(t,db);
+  assert.match(f.doc.querySelector('[data-field="handoff"]').textContent,/失敗審核成員（待 PM 審核）/);
+  db.rows[4].review_status='CHANGES_REQUESTED';db.rows[4].pm_feedback='下期請補測試紀錄';
+  await f.click('[data-action="refresh"]');
+  assert.match(f.doc.querySelector('[data-field="handoff"]').textContent,/全員已完成 PM 審閱/);
 });

@@ -138,6 +138,8 @@ test('weekly publisher attaches each personalized DOCX and records delivery', as
     },
     logger: { info() {}, error() {} }
   });
+  automation.reviewGate=async()=>({ready:true,review:null});
+  automation.projectPayload=async()=>discordBatchPayload();
   const schedule = weeklySchedule(new Date('2026-09-14T05:00:02.000Z'), options);
   const batch = {
     id: 'batch-1',
@@ -163,7 +165,7 @@ test('weekly publisher attaches each personalized DOCX and records delivery', as
   assert.match(firstFile.name, /成員1\.docx$/);
   assert.equal(firstFile.type, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   assert.equal(Buffer.from(await firstFile.arrayBuffer()).subarray(0, 2).toString(), 'PK');
-  assert.equal(updates[0].values.discord_message_id, '["discord-message-1"]');
+  assert.equal(updates.find(u=>u.values.discord_message_id).values.discord_message_id, '["discord-message-1"]');
   assert.equal(updates.at(-1).values.discord_message_sent_at, '2026-09-14T05:00:02.000Z');
 
   await automation.sendDiscord({ ...batch, discord_message_sent_at: '2026-09-14T05:00:02Z' }, schedule);
@@ -198,6 +200,8 @@ test('weekly publisher splits attachments and resumes after a delivered chunk', 
     },
     logger: { info() {}, error() {} }
   });
+  automation.reviewGate=async()=>({ready:true,review:null});
+  automation.projectPayload=async()=>discordBatchPayload();
   const schedule = weeklySchedule(new Date('2026-09-14T05:00:02.000Z'), options);
   const result = await automation.sendDiscord({
     id: 'batch-1',
