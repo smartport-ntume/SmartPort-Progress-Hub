@@ -3,6 +3,7 @@ export const WEEKLY_PROPOSAL_STATUSES = ['In Progress', 'On Track', 'At Risk', '
 // Both the local Codex runner and the API reviewer use the same mapping policy.
 export const WEEKLY_PROPOSAL_RULES = [
   'A proposed update is a candidate for PM review, not a certification that acceptance tests passed.',
+  'Group missing_items and actions into review.task_feedback using the exact SUBTASK or WP ID from project context. Use GENERAL with target_id empty only for feedback that cannot be assigned to one task. Do not duplicate task-specific feedback as GENERAL.',
   'For each scoped task with concrete reported work, an explicit task-completion percentage, a current blocker, or a changed status, create one proposal citing the report text in evidence.',
   'Do not suppress all proposals because current actual_progress is null, evidence links are missing, or acceptance is still pending.',
   'An explicit self-reported TASK COMPLETION percentage may be proposed in progress and recorded in reported_progress; identify it as self-reported and describe missing verification in verification_note. PM approval is still required.',
@@ -14,8 +15,8 @@ export const WEEKLY_PROPOSAL_RULES = [
   'Separate concrete reported facts in summary/evidence from unverified claims, missing acceptance evidence and recommendations in verification_note.',
   'For example: a task self-reports 100% but lacks acceptance records -> propose the self-reported 100% with a verification note for PM, not zero proposals.',
   'For example: remote E-stop was tested but local E-stop is pending, with no task-completion percentage -> propose a work record with progress null, not 100% completion.',
-  'Progress is an absolute percentage, not a weekly delta, and must never decrease. A lower self-report may be recorded in reported_progress while progress remains null.',
-  'Prefer SUBTASK updates for identifiable tasks; use WP only for whole-package evidence. Stay within owner_teams and required scope.',
+  'Progress is an absolute percentage, not a weekly delta. Preserve a lower explicit self-report too: PM can correct the final percentage before approval.',
+  'Prefer SUBTASK updates for identifiable tasks; use WP only for whole-package evidence. Stay within owner_teams. required_scope_subtask_ids is a coverage checklist, not an exclusion filter: include concrete current-week work or explicit completion claims for other owned tasks too, including already-completed tasks needing correction.',
   'Template prompts, unchecked boxes, blank fields, planned future work and reviewer recommendations alone are not reported accomplishments.',
   'Carried-forward PM feedback is a historical review, not new accomplishments; map only the member\'s concrete responses and current-week work, never the unchanged feedback itself.',
   'Do not invent evidence, blockers, tests, dates, completion percentages, or targets. Return no proposals only when the report contains no concrete in-scope updates.'
@@ -54,6 +55,25 @@ export function normalizeWeeklyProposal(value, index = 0) {
     rationale: boundedText(value?.rationale, 'rationale', 8_000),
     verification_note: boundedText(value?.verification_note, 'verification_note', 4_000)
   };
+}
+
+export function withPmProgress(proposal, overrides = {}, record = {}) {
+  if (!Object.hasOwn(overrides, String(proposal.issue_number))) return proposal;
+  const progress = percent(overrides[proposal.issue_number], 'pm_progress');
+  return { ...proposal, original_progress: proposal.progress, pm_progress: progress, progress,
+    status: progress === null && proposal.status === 'Completed' ? null
+      : progress !== null && progress < 100 && (proposal.status === 'Completed' || proposal.status == null && record.status === 'Completed')
+        ? 'In Progress' : proposal.status };
+}
+
+export function validateProgressOverrides(overrides, proposals) {
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) throw new Error('invalid_pm_progress_overrides');
+  const ids = new Set(proposals.map(p => String(p.issue_number)));
+  for (const [id, value] of Object.entries(overrides)) {
+    if (!ids.has(id)) throw new Error('weekly_proposal_not_in_this_analysis');
+    percent(value, 'pm_progress');
+  }
+  return overrides;
 }
 
 export function proposalSummary(p) {

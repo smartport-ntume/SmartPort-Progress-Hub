@@ -119,9 +119,16 @@
     const checkpointReferences = options.checkpointReferences || options.referenceModel?.acl_levels || [];
     const nextCheckpoint = nextCheckpointOf(options.checkpoints || [], reportDate, checkpointReferences);
     const checkpointCutoff = nextCheckpoint ? parseDate(nextCheckpoint.date) : null;
+    const previous = options.previousReview;
+    const feedback = previous?.members?.find(row => row.member_id === memberId);
+    const taskFeedback = feedback && ['APPROVED','CHANGES_REQUESTED'].includes(feedback.review_status)
+      ? (feedback.task_feedback || []).filter(item => item.missing_items?.length || item.actions?.length) : [];
+    const feedbackTaskIds = new Set(taskFeedback.filter(item=>item.target_type==='SUBTASK').map(item=>item.target_id));
 
     const tasks = (options.subtasks || []).filter(item => {
-      if (!categoryMap.has(item?.owner_team) || isCompleted(item)) return false;
+      if (!categoryMap.has(item?.owner_team)) return false;
+      if (feedbackTaskIds.has(item.id)) return true;
+      if (isCompleted(item)) return false;
       const end = parseDate(item?.end);
       const targetCheckpointDate = checkpointDateMap.get(clean(item?.target_cp, 80));
       const overdue = (end && end < reportDate)
@@ -138,6 +145,7 @@
       if ((end && end < reportDate)
         || (targetCheckpointDate && targetCheckpointDate < reportDate)) scope = 'OVERDUE';
       else if (!start || start <= reportDate) scope = 'ACTIVE';
+      if (isCompleted(item)) scope = 'FOLLOWUP';
       const wp = workPackageMap.get(String(item.parent_wp || '')) || {};
       return {
         id: clean(item.id, 128),
@@ -157,20 +165,29 @@
         scope
       };
     }).sort((left, right) => {
-      const rank = { OVERDUE: 0, ACTIVE: 1, UPCOMING: 2 };
+      const rank = { OVERDUE: 0, ACTIVE: 1, FOLLOWUP: 2, UPCOMING: 3 };
       return rank[left.scope] - rank[right.scope]
         || left.end.localeCompare(right.end)
         || left.id.localeCompare(right.id);
     });
 
     const periodStart = addDays(reportDate, -6);
-    const previous = options.previousReview;
-    const feedback = previous?.members?.find(row => row.member_id === memberId);
     const previousReview = feedback && ['APPROVED','CHANGES_REQUESTED'].includes(feedback.review_status) ? {
       weekKey: clean(previous.week_key, 32), reportDate: clean(previous.report_date, 20),
       revision: Number(feedback.revision || 1), reviewStatus: feedback.review_status,
-      feedback: clean(feedback.pm_feedback, 4000), reviewedAt: clean(feedback.reviewed_at, 40)
+      feedback: clean(feedback.pm_feedback, 4000), reviewedAt: clean(feedback.reviewed_at, 40),
+      generalFeedback: taskFeedback.filter(item=>item.target_type==='GENERAL')
     } : null;
+    const placed = new Set();
+    for (const task of tasks) {
+      task.reviewFeedback = taskFeedback.filter((item,index)=>{
+        const matches=item.target_type==='SUBTASK'&&item.target_id===task.id
+          ||item.target_type==='WP'&&item.target_id===task.parentWp&&!placed.has(index);
+        if(matches)placed.add(index);
+        return matches;
+      });
+    }
+    const followupFeedback=taskFeedback.filter((item,index)=>item.target_type!=='GENERAL'&&!placed.has(index));
     const filenameMember = clean(member.name, 60).replace(/[\\/:*?"<>|\s]+/g, '_') || 'member';
     return {
       schemaVersion: '1.0',
@@ -185,6 +202,7 @@
       weekId: isoWeek(reportDate),
       nextCheckpoint,
       previousReview,
+      followupFeedback,
       cutoffDate: nextCheckpoint?.date || '',
       tasks,
       currentTasks: tasks.filter(item => item.scope !== 'UPCOMING'),

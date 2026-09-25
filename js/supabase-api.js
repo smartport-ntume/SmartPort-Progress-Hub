@@ -418,12 +418,26 @@
         return data;
       },
       async weeklyReportAction(action, id, payload = {}, key = crypto.randomUUID()) {
+        if (['approve', 'return'].includes(action)) {
+          const version = await requireClient().rpc('smartport_weekly_review_version');
+          if (version.error || !(Number(version.data) >= 2)) {
+            throw new Error('請先完成週報資料庫更新並重啟新版 Agent，再核准或退回，確保採用 PM 編輯的進度與回饋。');
+          }
+        }
         const { data, error } = await requireClient().rpc('enqueue_weekly_report_action', {
           p_action: action, p_id: id, p_payload: payload, p_idempotency_key: key
         });
         if (error) throw errorFrom(error);
         const job = Array.isArray(data) ? data[0] : data;
         return { job: normalizeJob(job) };
+      },
+      async saveWeeklyFeedback(id, payload) {
+        const { data, error } = await requireClient().rpc('save_weekly_report_feedback', {
+          p_id: id, p_analysis_job_id: payload.analysis_job_id, p_feedback: payload.feedback,
+          p_task_feedback: payload.task_feedback, p_feedback_version: payload.feedback_version
+        });
+        if (error) throw errorFrom(error);
+        return data;
       },
       async approveProposal(issueNumber) {
         return enqueueAndWait('approve_proposal', { issue_number: Number(issueNumber) });

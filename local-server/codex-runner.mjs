@@ -4,6 +4,7 @@ import { runCommand } from './command.mjs';
 import { extractWeeklyReport } from './report-extractor.mjs';
 import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
 import { normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES } from '../worker/src/weekly-proposal.js';
+import { reviewTaskFeedback } from '../worker/src/weekly-feedback.js';
 
 function boundedString(value, field, maximum) {
   const text = String(value || '');
@@ -60,7 +61,8 @@ export function validateWeeklyAnalysis(value) {
     schedule_alignment_score: boundedScore(sourceReview.schedule_alignment_score, 'schedule_alignment_score'),
     strengths: boundedStringArray(sourceReview.strengths, 'strength', 20),
     missing_items: boundedStringArray(sourceReview.missing_items, 'missing_item', 50),
-    actions: boundedStringArray(sourceReview.actions, 'action', 50)
+    actions: boundedStringArray(sourceReview.actions, 'action', 50),
+    task_feedback: reviewTaskFeedback(sourceReview)
   };
   if (!Array.isArray(value.warnings) || value.warnings.length > 50) {
     throw new Error('codex_output_warnings_must_be_a_bounded_array');

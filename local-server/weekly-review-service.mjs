@@ -1,5 +1,6 @@
 import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
-import { proposalAlreadyApplied, weeklyRecordVersion } from '../worker/src/weekly-proposal.js';
+import { proposalAlreadyApplied, weeklyRecordVersion, withPmProgress, validateProgressOverrides } from '../worker/src/weekly-proposal.js';
+import { normalizeTaskFeedback, reviewTaskFeedback } from '../worker/src/weekly-feedback.js';
 
 function checked(result, operation) {
   if (result?.error) throw new Error(`${operation}: ${result.error.message || result.error}`);
@@ -27,7 +28,7 @@ export function assertExpectedProgress(proposal, record, expected) {
     || actual !== wanted || String(record.status || '') !== String(expected.status || '')) {
     throw new Error(`進度已變更：${proposal.target_id}。請重新整理後檢查差異，再重試審核。`);
   }
-  if (proposal.progress != null && actual !== null && Number(proposal.progress) < actual) throw new Error(`提案進度低於目前進度：${proposal.target_id}`);
+  if (!Object.hasOwn(proposal, 'pm_progress') && proposal.progress != null && actual !== null && Number(proposal.progress) < actual) throw new Error(`提案進度低於目前進度：${proposal.target_id}，請由 PM 填寫核定進度。`);
 }
 
 export class WeeklyReviewService {
@@ -131,7 +132,11 @@ export class WeeklyReviewService {
     if (action === 'approve' && (job.payload.decision !== 'approve' || !allowed.has(Number(proposal.issue_number)))) {
       throw new Error('weekly_proposal_not_selected');
     }
-    if (action === 'approve') assertExpectedProgress(proposal, record, expected);
+    if (action === 'approve') {
+      const approved = withPmProgress(proposal, job.payload.progress_overrides || {}, record);
+      assertExpectedProgress(approved, record, expected);
+      return approved;
+    }
   }
 
   async review(job) {
@@ -155,6 +160,8 @@ export class WeeklyReviewService {
     }
     const analysisProposals = row.analysis_result?.proposals || [];
     const selected = selectedProposalNumbers(payload.issue_numbers, analysisProposals);
+    const overrides = validateProgressOverrides(payload.progress_overrides || {}, analysisProposals);
+    const taskFeedback = normalizeTaskFeedback(payload.task_feedback ?? row.pm_task_feedback ?? reviewTaskFeedback(row.analysis_result.analysis.review));
     if (!['approve','return'].includes(payload.decision)) throw new Error('invalid_weekly_review_decision');
     if (payload.decision === 'return' && !String(payload.feedback || '').trim()) throw new Error('return_reason_required');
     const previews = new Map();
@@ -177,7 +184,7 @@ export class WeeklyReviewService {
       if (payload.decision !== 'approve' || !selected.has(Number(proposal.issue_number)) || proposal.review_status === 'APPROVED') continue;
       if (proposal.review_status !== 'PENDING') throw new Error('weekly_proposal_already_rejected');
       const preview = previews.get(Number(proposal.issue_number));
-      assertExpectedProgress(proposal, preview.record, payload.expected?.[proposal.issue_number]);
+      assertExpectedProgress(withPmProgress(proposal, overrides, preview.record), preview.record, payload.expected?.[proposal.issue_number]);
     }
     const decisions = [];
     for (const proposal of reports) {
@@ -192,7 +199,8 @@ export class WeeklyReviewService {
       } else if (proposal.review_status !== terminal) {
         throw new Error('weekly_proposal_decision_conflict');
       }
-      decisions.push({ issue_number: proposal.issue_number, status: terminal });
+      decisions.push({ issue_number: proposal.issue_number, status: terminal,
+        ...(Object.hasOwn(overrides, String(proposal.issue_number)) ? { approved_progress: overrides[proposal.issue_number], original_progress: proposal.progress } : {}) });
       checked(await this.supabase.from('weekly_report_submissions').update({
         review_result: { request: payload, decisions: [...decisions], job_id: job.id }
       }).eq('id', row.id).eq('review_job_id', job.id), 'weekly_review_checkpoint');
@@ -200,6 +208,8 @@ export class WeeklyReviewService {
     const review = {
       review_status: payload.decision === 'approve' ? 'APPROVED' : 'CHANGES_REQUESTED',
       pm_feedback: String(payload.feedback || '').slice(0,4000),
+      pm_task_feedback: taskFeedback,
+      feedback_version: (row.feedback_version || 0) + 1,
       reviewed_at: new Date().toISOString(), reviewed_by: job.actor_id,
       review_result: { request: payload, decisions, job_id: job.id }, error: null
     };

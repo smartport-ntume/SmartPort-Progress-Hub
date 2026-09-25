@@ -278,7 +278,7 @@ export class WeeklyReportAutomation {
     if (previous.error) throw new Error('weekly_previous_batch_lookup_failed: ' + previous.error.message);
     if (!previous.data) return previousReviewHandoff(null);
     const submissions = await this.supabase.from('weekly_report_submissions')
-      .select('id,member_id,revision,is_current,status,review_status,pm_feedback,reviewed_at')
+      .select('id,member_id,revision,is_current,status,review_status,pm_feedback,pm_task_feedback,analysis_result,reviewed_at')
       .eq('batch_id', previous.data.id);
     if (submissions.error) throw new Error('weekly_previous_review_lookup_failed: ' + submissions.error.message);
     const gate = previousReviewHandoff(previous.data, submissions.data || []);
@@ -413,7 +413,7 @@ export class WeeklyReportAutomation {
     if (lookup.error) throw new Error('weekly_reminder_batch_lookup_failed: ' + lookup.error.message);
     const batch = lookup.data;
     if (!batch || !batch.discord_message_sent_at || batch.status !== 'OPEN'
-      || batch.last_reminder_date === todayKey || now > new Date(batch.accept_until)) {
+      || batch.last_reminder_date === todayKey) {
       return { due: false };
     }
 
@@ -446,7 +446,7 @@ export class WeeklyReportAutomation {
         `⏰ **【SmartPort 週報${late ? '逾期' : '催繳'}｜${schedule.weekKey}】**`,
         `尚有 ${missing.length} 位未完成繳交：${names.join('、')}${omitted ? `，另 ${omitted} 位` : ''}`,
         late
-          ? `補交期限：${discordDate(new Date(batch.accept_until), this.options.timezone)}`
+          ? '仍可直接補交，系統將註記逾期。'
           : `截止：${discordDate(new Date(batch.due_at), this.options.timezone)}`,
         `👉 ${portal.toString()}`
       ].join('\n');
@@ -501,8 +501,8 @@ export class WeeklyReportAutomation {
       const loaded = await this.supabase.from('weekly_report_batches').select('*').eq('id', batchId).maybeSingle();
       if (loaded.error) throw new Error('weekly_resend_lookup_failed: ' + loaded.error.message);
       const batch = loaded.data;
-      if (!batch || batch.status !== 'OPEN' || +new Date(batch.accept_until) < +this.now()) {
-        throw new Error('此批次已停止收件，請先展延截止時間');
+      if (!batch || batch.status !== 'OPEN') {
+        throw new Error('此批次已關閉');
       }
       const gate = await this.reviewGate({ reportDate: batch.report_date });
       if (!gate.ready) throw pendingReviewError(gate);

@@ -2,7 +2,7 @@
   const FONT = {
     ascii: 'Arial',
     hAnsi: 'Arial',
-    eastAsia: 'Microsoft JhengHei',
+    eastAsia: 'DFKai-SB',
     cs: 'Arial'
   };
   const LANGUAGE = { value: 'en-US', eastAsia: 'zh-TW' };
@@ -133,7 +133,7 @@
   }
 
   function scopeLabel(scope) {
-    return { OVERDUE: '逾期未完成', ACTIVE: '目前進行中', UPCOMING: '下一 CP 前待辦' }[scope] || scope;
+    return { OVERDUE: '逾期未完成', ACTIVE: '目前進行中', UPCOMING: '下一 CP 前待辦', FOLLOWUP: '已完成待補充' }[scope] || scope;
   }
 
   function evidenceText(task) {
@@ -257,22 +257,32 @@
     return table(rows, [12, 13, 12, 31, 17, 15]);
   }
 
+  function taskFeedbackRows(items = [], span = 3) {
+    if (!items.length) return [];
+    return [...items.flatMap(item => [
+      ...(item.missing_items?.length ? [row([labelCell(`上期需要補充\n${item.target_id || '整份週報'}`), cell(item.missing_items.map(text=>`• ${text}`).join('\n'), { columnSpan: span })], { cantSplit: false })] : []),
+      ...(item.actions?.length ? [row([labelCell(`上期建議下一步\n${item.target_id || '整份週報'}`), cell(item.actions.map(text=>`• ${text}`).join('\n'), { columnSpan: span })], { cantSplit: false })] : [])
+    ]), row([labelCell('本週回覆與處理結果'), cell([responseParagraph('請逐項回覆以上事項的處理結果與佐證；未完成請填原因及預計完成日。', 1)], { columnSpan: span })], { cantSplit: false })];
+  }
+
   function currentTaskTable(task) {
+    const hasFeedback = !!task.reviewFeedback?.length;
     return table([
       row([
         cell(`${task.id}　${task.name}`, { bold: true, fill: BLUE, columnSpan: 3 }),
         cell(scopeLabel(task.scope), { bold: true, fill: BLUE })
-      ]),
+      ], { header: true }),
       row([labelCell('所屬 WP'), cell(`${task.parentWp}　${task.parentWpName}`), labelCell('分類'), cell(`${task.categoryName} (${task.ownerTeam})`)]),
       row([labelCell('計畫期間'), cell(`${valueText(task.start)} ～ ${valueText(task.end)}`), labelCell('目標節點'), cell(valueText(task.targetCp))]),
       row([labelCell('上次進度'), cell(task.currentProgress == null ? '—' : `${task.currentProgress}%`), labelCell('目前狀態'), cell(task.currentStatus)]),
       row([labelCell('預期成果／證據'), cell(evidenceText(task), { columnSpan: 3 })]),
-      row([labelCell('本週實際工作與成果'), cell([responseParagraph('請具體描述完成內容、結果及可驗證產出。', 4)], { columnSpan: 3 })]),
-      row([labelCell('成果證據／連結'), cell([responseParagraph('請填文件、Issue、PR、測試結果、影片或其他證據。', 2)], { columnSpan: 3 })]),
+      ...taskFeedbackRows(task.reviewFeedback),
+      row([labelCell('本週實際工作與成果'), cell([responseParagraph('請具體描述完成內容、結果及可驗證產出。', hasFeedback ? 2 : 4)], { columnSpan: 3 })]),
+      row([labelCell('成果證據／連結'), cell([responseParagraph('請填文件、Issue、PR、測試結果、影片或其他證據。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
       row([labelCell('回報進度／狀態'), cell([responseParagraph('完成度：____ %　　☐ 正常　☐ 需注意　☐ 延誤　☐ 已完成', 0)], { columnSpan: 3 })]),
-      row([labelCell('阻礙／風險'), cell([responseParagraph('如無請填「無」；如有，請說明影響、原因及預估延誤。', 2)], { columnSpan: 3 })]),
-      row([labelCell('需要 PM 協助'), cell([responseParagraph('如無請填「無」；如有，請明確列出決策、資源或跨組協調需求。', 2)], { columnSpan: 3 })]),
-      row([labelCell('下一步／承諾日期'), cell([responseParagraph('下一個具體行動：　　　　　　　　　預計完成：YYYY/MM/DD', 1)], { columnSpan: 3 })])
+      row([labelCell('阻礙／風險'), cell([responseParagraph('如無請填「無」；如有，請說明影響、原因及預估延誤。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
+      row([labelCell('需要 PM 協助'), cell([responseParagraph('如無請填「無」；如有，請明確列出決策、資源或跨組協調需求。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
+      row([labelCell('下一步／承諾日期'), cell([responseParagraph('下一個具體行動：　　　　　　　　　預計完成：YYYY/MM/DD', hasFeedback ? 0 : 1)], { columnSpan: 3 })])
     ], [22, 28, 22, 28]);
   }
 
@@ -286,6 +296,7 @@
       row([labelCell('所屬 WP'), cell(`${task.parentWp}　${task.parentWpName}`), labelCell('分類'), cell(`${task.categoryName} (${task.ownerTeam})`)]),
       row([labelCell('計畫期間'), cell(`${valueText(task.start)} ～ ${valueText(task.end)}`), labelCell('目標節點'), cell(valueText(task.targetCp))]),
       row([labelCell('預期成果／證據'), cell(evidenceText(task), { columnSpan: 3 })]),
+      ...taskFeedbackRows(task.reviewFeedback),
       row([labelCell('本週準備／預計交付'), cell([responseParagraph('請列出為如期完成所需的準備、下一個具體行動、可驗收產出及日期。', 4)], { columnSpan: 3 })]),
       row([labelCell('就緒程度'), cell([responseParagraph('____ %', 0)]), labelCell('時程判斷'), cell([responseParagraph('☐ 可如期　☐ 有風險　☐ 需調整排程', 0)])]),
       row([labelCell('依賴／風險／需協助'), cell([responseParagraph('請列出前置條件、跨組依賴或 PM 決策；如無請填「無」。', 2)], { columnSpan: 3 })])
@@ -314,15 +325,15 @@
 
   function issuesTable() {
     return table([
-      row([labelCell('跨組依賴／共通風險', 25), cell([responseParagraph('請整合列出跨任務問題；如無請填「無」。', 3)], { width: 75 })]),
-      row([labelCell('需要 PM 決策', 25), cell([responseParagraph('請寫成可直接決策的問題，並附建議選項與期限；如無請填「無」。', 3)], { width: 75 })])
+      row([labelCell('跨組依賴／共通風險', 25), cell([responseParagraph('請整合列出跨任務問題；如無請填「無」。', 2)], { width: 75 })]),
+      row([labelCell('需要 PM 決策', 25), cell([responseParagraph('請寫成可直接決策的問題，並附建議選項與期限；如無請填「無」。', 2)], { width: 75 })])
     ], [25, 75]);
   }
 
   function pmReviewTable() {
     return table([
-      row([labelCell('PM 回饋', 22), cell([responseParagraph('請填寫具體回饋、建議或肯定事項。', 4)], { width: 78 })]),
-      row([labelCell('追蹤事項', 22), cell([responseParagraph('請列出責任人、待辦事項及追蹤期限；如無請填「無」。', 3)], { width: 78 })]),
+      row([labelCell('PM 回饋', 22), cell([responseParagraph('請填寫具體回饋、建議或肯定事項。', 3)], { width: 78 })]),
+      row([labelCell('追蹤事項', 22), cell([responseParagraph('請列出責任人、待辦事項及追蹤期限；如無請填「無」。', 2)], { width: 78 })]),
       row([labelCell('審閱結果', 22), cell('☐ 通過　☐ 補充後通過　☐ 退回修改', { width: 78 })]),
       row([labelCell('PM 確認', 22), cell('PM 姓名：　　　　　　　　　確認日期：YYYY/MM/DD', { width: 78 })])
     ], [22, 78]);
@@ -344,6 +355,7 @@
         table([
           row([labelCell('上期審閱'), cell(`${model.previousReview.weekKey} · 第 ${model.previousReview.revision} 版 · ${model.previousReview.reviewStatus === 'APPROVED' ? '已核准' : '退回補件'}`)]),
           row([labelCell('上期 PM 意見'), cell(model.previousReview.feedback || 'PM 已核准，未另填文字回饋。')], { cantSplit: false }),
+          ...taskFeedbackRows(model.previousReview.generalFeedback, 1),
           row([labelCell('本週回覆與處理結果'), cell([responseParagraph('請逐項回覆上期 PM 意見：本週已處理的內容、佐證；未完成事項請填原因與預計完成日。', 8)])], { cantSplit: false })
         ], [22, 78]),
         paragraph('以上 PM 意見是上期審閱紀錄；本週成果請填在回覆欄及任務明細。', { color: MUTED, size: 18 }),
@@ -386,9 +398,14 @@
       });
     }
 
+    for (const item of model.followupFeedback || []) {
+      children.push(paragraph(`${item.target_id} 上期工作回饋追蹤`, { bold: true, size: 24, pageBreakBefore: true, keepNext: true }),
+        table(taskFeedbackRows([item], 1), [22, 78]));
+    }
+
     children.push(
-      spacer(120),
-      sectionBanner('4', '下週工作計畫　NEXT WEEK COMMITMENTS', { pageBreakBefore: true }),
+      paragraph('', { size: 2, spacing: { before: 0, after: 0, line: 20 }, pageBreakBefore: true, keepNext: true }),
+      sectionBanner('4', '下週工作計畫　NEXT WEEK COMMITMENTS'),
       commitmentsTable(),
       spacer(160),
       sectionBanner('5', '跨任務問題與決策需求　ISSUES AND DECISIONS'),

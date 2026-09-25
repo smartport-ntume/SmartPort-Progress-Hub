@@ -129,7 +129,7 @@
           ${assessmentIssue?'<p>這次批改未完成，已繳交的週報仍保留，請聯絡 PM 重新批改。</p>':''}
           ${feedbackReady&&(review.overall_assessment||row.summary)?`<p>${esc(review.overall_assessment||row.summary)}</p>`:''}
           ${Object.keys(review).length?`<div class="feedback-scores">${[['completeness_score','完整度'],['evidence_score','證據品質'],['schedule_alignment_score','時程一致性']].map(([key,label])=>`<span><b>${esc(review[key]??'—')}</b>${label}</span>`).join('')}</div>`:''}
-          ${list('需要補充',review.missing_items)}${list('建議下一步',review.actions)}
+          ${feedbackReady?window.SmartPortWeeklyReview.taskFeedback(row).map(item=>`<div class="feedback-pm"><b>${esc(item.target_type==='GENERAL'?'整份週報':item.target_id)}</b>${list('需要補充',item.missing_items)}${list('建議下一步',item.actions)}</div>`).join(''):''}
           ${row.pm_feedback?`<div class="feedback-pm"><b>PM 回饋</b><p>${esc(row.pm_feedback)}</p></div>`:''}
           ${row.review_status==='CHANGES_REQUESTED'?'<p>請依回饋修改 Word，再使用上方入口補交新版。</p>':''}`;
       };
@@ -190,7 +190,7 @@
     const badge = $('#deadlineBadge');
     const overdue = Date.now() > +new Date(batch.due_at);
     badge.textContent = overdue && batch.can_submit
-      ? `已逾期・可補交至 ${dateTime(batch.accept_until)}`
+      ? '已逾期・仍可直接補交'
       : `截止 ${dateTime(batch.due_at)}`;
     badge.classList.toggle('late', overdue && batch.can_submit);
     badge.classList.toggle('closed', !batch.can_submit);
@@ -204,9 +204,9 @@
     renderScope();
     renderSubmissions();
     if (!batch.can_submit) {
-      message('本週補交期限已結束；如需補交，請聯絡 PM。', true);
+      message('此週報批次已關閉。', true);
     } else if (overdue) {
-      message(`已超過原截止時間，仍可補交至 ${dateTime(batch.accept_until)}。`);
+      message('已超過截止時間，仍可直接繳交，系統將註記逾期。');
     } else {
       message('');
     }

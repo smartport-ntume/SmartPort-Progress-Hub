@@ -32,6 +32,12 @@ async function fixture(t,db=database(),storage={}){
       submissions:db.rows.map(({analysis_result,...row})=>structuredClone(row))}]};},
     async getWeeklyReport(id){return {week_key:'2026-W37',submission:structuredClone(db.rows.find(r=>r.id===id)),runs:[]};},
     async loadSnapshot(){return db.snapshot || {subtasks:proposals.map(p=>({id:p.target_id,actual_progress:0,status:'On Track'})),work_packages:[]};},
+    async saveWeeklyFeedback(id,payload){
+      const row=db.rows.find(r=>r.id===id);
+      if(payload.feedback_version!==(row.feedback_version||0))throw new Error('weekly_feedback_changed_refresh_required');
+      const saved={pm_feedback:payload.feedback,pm_task_feedback:structuredClone(payload.task_feedback),feedback_version:(row.feedback_version||0)+1};
+      Object.assign(row,saved);return saved;
+    },
     async weeklyReportAction(action,id,payload){
       assert.equal([...db.jobs.values()].some(j=>j.target===id&&j.status==='queued'),false,'same report must not be enqueued twice');
       const row=db.rows.find(r=>r.id===id),job={id:'j'+db.next++,target:id,action,status:'queued'};
@@ -158,4 +164,50 @@ test('PM center identifies who blocks the next weekly handoff and shows readines
   db.rows[4].review_status='CHANGES_REQUESTED';db.rows[4].pm_feedback='下期請補測試紀錄';
   await f.click('[data-action="refresh"]');
   assert.match(f.doc.querySelector('[data-field="handoff"]').textContent,/全員已完成 PM 審閱/);
+});
+
+test('PM edits task advice and progress before approving without overwriting the AI source',async t=>{
+  const db=database();db.rows[0].analysis_result.analysis.review.task_feedback=[{target_type:'SUBTASK',target_id:'C1',missing_items:['AI 缺漏'],actions:['AI 下一步']}];
+  const f=await fixture(t,db);await f.click('[data-member="m1"]');
+  f.doc.querySelector('[data-feedback-missing]').value='PM 修改缺漏\n補影片';
+  f.doc.querySelector('[data-feedback-actions]').value='PM 指定下一步';
+  f.doc.querySelector('[data-progress="1"]').value='15';
+  f.doc.querySelector('[data-proposal="1"]').checked=true;
+  await f.click('[data-action="approve"]');
+  assert.deepEqual(f.db.calls[0].payload.progress_overrides,{'1':15});
+  assert.equal(f.db.calls[0].payload.task_feedback[0].missing_items[1],'補影片');
+  assert.equal(f.db.calls[0].payload.task_feedback[0].actions[0],'PM 指定下一步');
+  assert.equal(db.rows[0].analysis_result.analysis.review.task_feedback[0].actions[0],'AI 下一步');
+});
+
+test('progress zero and blank retain their different meanings and out-of-range input cannot enqueue review',async t=>{
+  const f=await fixture(t);await f.click('[data-member="m1"]');
+  await f.click('[data-action="select-all"]');
+  f.doc.querySelector('[data-progress="1"]').value='101';
+  await f.click('[data-action="approve"]');assert.equal(f.db.calls.length,0);
+  assert.match(f.doc.querySelector('[data-field="message"]').textContent,/0～100/);
+  f.doc.querySelector('[data-progress="1"]').value='0';f.doc.querySelector('[data-progress="2"]').value='';
+  await f.click('[data-action="approve"]');assert.deepEqual(f.db.calls[0].payload.progress_overrides,{'1':0,'2':null});
+});
+
+
+test('saving edited advice persists without closing review and a second save uses the latest version',async t=>{
+  const f=await fixture(t);await f.click('[data-member="m1"]');
+  await f.click('[data-action="add-feedback"]');
+  const editors=f.doc.querySelectorAll('.weekly-center-feedback-editor');const editor=editors[editors.length-1];
+  editor.querySelector('[data-feedback-target]').value='SUBTASK:C1';
+  editor.querySelector('[data-feedback-missing]').value='待補測試影片';
+  editor.querySelector('[data-feedback-actions]').value='下週驗證';
+  f.doc.querySelector('[data-field="feedback"]').value='PM 意見';
+  await f.click('[data-action="save-feedback"]');
+  assert.equal(f.db.rows[0].review_status,'PENDING');assert.equal(f.db.calls.length,0);
+  assert.equal(f.db.rows[0].feedback_version,1);assert.equal(f.db.rows[0].pm_task_feedback.at(-1).actions[0],'下週驗證');
+  f.doc.querySelector('[data-field="feedback"]').value='PM 修正版';
+  await f.click('[data-action="save-feedback"]');assert.equal(f.db.rows[0].feedback_version,2);
+  await f.click('[data-member="m2"]');await f.click('[data-member="m1"]');
+  assert.equal(f.doc.querySelector('[data-field="feedback"]').value,'PM 修正版');
+  assert.equal([...f.doc.querySelectorAll('[data-feedback-actions]')].at(-1).value,'下週驗證');
+  f.doc.querySelector('[data-field="feedback"]').value='';
+  await f.click('[data-action="save-feedback"]');await f.click('[data-action="refresh"]');
+  assert.equal(f.doc.querySelector('[data-field="feedback"]').value,'');
 });
