@@ -27,7 +27,7 @@ test('Postgres enforces weekly review permissions, report versions, durable feed
   `);
   const migrations=['202609030001_gateway.sql','202609080001_team_config.sql',
     '202609100001_weekly_discord_automation.sql','202609100002_passwordless_weekly_portal.sql',
-    '202609110002_weekly_review_cycle.sql'];
+    '202609110002_weekly_review_cycle.sql','202609250001_weekly_editable_feedback.sql'];
   for(const name of migrations){
     let sql=await readFile(new URL('../supabase/migrations/'+name,import.meta.url),'utf8');
     // Supabase installs pgcrypto. PGlite's PostgreSQL core already supplies gen_random_uuid;
@@ -134,4 +134,68 @@ test('Postgres enforces weekly review permissions, report versions, durable feed
     assert.equal(detail.runs.length,2);assert.equal(detail.submission.analysis_result.analysis.report_summary,'regraded');
     const batches=await rpc('list_pm_weekly_reports');assert.equal(batches.batches[0].submissions.length,3);
   });
+  await t.test('PM can save scoped feedback with version checks while members cannot edit it',async()=>{
+    await admin();
+    payload.work_packages=[{id:'WP-C1',name:'Control',owner:'CTL'}];
+    payload.subtasks=[{id:'C1',parent_wp:'WP-C1',owner_team:'CTL'}];
+    await db.query('update public.weekly_report_batches set payload=$2 where id=$1',[batchId,JSON.stringify(payload)]);
+    await asUser(pm);
+    assert.equal(await rpc('smartport_weekly_review_version'),2);
+    const current=(await rpc('get_pm_weekly_report',[third.submission_id])).submission;
+    const items=[{target_type:'SUBTASK',target_id:'C1',missing_items:['補充測試影片'],actions:['下週完成驗證']}];
+    const args=[third.submission_id,current.analysis_job_key,'PM 調整後意見',items,0];
+    await asUser(member);await assert.rejects(()=>rpc('save_weekly_report_feedback',args),/pm_role_required/);
+    await asUser(engineer);await assert.rejects(()=>rpc('save_weekly_report_feedback',args),/pm_role_required/);
+    await asUser(pm);
+    const saved=await rpc('save_weekly_report_feedback',args);
+    assert.equal(saved.feedback_version,1);assert.deepEqual(saved.pm_task_feedback,items);
+    await assert.rejects(()=>rpc('save_weekly_report_feedback',args),/weekly_feedback_changed/);
+    await assert.rejects(()=>rpc('save_weekly_report_feedback',[third.submission_id,current.analysis_job_key,'',
+      [{...items[0],target_id:'OTHER'}],1]),/not_owned/);
+    await assert.rejects(()=>rpc('save_weekly_report_feedback',[third.submission_id,current.analysis_job_key,'',
+      [{...items[0],actions:[42]}],1]),/invalid_weekly_feedback_text/);
+    await asUser(member);
+    const visible=(await rpc('get_weekly_report_feedback',[token,'member-1'])).versions[0];
+    assert.deepEqual(visible.task_feedback,items);assert.equal(visible.pm_feedback,'PM 調整後意見');
+    await asUser(pm);
+    const detailed=await rpc('get_pm_weekly_report',[third.submission_id]);
+    assert.equal(detailed.feedback_context.subtasks[0].id,'C1');
+  });
+  await t.test('progress overrides and feedback are frozen for interrupted review recovery',async()=>{
+    await admin();
+    const proposals=[{issue_number:30,target_id:'C1',target_type:'SUBTASK',progress:30,reported_progress:30}];
+    await db.query(`update public.weekly_report_submissions set analysis_result=jsonb_set(analysis_result,'{proposals}',$2) where id=$1`,[third.submission_id,JSON.stringify(proposals)]);
+    await asUser(pm);
+    const current=(await rpc('get_pm_weekly_report',[third.submission_id])).submission;
+    const input={analysis_job_id:current.analysis_job_key,issue_numbers:[30],feedback:'最後 PM 意見',feedback_version:1,
+      task_feedback:current.pm_task_feedback,progress_overrides:{30:20}};
+    await assert.rejects(()=>rpc('enqueue_weekly_report_action',['approve',third.submission_id,{...input,feedback_version:0},'stale-feedback-version']),/feedback_changed/);
+    for(const value of [-1,101,'30'])await assert.rejects(()=>rpc('enqueue_weekly_report_action',[
+      'approve',third.submission_id,{...input,progress_overrides:{30:value}},'invalid-override-'+value]),/invalid_pm_progress_overrides/);
+    const job=await rpc('enqueue_weekly_report_action',['approve',third.submission_id,input,'correct-progress']);
+    assert.deepEqual(job.payload.progress_overrides,{30:20});assert.deepEqual(job.payload.task_feedback,input.task_feedback);
+    await assert.rejects(()=>rpc('save_weekly_report_feedback',[third.submission_id,current.analysis_job_key,'changed',[],1]),/review_in_progress/);
+    await admin();await db.query(`update public.gateway_jobs set status='failed' where id=$1`,[job.id]);
+    await asUser(pm);
+    const resume=await rpc('enqueue_weekly_report_action',['resume_review',third.submission_id,
+      {issue_numbers:[30],progress_overrides:{30:99},task_feedback:[],feedback:'changed'},'resume-corrected-progress']);
+    assert.equal(resume.payload.progress_overrides['30'],20);assert.deepEqual(resume.payload.task_feedback,input.task_feedback);
+    assert.equal(resume.payload.feedback,'最後 PM 意見');
+    await admin();
+    await db.query(`update public.weekly_report_submissions set review_status='APPROVED' where id=$1`,[third.submission_id]);
+    await db.query(`update public.gateway_jobs set status='completed' where id=$1`,[resume.id]);
+  });
+  await t.test('past the old grace period, intake stays open and records late submissions',async()=>{
+    await admin();
+    await db.query(`update public.weekly_report_batches set due_at=now()-interval '30 days',accept_until=now()-interval '23 days' where id=$1`,[batchId]);
+    await asUser(member);
+    assert.equal((await rpc('get_weekly_report_batch',[token])).can_submit,true);
+    const late=await submit();assert.equal(late.late,true);
+    const visible=await rpc('get_weekly_report_batch',[token]);
+    assert.equal(visible.submissions[0].late,true);assert.equal(visible.submissions[0].revision,4);
+    await admin();await db.query(`update public.weekly_report_batches set status='CLOSED' where id=$1`,[batchId]);
+    await asUser(member);assert.equal((await rpc('get_weekly_report_batch',[token])).can_submit,false);
+    await assert.rejects(()=>submit(),/closed_or_invalid/);
+  });
+
 });

@@ -137,8 +137,8 @@ workerEnv.LOCAL_WEEKLY_ANALYSIS_GUARD = input => weeklyReview.assertAnalysis(inp
 workerEnv.LOCAL_WEEKLY_REVIEW_GUARD = (...args) => weeklyReview.guardProposal(...args);
 
 const reviewSchema = await supabase.rpc('smartport_weekly_review_version');
-if (reviewSchema.error || Number(reviewSchema.data) < 1) {
-  throw new Error('請先執行 supabase/migrations/202609110002_weekly_review_cycle.sql，再重啟 Agent。');
+if (reviewSchema.error || Number(reviewSchema.data) < 2) {
+  throw new Error('請先執行 supabase/migrations/202609250001_weekly_editable_feedback.sql，再重啟 Agent。');
 }
 
 const abandoned = await supabase.rpc('fail_abandoned_gateway_jobs', {

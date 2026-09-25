@@ -1,3 +1,5 @@
+import { reviewTaskFeedback } from '../worker/src/weekly-feedback.js';
+
 const REVIEWED = new Set(['APPROVED', 'CHANGES_REQUESTED']);
 
 export function previousReviewHandoff(batch, submissions = []) {
@@ -23,7 +25,8 @@ export function previousReviewHandoff(batch, submissions = []) {
     feedback.push({
       member_id: member.id, submission_id: row.id, revision: row.revision || 1,
       review_status: row.review_status, reviewed_at: row.reviewed_at || null,
-      pm_feedback: String(row.pm_feedback || '').slice(0, 4000)
+      pm_feedback: String(row.pm_feedback || '').slice(0, 4000),
+      task_feedback: row.pm_task_feedback ?? reviewTaskFeedback(row.analysis_result?.analysis?.review)
     });
   }
   return {

@@ -1,5 +1,6 @@
 import { corsHeaders, safeReturnUrl } from './cors.js';
 import { weeklyAssessmentIssue } from './weekly-assessment.js';
+import { reviewTaskFeedback, TASK_FEEDBACK_SCHEMA } from './weekly-feedback.js';
 import { applyWeeklyProposal, normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES, WEEKLY_PROPOSAL_STATUSES } from './weekly-proposal.js';
 import {
   normalizeTeamConfig,
@@ -414,14 +415,12 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   }
   const ownerTeamSet=new Set(ownerTeams);
   const requestedIds=requestedScopeIds(payload);
-  let enforceScope=requestedIds.length>0;
   let scopeSubtaskIds=requestedIds.filter(id=>{
     const task=subs.find(item=>String(item.id||'')===id);
     return task&&ownerTeamSet.has(String(task.owner_team||''));
   });
   const scopeWarnings=[];
   if(memberId){
-    enforceScope=true;
     scopeSubtaskIds=deriveWeeklyScopeIds(subs,ownerTeamSet,reportDate,checkpoints);
     const requestedSet=new Set(requestedIds);
     const derivedSet=new Set(scopeSubtaskIds);
@@ -430,13 +429,10 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     if(omitted.length)scopeWarnings.push(`Required scope restored from Private Git: ${omitted.join(', ')}`);
     if(unexpected.length)scopeWarnings.push(`Browser scope ignored because it is no longer required: ${unexpected.join(', ')}`);
   }
-  const scopeIdSet=new Set(scopeSubtaskIds);
-  const scopeWpIds=new Set(subs.filter(item=>scopeIdSet.has(String(item.id||''))).map(item=>String(item.parent_wp||'')));
-  const scopedWps=wps.filter(item=>enforceScope
-    ? scopeWpIds.has(String(item.id||''))
-    : ownerTeamSet.has(String(item.owner||''))
-  );
-  const scopedSubs=subs.filter(item=>ownerTeamSet.has(String(item.owner_team||''))&&(!enforceScope||scopeIdSet.has(String(item.id||''))));
+  // Required scope controls template coverage, not whether reported work is reviewable.
+  const scopedSubs=subs.filter(item=>ownerTeamSet.has(String(item.owner_team||'')));
+  const ownedParentIds=new Set(scopedSubs.map(item=>String(item.parent_wp||'')));
+  const scopedWps=wps.filter(item=>ownerTeamSet.has(String(item.owner||''))||ownedParentIds.has(String(item.id||'')));
   const nextCheckpoint=nextWeeklyCheckpoint(checkpoints,reportDate,referenceFile?.json?.acl_levels||[]);
   const context={
     report_date:reportDate,
@@ -452,7 +448,8 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     type:'object',additionalProperties:false,required:['assessment_status','report_summary','review','warnings','proposals'],properties:{
       assessment_status:{type:'string',enum:['completed','input_unavailable']},
       report_summary:{type:'string',maxLength:8000},
-      review:{anyOf:[{type:'object',additionalProperties:false,required:['overall_assessment','completeness_score','evidence_score','schedule_alignment_score','strengths','missing_items','actions'],properties:{
+      review:{anyOf:[{type:'object',additionalProperties:false,required:['overall_assessment','completeness_score','evidence_score','schedule_alignment_score','strengths','missing_items','actions','task_feedback'],properties:{
+        task_feedback:TASK_FEEDBACK_SCHEMA,
         overall_assessment:{type:'string',maxLength:8000},completeness_score:{type:'number',minimum:0,maximum:100},evidence_score:{type:'number',minimum:0,maximum:100},schedule_alignment_score:{type:'number',minimum:0,maximum:100},
         strengths:{type:'array',maxItems:20,items:{type:'string',maxLength:2000}},missing_items:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},actions:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}}
       }},{type:'null'}]},
@@ -502,6 +499,12 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   analysis.warnings=Array.isArray(analysis.warnings)?analysis.warnings:[];
   analysis.warnings.unshift(...scopeWarnings);
   analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals.map(normalizeWeeklyProposal):[];
+  analysis.review.task_feedback=reviewTaskFeedback(analysis.review).map(item=>{
+    const valid=item.target_type==='GENERAL'||(item.target_type==='WP'?scopedWps:scopedSubs).some(record=>record.id===item.target_id);
+    if(valid)return item;
+    analysis.warnings.push(`回饋的工作 ID ${item.target_id} 不在本期範圍，請 PM 指定對應工作。`);
+    return {...item,target_type:'GENERAL',target_id:''};
+  });
 
   const index=new Map();
   for(const w of wps)index.set(`WP:${w.id}`,{...w,_team:w.owner||''});
@@ -516,12 +519,10 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     const target=index.get(key);
     if(!target){analysis.warnings.push(`Ignored unknown target ${key}`);continue;}
     if(!ownerTeamSet.has(String(target._team))){analysis.warnings.push(`Ignored ${id}: owner ${target._team} is outside this member's responsible categories`);continue;}
-    if(enforceScope&&type==='SUBTASK'&&!scopeIdSet.has(id)){analysis.warnings.push(`Ignored ${id}: not in this report's required scope`);continue;}
-    if(enforceScope&&type==='WP'&&!scopeWpIds.has(id)){analysis.warnings.push(`Ignored ${id}: no scoped Subtask belongs to this WP`);continue;}
     if(existingKeys.has(key)){analysis.warnings.push(`Skipped duplicate ${id}: this report already has a non-rejected proposal`);continue;}
     const current=target.actual_progress==null?null:Number(target.actual_progress);
-    const proposed=a.progress!==null&&current!==null&&a.progress<current?null:a.progress;
-    if(proposed!==a.progress)analysis.warnings.push(`${id}：自報進度低於目前進度，提案保留正式百分比，只更新工作紀錄。`);
+    const proposed=a.progress;
+    if(proposed!==null&&current!==null&&proposed<current)analysis.warnings.push(`${id}：自報進度低於目前進度，請 PM 確認核定百分比。`);
     const p={
       schema_version:'1.1',reported_progress:a.reported_progress,verification_note:a.verification_note,
       report_date:reportDate,owner_team:String(target._team),report_member_id:memberId,report_member_name:memberName,target_type:type,target_id:id,progress:proposed,status:a.status,
@@ -621,7 +622,7 @@ async function updateSubtaskIssueStatus(repo, subtask, p, token) {
 
 async function approveProposal(repo, issueNumber, token, env = {}, payload = {}) {
   const issue = await github(`/repos/${repo}/issues/${issueNumber}`, token);
-  const p = parseProposalIssue(issue);
+  let p = parseProposalIssue(issue);
   if (!p) throw new Error('Invalid weekly proposal issue');
   if (p.review_status !== 'PENDING') throw new Error(`Proposal already ${p.review_status}`);
 
@@ -629,16 +630,16 @@ async function approveProposal(repo, issueNumber, token, env = {}, payload = {})
     const file = await getJsonFile(repo, 'project/work_packages.json', token);
     const idx = (file.json.work_packages || []).findIndex(x => x.id === p.target_id);
     if (idx < 0) throw new Error(`WP not found: ${p.target_id}`);
-    if (typeof env.LOCAL_WEEKLY_REVIEW_GUARD === 'function') await env.LOCAL_WEEKLY_REVIEW_GUARD(
-      p, payload.weekly_review_job_id, 'approve', file.json.work_packages[idx], payload.expected_current);
+    if (typeof env.LOCAL_WEEKLY_REVIEW_GUARD === 'function') p = await env.LOCAL_WEEKLY_REVIEW_GUARD(
+      p, payload.weekly_review_job_id, 'approve', file.json.work_packages[idx], payload.expected_current) || p;
     applyProposalToRecord(file.json.work_packages[idx], p);
     await putJsonFile(repo, 'project/work_packages.json', file.json, token, `PM Approve: weekly update ${p.target_id}`, file.sha);
   } else if (String(p.target_type).toUpperCase() === 'SUBTASK') {
     const file = await getJsonFile(repo, 'project/subtasks.json', token);
     const idx = (file.json.subtasks || []).findIndex(x => x.id === p.target_id);
     if (idx < 0) throw new Error(`Subtask not found: ${p.target_id}`);
-    if (typeof env.LOCAL_WEEKLY_REVIEW_GUARD === 'function') await env.LOCAL_WEEKLY_REVIEW_GUARD(
-      p, payload.weekly_review_job_id, 'approve', file.json.subtasks[idx], payload.expected_current);
+    if (typeof env.LOCAL_WEEKLY_REVIEW_GUARD === 'function') p = await env.LOCAL_WEEKLY_REVIEW_GUARD(
+      p, payload.weekly_review_job_id, 'approve', file.json.subtasks[idx], payload.expected_current) || p;
     applyProposalToRecord(file.json.subtasks[idx], p);
     await putJsonFile(repo, 'project/subtasks.json', file.json, token, `PM Approve: weekly update ${p.target_id}`, file.sha);
     await updateSubtaskIssueStatus(repo, file.json.subtasks[idx], p, token);
@@ -647,9 +648,12 @@ async function approveProposal(repo, issueNumber, token, env = {}, payload = {})
   }
 
   const cleanTitle = issue.title.replace(/^\[(APPROVED|REJECTED)\]\s*/, '');
+  const approvalBody = Object.hasOwn(p, 'pm_progress')
+    ? `${issue.body || ''}\n\n## PM 核定進度\n成員自報：${p.reported_progress ?? '未填'}%；原提案：${p.original_progress ?? '保留原值'}；PM 核定：${p.progress == null ? '保留目前進度' : p.progress + '%'}\n審核工作：${payload.weekly_review_job_id}`
+    : issue.body;
   await github(`/repos/${repo}/issues/${issueNumber}`, token, {
     method: 'PATCH',
-    body: JSON.stringify({ title: `[APPROVED] ${cleanTitle}`, state: 'closed', state_reason: 'completed' })
+    body: JSON.stringify({ title: `[APPROVED] ${cleanTitle}`, body: approvalBody, state: 'closed', state_reason: 'completed' })
   });
   return { ok: true, target_type: p.target_type, target_id: p.target_id };
 }

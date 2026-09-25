@@ -8,7 +8,8 @@ function proposal(id, team = 'CTL') {
   return {
     target_type: 'SUBTASK',
     target_id: id,
-    progress: 50,
+    progress: 30,
+    reported_progress: 30,
     status: 'On Track',
     blocker: '',
     evidence: `${team} test evidence`,
@@ -165,11 +166,13 @@ for (const unknownProgress of [false,true]) test(unknownProgress ? 'reports with
   });
   assert.deepEqual(capturedContext.required_scope_subtask_ids, ['due', 'omitted', 'overdue', 'cp-assigned']);
   assert.deepEqual(capturedContext.work_packages.map(item => item.id), ['WP-C1', 'WP-S1']);
-  assert.deepEqual(capturedContext.subtasks.map(item => item.id), ['due', 'omitted', 'overdue', 'cp-assigned']);
+  assert.deepEqual(capturedContext.subtasks.map(item => item.id), ['due', 'omitted', 'overdue', 'cp-assigned', 'future', 'done']);
   assert.equal(result.report.member_name, '黃志峰');
   assert.deepEqual(result.report.owner_teams, ['CTL', 'STM']);
-  assert.deepEqual(result.proposals.map(item => item.target_id), ['due', 'omitted']);
-  assert.equal(createdIssueBodies.length, 2);
+  assert.deepEqual(result.proposals.map(item => item.target_id), ['due', 'omitted', 'future']);
+  assert.equal(createdIssueBodies.length, 3);
+  assert.equal(result.proposals.at(-1).progress,30,'reported progress is offered even outside template coverage');
+  assert.equal(result.proposals.at(-1).reported_progress,30);
   if(unknownProgress){
     assert.deepEqual(capturedSchema.properties.proposals.items.properties.progress.type,['number','null']);
     assert.equal(result.proposals[0].progress,100); assert.equal(result.proposals[0].reported_progress,100);

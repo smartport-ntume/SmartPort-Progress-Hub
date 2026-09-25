@@ -112,3 +112,42 @@ test('approving a work record through the API preserves null progress and linked
   assert.match(linkedBody,/Actual Progress:\*\* 未填/);assert.doesNotMatch(linkedBody,/0%|null/);
   assert.match(issue.title,/^\[APPROVED\]/);
 });
+
+test('PM-corrected progress is written and audited, and an interrupted approval resumes the same correction',async t=>{
+  const {withPmProgress}=await import('../worker/src/weekly-proposal.js');
+  const original=globalThis.fetch;t.after(()=>globalThis.fetch=original);
+  const p={schema_version:'1.1',target_type:'SUBTASK',target_id:'C1',report_date:'2026-09-25',progress:100,reported_progress:100,
+    status:'Completed',blocker:null,evidence:'自報已完成',summary:'自報完成，待 PM 驗證',source_report_path:'weekly_reports/test.docx'};
+  const issue={number:1,title:'[WEEKLY-AI] C1',body:`<!-- SMARTPORT_WEEKLY_PROPOSAL_V1\n${JSON.stringify(p)}\n-->`};
+  let record={id:'C1',actual_progress:60,status:'In Progress',actual_evidence:'既有紀錄'},failClose=true;
+  const expected={progress:60,status:record.status,record_version:weeklyRecordVersion(record)};
+  globalThis.fetch=async(input,init={})=>{
+    const path=new URL(String(input)).pathname;
+    if(path==='/repos/example/project')return Response.json({permissions:{push:true}});
+    if(path.endsWith('/issues/1')){
+      if(init.method==='PATCH'){
+        if(failClose){failClose=false;return Response.json({message:'temporary issue write failure'},{status:500});}
+        Object.assign(issue,JSON.parse(init.body));
+      }
+      return Response.json(issue);
+    }
+    if(path.endsWith('/contents/project/subtasks.json')){
+      if(init.method==='PUT'){record=JSON.parse(Buffer.from(JSON.parse(init.body).content,'base64').toString()).subtasks[0];return Response.json({content:{sha:'written'}});}
+      return Response.json({sha:'current',content:Buffer.from(JSON.stringify({subtasks:[record]})).toString('base64')});
+    }
+    throw new Error('Unexpected '+path);
+  };
+  const env={PROJECT_REPO:'example/project',INTERNAL_AGENT_BEARER:'secret',LOCAL_GITHUB_TOKEN:'token',
+    LOCAL_WEEKLY_REVIEW_GUARD:async(proposal,job,action,current,wanted)=>{
+      const corrected=withPmProgress(proposal,{1:20},current);assertExpectedProgress(corrected,current,wanted);return corrected;
+    }};
+  const call=()=>app.fetch(new Request('http://local-agent/api/reports/proposals/1/approve',{
+    method:'POST',headers:{Authorization:'Bearer secret','Content-Type':'application/json'},
+    body:JSON.stringify({weekly_review_job_id:'r1',expected_current:expected,progress_overrides:{1:99}})
+  }),env,{});
+  assert.ok((await call()).status>=400);
+  assert.equal(record.actual_progress,20);assert.equal(record.self_progress,100);assert.equal(record.status,'In Progress');
+  const response=await call();assert.equal(response.status,200,await response.text());
+  assert.equal(record.actual_evidence.split('自報已完成').length,2);
+  assert.match(issue.body,/PM 核定：20%/);assert.match(issue.body,/"progress":100/);
+});

@@ -1,6 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+test('weekly approval cannot silently discard PM edits against an older database', async t => {
+  const previousWindow = globalThis.window;
+  t.after(() => { globalThis.window = previousWindow; });
+  let version = 1;
+  const queued = [];
+  const client = {
+    auth: { onAuthStateChange() {} },
+    async rpc(name, args) {
+      if (name === 'smartport_weekly_review_version') return { data: version };
+      assert.equal(name, 'enqueue_weekly_report_action');
+      queued.push(args);
+      return { data: { id: 'job-1', status: 'queued' } };
+    }
+  };
+  globalThis.window = { supabase: { createClient: () => client } };
+  await import('../js/supabase-api.js?test=review-upgrade');
+  const api = globalThis.window.createSmartPortSupabaseAPI({
+    supabase: { url: 'https://example.supabase.co', anonKey: 'publishable-key-with-enough-length' }
+  });
+  const payload = { progress_overrides: { 10: 30 }, task_feedback: [] };
+  await assert.rejects(api.weeklyReportAction('approve', 'report-1', payload, 'key-1'), /資料庫更新/);
+  await assert.rejects(api.weeklyReportAction('return', 'report-1', payload, 'key-2'), /資料庫更新/);
+  assert.equal(queued.length, 0);
+  version = 2;
+  await api.weeklyReportAction('approve', 'report-1', payload, 'key-1');
+  assert.equal(queued.length, 1);
+  assert.deepEqual(queued[0].p_payload, payload);
+});
+
 test('browser Supabase adapter derives UI permissions only from the protected profile', async t => {
   const previousWindow = globalThis.window;
   t.after(() => { globalThis.window = previousWindow; });

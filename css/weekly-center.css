@@ -38,3 +38,10 @@
 .weekly-center a{color:#24568c}.weekly-center :focus-visible{outline:3px solid #6091d1;outline-offset:2px}
 @media(max-width:900px){.weekly-center-grid{grid-template-columns:1fr}.weekly-center-roster{max-height:22rem;overflow:auto}}
 @media(max-width:480px){.weekly-center-tools>label{width:100%}.weekly-center-detail{padding:.8rem}.weekly-center-scores{gap:.3rem}}
+.weekly-center-feedback-editor{display:grid;gap:10px;margin:12px 0;padding:12px;border:1px solid #dfe4ec;border-radius:8px}
+.weekly-center-feedback-editor label{display:grid;gap:5px;font-size:13px}
+.weekly-center-feedback-editor select,.weekly-center-feedback-editor textarea{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid #c7d1df;border-radius:6px;background:#fff;color:#243044}
+.weekly-center-feedback-editor textarea{resize:vertical;min-height:70px}
+.weekly-center-feedback-editor button{justify-self:start}
+.weekly-center-progress{display:flex;align-items:center;gap:10px;margin:12px 0;flex-wrap:wrap}
+.weekly-center-progress input{width:130px;padding:8px;border:1px solid #c7d1df;border-radius:6px;font:inherit}

@@ -172,3 +172,31 @@ test('portal and PM center share report-level status and choose the current subm
   assert.equal(model.status({status:'completed',review:refusal.review,summary:refusal.report_summary}).key,'failed');
   assert.equal(model.status({status:'completed',analysis_result:{analysis:valid}}).key,'pending');
 });
+
+test('PM overrides use the queued decision, preserve self-report and allow explicit corrections down to zero',async()=>{
+  const f=fixture();f.records.get(1).actual_progress=60;
+  f.job.payload.expected[1].progress=60;
+  f.proposals[0].reported_progress=30;f.proposals[0].progress=30;
+  for(const value of [20,0,null]){
+    f.job.payload.progress_overrides={1:value};
+    const approved=await f.service.guardProposal(f.proposals[0],'r1','approve',f.records.get(1),f.job.payload.expected[1]);
+    assert.equal(approved.progress,value);assert.equal(approved.original_progress,30);assert.equal(approved.reported_progress,30);
+  }
+  f.job.payload.progress_overrides={1:101};
+  await assert.rejects(()=>f.service.review(f.job),/invalid_pm_progress/);
+  f.job.payload.progress_overrides={999:50};
+  await assert.rejects(()=>f.service.review(f.job),/not_in_this_analysis/);
+  assert.deepEqual(f.writes,[]);
+});
+
+test('review stores PM task feedback separately from the original AI review and carries it forward',async()=>{
+  const f=fixture();f.row.analysis_result.analysis.review.actions=['原始 AI 建議'];
+  f.job.payload.task_feedback=[{target_type:'WP',target_id:'WP-C1',missing_items:['PM 修改缺漏'],actions:['PM 修改下一步']}];
+  f.job.payload.progress_overrides={1:15};
+  await f.service.review(f.job);
+  assert.deepEqual(f.row.pm_task_feedback,f.job.payload.task_feedback);
+  assert.deepEqual(f.row.analysis_result.analysis.review.actions,['原始 AI 建議']);
+  assert.equal(f.row.review_result.decisions[0].approved_progress,15);
+  assert.equal(f.row.review_result.decisions[0].original_progress,20);
+  assert.equal(f.row.feedback_version,1);
+});

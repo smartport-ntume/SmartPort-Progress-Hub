@@ -12,6 +12,7 @@
    - `supabase/migrations/202609100001_weekly_discord_automation.sql`
    - `supabase/migrations/202609100002_passwordless_weekly_portal.sql`
    - `supabase/migrations/202609110002_weekly_review_cycle.sql`
+   - `supabase/migrations/202609250001_weekly_editable_feedback.sql`
 4. 到 Authentication → Providers → Anonymous Sign-Ins 開啟匿名登入。匿名 session 只可搭配當週私密 token 使用週報 RPC；既有 RLS 仍拒絕它讀取主網站資料。
 5. 到 Project Settings → API 保存以下兩項：
    - Project URL
@@ -285,7 +286,7 @@ npm start
 
 ### 週報入口能開啟但不能上傳
 
-確認兩份週報 migration 均已執行、Authentication → Providers 的 Anonymous Sign-Ins 已開啟、使用的是 Discord 當週最新網址，且檔案為 `.doc` / `.docx` 且不超過 10 MB。原截止後仍可在七天補交期內上傳；再超過則需等 PM 處理。
+確認週報相關 migration 均已執行、Authentication → Providers 的 Anonymous Sign-Ins 已開啟、使用的是 Discord 當週最新網址，且檔案為 `.doc` / `.docx` 且不超過 10 MB。截止後可直接補交，系統會標記逾期；不需 PM 展延。若仍被擋住，確認已執行 `202609250001_weekly_editable_feedback.sql`，它同時更新入口 RPC 與 Storage RLS。
 
 ### Job 顯示 failed
 

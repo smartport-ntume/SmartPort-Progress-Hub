@@ -133,3 +133,28 @@ test('generated personal weekly report is a readable DOCX with scoped task IDs',
   assert.match(extracted.value, /S1\.2/);
   assert.doesNotMatch(extracted.value, /其他人工作/);
 });
+
+test('Word places edited feedback inside the matching task and retains completed and standalone WP follow-ups',async()=>{
+  const window=await browserWeeklyModules({includeDocx:true});
+  const items=[
+    {target_type:'SUBTASK',target_id:'S1.1',missing_items:['S1.1 補齊狀態轉移測試'],actions:['S1.1 下週驗證復歸']},
+    {target_type:'WP',target_id:'WP-C1',missing_items:['WP-C1 補測試影片'],actions:[]},
+    {target_type:'SUBTASK',target_id:'done',missing_items:['已完成工作仍需佐證'],actions:[]},
+    {target_type:'WP',target_id:'WP-closed',missing_items:[],actions:['独立 WP 補結案文件']},
+    {target_type:'GENERAL',target_id:'',missing_items:['整體摘要補日期'],actions:[]}
+  ];
+  const data=fixture();
+  const model=window.SmartPortWeeklyReport.build({...data,memberId:'member-1',reportDate:'2026-09-09',
+    previousReview:{week_key:'2026-W36',members:[{member_id:'member-1',revision:2,review_status:'APPROVED',pm_feedback:'PM 回饋原文',task_feedback:items}]}});
+  assert.equal(model.tasks.find(task=>task.id==='done').scope,'FOLLOWUP');
+  assert.equal(model.tasks.find(task=>task.id==='S1.1').reviewFeedback[0].missing_items[0],items[0].missing_items[0]);
+  assert.equal(model.tasks.flatMap(task=>task.reviewFeedback).filter(item=>item.target_id==='WP-C1').length,1);
+  assert.equal(model.followupFeedback[0].target_id,'WP-closed');
+  const blob=await window.SmartPortWeeklyDocx.create(model);
+  const text=(await mammoth.extractRawText({buffer:Buffer.from(await blob.arrayBuffer())})).value;
+  for(const item of items)for(const line of [...item.missing_items,...item.actions])assert.ok(text.includes(line),line);
+  assert.ok(text.includes('PM 回饋原文'));
+  const taskStart=text.indexOf('S1.1　任務流程整合'),feedbackAt=text.indexOf('S1.1 補齊狀態轉移測試');
+  assert.ok(taskStart<feedbackAt&&feedbackAt<text.indexOf('本週實際工作與成果',taskStart),'feedback is inside the matching fill-in task');
+  assert.equal(text.split('WP-C1 補測試影片').length,2,'WP advice is not repeated for every child');
+});
