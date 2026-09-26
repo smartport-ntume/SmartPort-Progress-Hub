@@ -10,6 +10,8 @@ async function browserWeeklyModules({ includeDocx = false } = {}) {
     window, Date, JSON, Map, Set, Intl, Blob, Uint8Array, ArrayBuffer,
     TextEncoder, TextDecoder, setTimeout, clearTimeout, crypto
   });
+  const feedbackCode = await readFile(new URL('../js/weekly-feedback-routing.js', import.meta.url), 'utf8');
+  vm.runInContext(feedbackCode, context);
   const modelCode = await readFile(new URL('../js/weekly-report-model.js', import.meta.url), 'utf8');
   vm.runInContext(modelCode, context);
   if (includeDocx) {
@@ -157,4 +159,19 @@ test('Word places edited feedback inside the matching task and retains completed
   const taskStart=text.indexOf('S1.1　任務流程整合'),feedbackAt=text.indexOf('S1.1 補齊狀態轉移測試');
   assert.ok(taskStart<feedbackAt&&feedbackAt<text.indexOf('本週實際工作與成果',taskStart),'feedback is inside the matching fill-in task');
   assert.equal(text.split('WP-C1 補測試影片').length,2,'WP advice is not repeated for every child');
+});
+
+test('Word routes legacy mixed feedback into task fill-in sections without PM target selection',async()=>{
+  const window=await browserWeeklyModules({includeDocx:true});
+  const model=window.SmartPortWeeklyReport.build({...fixture(),memberId:'member-1',reportDate:'2026-09-09',
+    previousReview:{week_key:'2026-W36',members:[{member_id:'member-1',review_status:'APPROVED',pm_feedback:'PM 整體回饋',
+      task_feedback:[{target_type:'GENERAL',target_id:'',missing_items:['S1.1：請補介面測試','S1.2：請補異常復歸紀錄'],actions:['統一填報日期']}]}]}});
+  assert.equal(model.tasks.find(task=>task.id==='S1.1').reviewFeedback[0].target_id,'S1.1');
+  assert.equal(model.tasks.find(task=>task.id==='S1.2').reviewFeedback[0].target_id,'S1.2');
+  assert.equal(model.previousReview.generalFeedback.length,1);
+  const blob=await window.SmartPortWeeklyDocx.create(model);
+  const text=(await mammoth.extractRawText({buffer:Buffer.from(await blob.arrayBuffer())})).value;
+  assert.ok(text.indexOf('S1.1　任務流程整合')<text.indexOf('S1.1：請補介面測試'));
+  assert.ok(text.indexOf('S1.2　異常復歸')<text.indexOf('S1.2：請補異常復歸紀錄'));
+  assert.equal(text.split('S1.1：請補介面測試').length,2);
 });

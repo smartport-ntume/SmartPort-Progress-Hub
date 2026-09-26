@@ -1,6 +1,6 @@
 import { corsHeaders, safeReturnUrl } from './cors.js';
 import { weeklyAssessmentIssue } from './weekly-assessment.js';
-import { reviewTaskFeedback, TASK_FEEDBACK_SCHEMA } from './weekly-feedback.js';
+import { reviewTaskFeedback, assignTaskFeedback, TASK_FEEDBACK_SCHEMA } from './weekly-feedback.js';
 import { applyWeeklyProposal, normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES, WEEKLY_PROPOSAL_STATUSES } from './weekly-proposal.js';
 import {
   normalizeTeamConfig,
@@ -499,12 +499,12 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   analysis.warnings=Array.isArray(analysis.warnings)?analysis.warnings:[];
   analysis.warnings.unshift(...scopeWarnings);
   analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals.map(normalizeWeeklyProposal):[];
-  analysis.review.task_feedback=reviewTaskFeedback(analysis.review).map(item=>{
+  analysis.review.task_feedback=assignTaskFeedback(reviewTaskFeedback(analysis.review).map(item=>{
     const valid=item.target_type==='GENERAL'||(item.target_type==='WP'?scopedWps:scopedSubs).some(record=>record.id===item.target_id);
     if(valid)return item;
-    analysis.warnings.push(`回饋的工作 ID ${item.target_id} 不在本期範圍，請 PM 指定對應工作。`);
+    analysis.warnings.push(`回饋的工作 ID ${item.target_id} 不在成員負責範圍，已依內容重新對應或保留為共通事項。`);
     return {...item,target_type:'GENERAL',target_id:''};
-  });
+  }), context);
 
   const index=new Map();
   for(const w of wps)index.set(`WP:${w.id}`,{...w,_team:w.owner||''});

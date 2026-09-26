@@ -1,3 +1,7 @@
+import '../../js/weekly-feedback-routing.js';
+
+export const assignTaskFeedback = (...args) => globalThis.SmartPortWeeklyFeedback.assign(...args);
+
 // Keep the original AI review intact; PM edits are stored separately on the submission.
 export function normalizeTaskFeedback(value) {
   if (!Array.isArray(value) || value.length > 200) throw new Error('invalid_weekly_task_feedback');

@@ -54,12 +54,11 @@
     }
     function feedbackEditor(item={target_type:'GENERAL',target_id:'',missing_items:[],actions:[]},editable=true){
       const targets=model().feedbackTargets(detail.feedback_context||snapshot,detail.submission.member_id);
-      const key=item.target_type+':'+item.target_id;
-      const choices=[{type:'GENERAL',id:'',name:'整份週報／未指定工作'},...targets];
-      if(!choices.some(t=>t.type+':'+t.id===key))choices.push({type:item.target_type,id:item.target_id,name:item.target_id+'（歷史工作）'});
-      return `<article class="weekly-center-feedback-editor"><label>對應工作<select data-feedback-target ${!editable?'disabled':''}>${choices.map(t=>`<option value="${esc(t.type+':'+t.id)}" ${t.type+':'+t.id===key?'selected':''}>${esc(t.type==='GENERAL'?t.name:t.id+' · '+t.name)}</option>`).join('')}</select></label>
-        <label>需要補充<textarea data-feedback-missing rows="3" ${!editable?'readonly':''}>${esc((item.missing_items||[]).join('\n'))}</textarea></label>
-        <label>建議下一步<textarea data-feedback-actions rows="3" ${!editable?'readonly':''}>${esc((item.actions||[]).join('\n'))}</textarea></label>
+      const target=targets.find(t=>t.type===item.target_type&&t.id===item.target_id);
+      const title=item.target_type==='GENERAL'?'整份週報共通事項':[target?.parentWp,item.target_id,target?.name!==item.target_id?target?.name:''].filter(Boolean).join(' · ');
+      return `<article class="weekly-center-feedback-editor" data-feedback-type="${esc(item.target_type)}" data-feedback-id="${esc(item.target_id)}"><div class="weekly-center-feedback-target"><span>自動對應工作</span><strong>${esc(title)}</strong></div>
+        <label>需要補充<textarea data-feedback-missing rows="8" ${!editable?'readonly':''}>${esc((item.missing_items||[]).join('\n'))}</textarea></label>
+        <label>建議下一步<textarea data-feedback-actions rows="8" ${!editable?'readonly':''}>${esc((item.actions||[]).join('\n'))}</textarea></label>
         ${editable?'<button class="btn" data-action="remove-feedback">移除此項回饋</button>':''}</article>`;
     }
     function progressEditor(p,editable,row){
@@ -68,15 +67,15 @@
       return `<label class="weekly-center-progress">PM 核定進度（%）<input type="number" min="0" max="100" step="any" data-progress="${p.issue_number}" aria-label="${esc(p.target_id)} PM 核定進度" value="${value==null?'':esc(value)}" ${!editable?'readonly':''} placeholder="留白保留目前進度"></label>`;
     }
     function readTaskFeedback(){
-      return [...el('detail').querySelectorAll('.weekly-center-feedback-editor')].map(editor=>{
-        const value=editor.querySelector('[data-feedback-target]').value,split=value.indexOf(':');
+      const items=[...el('detail').querySelectorAll('.weekly-center-feedback-editor')].map(editor=>{
         const lines=selector=>{
           const values=editor.querySelector(selector).value.split('\n').map(s=>s.trim()).filter(Boolean);
           if(values.length>50||values.some(s=>s.length>2000))throw new Error('每欄最多 50 項，每項最多 2000 字。');
           return values;
         };
-        return {target_type:value.slice(0,split),target_id:value.slice(split+1),missing_items:lines('[data-feedback-missing]'),actions:lines('[data-feedback-actions]')};
+        return {target_type:editor.dataset.feedbackType,target_id:editor.dataset.feedbackId,missing_items:lines('[data-feedback-missing]'),actions:lines('[data-feedback-actions]')};
       });
+      return window.SmartPortWeeklyFeedback.assign(items,detail.feedback_context||snapshot,detail.submission.member_id);
     }
     function renderDetail(){
       if(!detail)return;
@@ -102,11 +101,11 @@
         ${assessmentIssue?`<p class="weekly-center-message error">${esc(assessmentIssue)}</p>`:''}
         ${feedbackReady&&(review.overall_assessment||analysis.report_summary)?`<p class="weekly-center-feedback">${esc(review.overall_assessment||analysis.report_summary)}</p>`:''}
         ${Object.keys(review).length?`<div class="weekly-center-scores">${[['completeness_score','完整度'],['evidence_score','證據品質'],['schedule_alignment_score','時程一致性']].map(([k,label])=>`<div><b>${esc(review[k]??'—')}</b>${label}</div>`).join('')}</div>`:''}
-        ${feedbackReady?`<h3>工作回饋（可編輯，將帶入下期 Word）</h3><p class="muted">選擇對應 WP／Subtask；每行一項。無法對應的內容可保留為整份週報回饋。</p><div data-field="task-feedback">${model().taskFeedback(row).map(item=>feedbackEditor(item,feedbackEditable)).join('')}</div>${feedbackEditable?'<button class="btn" data-action="add-feedback">新增工作回饋</button>':''}`:''}${feedbackReady?list('批改注意事項',analysis.warnings):''}
+        ${feedbackReady?`<h3>工作回饋（可編輯，將帶入下期 Word）</h3><p class="muted">已依工作內容自動歸入 WP／子任務，不需手動指定。直接編輯回饋即可；共通事項放在 Word 前段。</p><div data-field="task-feedback">${model().taskFeedback(row,detail.feedback_context||snapshot).map(item=>feedbackEditor(item,feedbackEditable)).join('')}</div>${feedbackEditable?'<button class="btn" data-action="add-feedback">新增工作回饋</button>':''}`:''}${feedbackReady?list('批改注意事項',analysis.warnings):''}
         <h3>進度更新（${proposals.length} 項）</h3>
         ${(editable||resuming&&!assessmentIssue)&&proposals.length?'<button class="btn" data-action="select-all">全選可核准項目</button>':''}
         ${proposals.map(p=>{const before=expected[p.issue_number],terminal=decided.get(Number(p.issue_number));return `<article class="weekly-center-change"><label><input type="checkbox" data-proposal="${p.issue_number}" ${resuming&&(terminal==='APPROVED'||(priorSelected.has(Number(p.issue_number))&&before&&terminal!=='REJECTED'))?'checked':''} ${assessmentIssue||(!editable&&!resuming)||!before||(resuming&&terminal)?'disabled':''}><span><b>${esc(p.target_id)} · ${esc(p.target_type)}</b><br>${p.progress==null?'工作紀錄更新（百分比不變）<br>':''}進度 ${esc(before?model().progressLabel(before.progress,'未填'):'找不到工作')} → ${esc(model().progressLabel(p.progress))}<br><small>${esc(before?.status||'—')} → ${esc(p.status??'保留目前狀態')}${terminal?` · ${terminal==='APPROVED'?'已核准':'未採用'}`:''}</small></span></label><p>${esc(p.summary||'')}</p>${p.reported_progress!=null?`<p>成員自報完成度：${esc(p.reported_progress)}%（待 PM 確認）</p>`:''}${progressEditor(p,editable,row)}${p.verification_note?`<p class="weekly-center-feedback"><b>待確認事項：</b>${esc(p.verification_note)}</p>`:''}<details><summary>查看證據與批改依據</summary><p>${esc(p.evidence||'未提供證據')}</p><p>${esc(p.ai_rationale||'')}</p></details></article>`;}).join('')||`<p class="muted">${assessmentIssue?'批改未完成，尚未產生可勾選的進度更新。請重新批改原始週報。':feedbackReady?'批改已完成，但沒有可採用的進度更新。請查看上方缺漏與批改注意事項；可核准週報或退回補件，正式進度不會變更。':'批改完成後，有證據支持的進度更新才會顯示在這裡。'}</p>`}
-        <label>PM 回饋（將帶入下期週報）<textarea class="weekly-center-notes" data-field="feedback" maxlength="4000" ${!feedbackEditable?'readonly':''} placeholder="填寫下期需追蹤的事項；退回時請說明需要補充的內容">${esc(['REVIEWING','REVIEW_FAILED'].includes(row.review_status)?row.review_result?.request?.feedback??row.pm_feedback??'':row.pm_feedback??row.review_result?.request?.feedback??'')}</textarea></label>
+        <label>PM 回饋（將帶入下期週報）<textarea class="weekly-center-notes" data-field="feedback" rows="8" maxlength="4000" ${!feedbackEditable?'readonly':''} placeholder="填寫下期需追蹤的事項；退回時請說明需要補充的內容">${esc(['REVIEWING','REVIEW_FAILED'].includes(row.review_status)?row.review_result?.request?.feedback??row.pm_feedback??'':row.pm_feedback??row.review_result?.request?.feedback??'')}</textarea></label>
         <div class="weekly-center-actions">${feedbackEditable?'<button class="btn" data-action="save-feedback">儲存回饋</button>':''}${editable?`<button class="btn primary" data-action="approve">${proposals.length?'核准勾選項目並結案':'核准週報（不更新進度）'}</button><button class="btn danger" data-action="return">退回補件</button>`:''}${resuming&&(!assessmentIssue||recovering)?`<button class="btn primary" data-action="resume_review">${recovering?'解除失敗審核':'重試剩餘審核'}</button>`:''}
         ${row.is_current!==false&&!['APPROVED','REVIEWING','REVIEW_FAILED'].includes(row.review_status)&&!['queued','running'].includes(row.status)&&me.can_trigger_codex?'<button class="btn" data-action="retry">重新批改原始週報</button>':''}</div>
         ${editable?'<p class="muted">核准前可修改每項核定進度（0～100%），留白表示保留目前進度。原始自報值會保留；未勾選項目記為未採用。</p>':''}
@@ -199,10 +198,15 @@
         }
         if(name==='save-feedback'){
           if(!API.saveWeeklyFeedback)throw new Error('請更新網站並執行新版 SQL。');
+          const savedDraft=JSON.stringify(payload.task_feedback);
           busy=true;controls();
           try{
             const saved=await API.saveWeeklyFeedback(id,payload);
-            if(detail?.submission.id===id)Object.assign(detail.submission,saved);
+            if(detail?.submission.id===id){
+              const unchanged=JSON.stringify(readTaskFeedback())===savedDraft;
+              Object.assign(detail.submission,saved);
+              if(unchanged)el('task-feedback').innerHTML=model().taskFeedback(detail.submission,detail.feedback_context||snapshot).map(item=>feedbackEditor(item)).join('');
+            }
             message('回饋已儲存；尚未發出的下期 Word 將帶入更新後的內容。');
           }finally{busy=false;controls();}
           return;

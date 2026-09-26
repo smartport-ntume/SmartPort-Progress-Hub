@@ -5,7 +5,7 @@ import { weeklyRecordVersion } from '../worker/src/weekly-proposal.js';
 import { JSDOM } from 'jsdom';
 import { zeroAnalysis, screenshotFailures } from './fixtures/weekly-input-failures.mjs';
 
-const sources=await Promise.all(['weekly-review-model.js','weekly-center.js'].map(name=>readFile(new URL('../js/'+name,import.meta.url),'utf8')));
+const sources=await Promise.all(['weekly-feedback-routing.js','weekly-review-model.js','weekly-center.js'].map(name=>readFile(new URL('../js/'+name,import.meta.url),'utf8')));
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const proposals=[1,2].map(n=>({issue_number:n,target_type:'SUBTASK',target_id:'C'+n,progress:n*20,status:'On Track',summary:'完成測試',evidence:'測試紀錄'}));
 
@@ -195,19 +195,33 @@ test('saving edited advice persists without closing review and a second save use
   const f=await fixture(t);await f.click('[data-member="m1"]');
   await f.click('[data-action="add-feedback"]');
   const editors=f.doc.querySelectorAll('.weekly-center-feedback-editor');const editor=editors[editors.length-1];
-  editor.querySelector('[data-feedback-target]').value='SUBTASK:C1';
-  editor.querySelector('[data-feedback-missing]').value='待補測試影片';
-  editor.querySelector('[data-feedback-actions]').value='下週驗證';
+  assert.equal(editor.querySelector('select'),null);
+  editor.querySelector('[data-feedback-missing]').value='C1：待補測試影片';
+  editor.querySelector('[data-feedback-actions]').value='C1：下週驗證';
   f.doc.querySelector('[data-field="feedback"]').value='PM 意見';
   await f.click('[data-action="save-feedback"]');
   assert.equal(f.db.rows[0].review_status,'PENDING');assert.equal(f.db.calls.length,0);
-  assert.equal(f.db.rows[0].feedback_version,1);assert.equal(f.db.rows[0].pm_task_feedback.at(-1).actions[0],'下週驗證');
+  assert.equal(f.db.rows[0].feedback_version,1);assert.equal(f.db.rows[0].pm_task_feedback.at(-1).actions[0],'C1：下週驗證');
   f.doc.querySelector('[data-field="feedback"]').value='PM 修正版';
   await f.click('[data-action="save-feedback"]');assert.equal(f.db.rows[0].feedback_version,2);
   await f.click('[data-member="m2"]');await f.click('[data-member="m1"]');
   assert.equal(f.doc.querySelector('[data-field="feedback"]').value,'PM 修正版');
-  assert.equal([...f.doc.querySelectorAll('[data-feedback-actions]')].at(-1).value,'下週驗證');
+  assert.equal([...f.doc.querySelectorAll('[data-feedback-actions]')].at(-1).value,'C1：下週驗證');
   f.doc.querySelector('[data-field="feedback"]').value='';
   await f.click('[data-action="save-feedback"]');await f.click('[data-action="refresh"]');
   assert.equal(f.doc.querySelector('[data-field="feedback"]').value,'');
+});
+
+test('old mixed advice opens as automatically matched cards and PM saves without choosing targets',async t=>{
+  const db=database();
+  db.snapshot={team_config:{category_owners:{STM:'m1'}},work_packages:[{id:'WP-S1',owner:'STM',name:'任務整合'}],
+    subtasks:['S1.1','S1.2','S1.4'].map(id=>({id,name:id,owner_team:'STM',parent_wp:'WP-S1'}))};
+  db.rows[0].analysis_result.analysis.review.task_feedback=[{target_type:'GENERAL',target_id:'',missing_items:['S1.1：缺測試紀錄','S1.2：缺回歸測試','S1.4：缺停止距離'],actions:['統一填報日期']}];
+  const f=await fixture(t,db);await f.click('[data-member="m1"]');
+  assert.equal(f.doc.querySelector('[data-feedback-target]'),null);
+  assert.match(f.doc.querySelector('[data-feedback-id="S1.1"]').textContent,/WP-S1.*S1.1/);
+  f.doc.querySelector('[data-feedback-id="S1.1"] [data-feedback-missing]').value='S1.1：PM 修正後的測試要求';
+  await f.click('[data-action="save-feedback"]');
+  assert.equal(db.rows[0].pm_task_feedback.find(item=>item.target_id==='S1.1').missing_items[0],'S1.1：PM 修正後的測試要求');
+  assert.equal(db.rows[0].pm_task_feedback.find(item=>item.target_type==='GENERAL').actions[0],'統一填報日期');
 });
