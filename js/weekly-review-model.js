@@ -80,21 +80,15 @@
   }
   function progressLabel(value, empty = '保留目前進度') { return value == null ? empty : `${value}%`; }
   function feedbackTargets(context, memberId) {
-    const owners=context.team_config?.category_owners;
-    const tasks=(context.subtasks||[]).filter(task=>!owners||owners[task.owner_team]===memberId);
-    const parents=new Set(tasks.map(task=>task.parent_wp));
-    return [
-      ...(context.work_packages||[]).filter(wp=>!owners||owners[wp.owner]===memberId||parents.has(wp.id)).map(wp=>({type:'WP',id:wp.id,name:wp.name||wp.id})),
-      ...tasks.map(task=>({type:'SUBTASK',id:task.id,name:task.name||task.id}))
-    ];
+    return window.SmartPortWeeklyFeedback.targets(context, memberId);
   }
-  function taskFeedback(row) {
+  function taskFeedback(row, context = {}, memberId = row.member_id) {
     const review=row.analysis_result?.analysis?.review||row.review||{};
     const frozen=['REVIEWING','REVIEW_FAILED'].includes(row.review_status)?row.review_result?.request?.task_feedback:null;
     const saved=frozen??row.pm_task_feedback??row.task_feedback??review.task_feedback;
-    if(Array.isArray(saved))return saved;
     const missing=Array.isArray(review.missing_items)?review.missing_items:[],actions=Array.isArray(review.actions)?review.actions:[];
-    return missing.length||actions.length?[{target_type:'GENERAL',target_id:'',missing_items:missing,actions}]:[];
+    const items=Array.isArray(saved)?saved:missing.length||actions.length?[{target_type:'GENERAL',target_id:'',missing_items:missing,actions}]:[];
+    return window.SmartPortWeeklyFeedback.assign(items, context, memberId);
   }
   window.SmartPortWeeklyReview = { status, latest, expected, taipeiInput, progressLabel, feedbackTargets, taskFeedback, assessmentIssue: weeklyAssessmentIssue };
 })();

@@ -122,7 +122,7 @@
     const previous = options.previousReview;
     const feedback = previous?.members?.find(row => row.member_id === memberId);
     const taskFeedback = feedback && ['APPROVED','CHANGES_REQUESTED'].includes(feedback.review_status)
-      ? (feedback.task_feedback || []).filter(item => item.missing_items?.length || item.actions?.length) : [];
+      ? window.SmartPortWeeklyFeedback.assign(feedback.task_feedback || [], options, memberId) : [];
     const feedbackTaskIds = new Set(taskFeedback.filter(item=>item.target_type==='SUBTASK').map(item=>item.target_id));
 
     const tasks = (options.subtasks || []).filter(item => {

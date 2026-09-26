@@ -4,6 +4,7 @@ export const WEEKLY_PROPOSAL_STATUSES = ['In Progress', 'On Track', 'At Risk', '
 export const WEEKLY_PROPOSAL_RULES = [
   'A proposed update is a candidate for PM review, not a certification that acceptance tests passed.',
   'Group missing_items and actions into review.task_feedback using the exact SUBTASK or WP ID from project context. Use GENERAL with target_id empty only for feedback that cannot be assigned to one task. Do not duplicate task-specific feedback as GENERAL.',
+  'Assign feedback to work automatically; never ask PM to pick a WP or Subtask. Split feedback that starts with different task IDs into the corresponding tasks. Use the parent WP for advice shared by multiple children of that WP. Reserve GENERAL for report-wide matters such as report dates or formatting, not a bucket for all task feedback.',
   'For each scoped task with concrete reported work, an explicit task-completion percentage, a current blocker, or a changed status, create one proposal citing the report text in evidence.',
   'Do not suppress all proposals because current actual_progress is null, evidence links are missing, or acceptance is still pending.',
   'An explicit self-reported TASK COMPLETION percentage may be proposed in progress and recorded in reported_progress; identify it as self-reported and describe missing verification in verification_note. PM approval is still required.',
