@@ -58,7 +58,7 @@ https://YOUR-PROJECT-REF.supabase.co/auth/v1/callback
    - Site URL：GitHub Pages URL
    - Redirect URLs：加入同一個 GitHub Pages URL（含需要的 preview URL 時也明確加入）
 
-任何 GitHub user 第一次登入時都只會取得 `DENIED`，不會自動看到專案。
+新 GitHub user 初始為 `DENIED`；部署 [組織登入函式](GITHUB_ORG_LOGIN.md) 後，有效 smartport-ntume 成員自動取得 ENGINEER，PM 仍手動指定。
 
 ## 3. 建立 Guest 與角色
 

@@ -4,6 +4,7 @@
     const library = window.supabase;
     let currentRole = 'UNAUTHENTICATED';
     let profileCache = null;
+    let membershipCheck = null;
 
     const configured = () => !!(
       library?.createClient &&
@@ -74,12 +75,32 @@
       if (authError) throw errorFrom(authError);
       const user = authData?.session?.user;
       if (!user) return null;
-      const { data, error } = await db
+      let { data, error } = await db
         .from('profiles')
         .select('user_id,login,display_name,avatar_url,role,can_trigger_codex,active')
         .eq('user_id', user.id)
         .maybeSingle();
       if (error) throw errorFrom(error);
+      if (data?.role === 'DENIED' && data.active !== false && user.identities?.some(identity => identity.provider === 'github')) {
+        if (!membershipCheck) membershipCheck = (async () => {
+          const response = await fetch(`${settings.url}/functions/v1/github-org-access`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: settings.anonKey, Authorization: `Bearer ${authData.session.access_token}` },
+            body: JSON.stringify({ provider_token: authData.session.provider_token || '' }),
+            signal: AbortSignal.timeout(20000)
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || '組織登入驗證尚未就緒，請聯絡 PM 確認 github-org-access 已部署。');
+        })().finally(() => { membershipCheck = null; });
+        try {
+          await membershipCheck;
+          const refreshed = await db.from('profiles').select('user_id,login,display_name,avatar_url,role,can_trigger_codex,active').eq('user_id', user.id).maybeSingle();
+          if (refreshed.error) throw errorFrom(refreshed.error);
+          data = refreshed.data;
+        } catch (error) {
+          return { profile: data, user, access_error: error.message || '組織驗證失敗，請重試。' };
+        }
+      }
       profileCache = { profile: data, user };
       return profileCache;
     }
@@ -91,6 +112,7 @@
         return unauthenticated();
       }
       const access = accessFrom(found.profile, found.user);
+      access.access_error = found.access_error;
       currentRole = access.role;
       return access;
     }
@@ -333,7 +355,7 @@
         const redirectTo = window.location.href.split('#')[0].split('?code=')[0];
         const { error } = await db.auth.signInWithOAuth({
           provider: 'github',
-          options: { redirectTo }
+          options: { redirectTo, scopes: 'read:org' }
         });
         if (error) throw errorFrom(error);
       },
