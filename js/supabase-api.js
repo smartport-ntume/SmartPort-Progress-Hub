@@ -81,7 +81,7 @@
         .eq('user_id', user.id)
         .maybeSingle();
       if (error) throw errorFrom(error);
-      if (data?.role === 'DENIED' && data.active !== false && user.identities?.some(identity => identity.provider === 'github')) {
+      if ((data?.role === 'DENIED' || (data?.role === 'ENGINEER' && authData.session.provider_token)) && data.active !== false && user.identities?.some(identity => identity.provider === 'github')) {
         if (!membershipCheck) membershipCheck = (async () => {
           const response = await fetch(`${settings.url}/functions/v1/github-org-access`, {
             method: 'POST',

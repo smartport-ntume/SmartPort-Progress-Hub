@@ -36,7 +36,7 @@
         </form>
         <div id="spGateDivider" class="sp-gate-divider"><span>或</span></div>
         <button id="spGithubLogin" type="button" class="sp-gate-github">GitHub Login</button>
-        <div class="sp-gate-hint">${isSupabase?'GitHub 登入後自動確認 smartport-ntume 組織成員身分，通過後取得 Engineer 權限；PM 另行指定。':'GitHub 登入後會驗證 <b>smartport-ntume</b> Organization membership，再依 Engineer / PM 權限進入。'}</div>
+        <div class="sp-gate-hint">${isSupabase?'GitHub 登入後自動確認 smartport-ntume 組織成員身分，SmartPort-PM team 成員取得 PM，其餘組織成員取得 Engineer。':'GitHub 登入後會驗證 <b>smartport-ntume</b> Organization membership，再依 Engineer / PM 權限進入。'}</div>
       </div>`;
     document.body.appendChild(gate);
 

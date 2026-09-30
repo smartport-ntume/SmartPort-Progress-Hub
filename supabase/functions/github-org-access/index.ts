@@ -10,15 +10,15 @@ Deno.serve(async request => {
     const jwt = request.headers.get('Authorization')?.replace(/^Bearer\s+/i, '') || '';
     const { data: { user }, error } = await db.auth.getUser(jwt);
     if (error || !user) return reply({ error: '登入已失效，請重新登入。' }, 401);
-    const { data: profile, error: profileError } = await db.from('profiles').select('role,active').eq('user_id', user.id).single();
+    const { data: profile, error: profileError } = await db.from('profiles').select('role,active,can_trigger_codex,updated_at').eq('user_id', user.id).single();
     if (profileError) return reply({ error: '找不到使用者權限資料，請聯絡管理員。' }, 503);
     if (!profile.active) return reply({ error: '此帳號已停用，請聯絡 PM。' }, 403);
-    // Existing explicit grants, including PM and Guest, are not overwritten.
-    if (profile.role !== 'DENIED') return reply({ ok: true, role: profile.role });
+    // Retain explicit PM and Guest grants; Engineers can now join the PM team.
+    if (profile.role === 'PM' || profile.role === 'GUEST') return reply({ ok: true, role: profile.role });
     const body = await request.json();
     if (typeof body.provider_token !== 'string' || body.provider_token.length > 4096) return reply({ error: '請重新登入 GitHub。' }, 400);
-    const login = await verifyMembership(user, body.provider_token);
-    const { data: updated, error: updateError } = await db.from('profiles').update({ role: 'ENGINEER', can_trigger_codex: false, login }).eq('user_id', user.id).eq('role', 'DENIED').eq('active', true).select('role').maybeSingle();
+    const { login, role } = await verifyMembership(user, body.provider_token);
+    const { data: updated, error: updateError } = await db.from('profiles').update({ role, can_trigger_codex: profile.can_trigger_codex, login }).eq('user_id', user.id).eq('role', profile.role).eq('updated_at', profile.updated_at).eq('active', true).select('role').maybeSingle();
     if (updateError || !updated) return reply({ error: '權限已變更，請重新整理後重試。' }, 409);
     return reply({ ok: true, role: updated.role });
   } catch (error) {
