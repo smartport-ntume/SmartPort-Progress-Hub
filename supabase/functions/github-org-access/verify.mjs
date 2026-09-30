@@ -13,5 +13,16 @@ export async function verifyMembership(user, token, fetchFn = fetch) {
   if (!response.ok) throw new Error('GitHub 暫時無法驗證組織，請稍後重試。');
   const membership = await response.json();
   if (membership.state !== 'active' || membership.organization?.login?.toLowerCase() !== 'smartport-ntume') throw new Error('請先接受 smartport-ntume 的組織邀請，再重新登入。');
-  return account.login;
+  // Enumerate the authenticated user's teams, including private membership.
+  for (let page = 1; page <= 100; page++) {
+    const teamsResponse = await request(`/user/teams?per_page=100&page=${page}`);
+    if (!teamsResponse.ok) throw new Error('無法讀取 PM team，請確認 OAuth App 已獲組織授權後重新登入。');
+    const teams = await teamsResponse.json();
+    if (!Array.isArray(teams)) throw new Error('GitHub team 回應無效，請稍後重試。');
+    if (teams.some(team => team.organization?.login?.toLowerCase() === 'smartport-ntume' && team.slug?.toLowerCase() === 'smartport-pm')) {
+      return { login: account.login, role: 'PM' };
+    }
+    if (teams.length < 100) return { login: account.login, role: 'ENGINEER' };
+  }
+  throw new Error('GitHub team 清單過長，無法完成驗證。');
 }
