@@ -36,7 +36,7 @@
         </form>
         <div id="spGateDivider" class="sp-gate-divider"><span>或</span></div>
         <button id="spGithubLogin" type="button" class="sp-gate-github">GitHub Login</button>
-        <div class="sp-gate-hint">${isSupabase?'GitHub 登入後會依 Supabase 中明確設定的 Engineer / PM 權限進入；未核准帳號預設拒絕。':'GitHub 登入後會驗證 <b>smartport-ntume</b> Organization membership，再依 Engineer / PM 權限進入。'}</div>
+        <div class="sp-gate-hint">${isSupabase?'GitHub 登入後自動確認 smartport-ntume 組織成員身分，通過後取得 Engineer 權限；PM 另行指定。':'GitHub 登入後會驗證 <b>smartport-ntume</b> Organization membership，再依 Engineer / PM 權限進入。'}</div>
       </div>`;
     document.body.appendChild(gate);
 
@@ -73,7 +73,7 @@
     const msg=document.getElementById('spGateMessage');
     if(me?.role==='DENIED'){
       showMessage(isSupabase
-        ? '此 GitHub 帳號尚未被管理員指派 SmartPort 角色。你可以先登出改用訪客密碼，或請 PM 將帳號設為 Engineer / PM。'
+        ? esc(me.access_error || '尚未確認組織成員資格，請重新按 GitHub Login 並授權組織存取。')
         : `目前登入的 GitHub 帳號不是 <b>${esc(me.organization||'smartport-ntume')}</b> 的有效成員。你可以改用訪客密碼，或使用正確的 Organization GitHub 帳號登入。`);
     }else{
       msg.hidden=true;
@@ -197,7 +197,13 @@
       }
     };
 
-    document.getElementById('spGithubLogin').onclick=()=>API.login();
+    document.getElementById('spGithubLogin').onclick=async()=>{
+      const button=document.getElementById('spGithubLogin');
+      button.disabled=true; button.textContent='正在前往 GitHub…';
+      try { await API.login(); }
+      catch(error) { showMessage(esc(error.message||'無法啟動 GitHub 登入，請重試。')); }
+      finally { button.disabled=false; button.textContent='GitHub Login'; }
+    };
     setTimeout(()=>input?.focus(),80);
   }
 

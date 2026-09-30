@@ -11,7 +11,7 @@ SmartPort 專案的規劃、進度、Checkpoint、安全追溯與週報審核介
 | 身分 | 登入方式 | 權限 |
 |---|---|---|
 | Guest | 專案管理者提供的訪客密碼 | 唯讀查看 Dashboard、Project、Requirements |
-| Engineer | GitHub Login，且帳號已由管理者核准 | 查看完整資料、提交 Manual Proposal |
+| Engineer | GitHub Login，組織成員驗證通過後自動開通 | 查看完整資料、提交 Manual Proposal |
 | PM | GitHub Login，且帳號已由管理者核准 | 編輯、審核與核准 Proposal |
 | Codex operator | PM 且另有 `can_trigger_codex` 權限 | 上傳週報並排入本機 Codex 分析 |
 
@@ -212,3 +212,5 @@ npm run doctor
 
 - Frontend / Local Agent：`smartport-ntume/SmartPort-Progress-Hub`
 - Source of Truth：`smartport-ntume/SmartPort-Project-Control`（Private）
+
+GitHub 組織自動登入部署：[GITHUB_ORG_LOGIN.md](docs/GITHUB_ORG_LOGIN.md)。
