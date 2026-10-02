@@ -4,7 +4,6 @@ SmartPort 專案的規劃、進度、Checkpoint、安全追溯與週報審核介
 
 正式網站：<https://smartport-ntume.github.io/SmartPort-Progress-Hub/>
 
-新版多組別 Demo（含父 WP 子項目加權進度）：<https://project-progress-hub-demo.zf20000302.chatgpt.site>
 
 目前 `main` 為 v0.8 **Supabase Gateway + Windows Local Agent** 架構。一般使用者只需開啟網站，不必安裝程式、Tailscale，也不會直接連入 Agent 電腦。
 
