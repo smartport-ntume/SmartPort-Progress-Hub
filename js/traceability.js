@@ -2,7 +2,7 @@
   const S=window.SmartPortStore.state;
   const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const arr=v=>Array.isArray(v)?v:[];
-  const progressOf=t=>t?.actual_progress ?? t?.actualProgress ?? t?.progress ?? null;
+  const progressOf=t=>window.SmartPortProgress?.forItem(t,S.workPackages,S.subtasks)?.value ?? null;
   const maturityRank=v=>{const m=String(v||'').match(/^M([0-5])/);return m?Number(m[1]):-1;};
   const cpById=id=>S.checkpoints.find(x=>x.id===id);
   const fsrById=id=>S.fsrs.find(x=>x.id===id);

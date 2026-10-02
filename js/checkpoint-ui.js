@@ -71,7 +71,7 @@
     const S=window.SmartPortStore?.state;
     const vals=cp.criteria.map(([id,req])=>{
       const t=S?.workPackages?.find(x=>x.id===id);
-      const act=t?(t.actual_progress??t.actualProgress??t.progress??0):0;
+      const act=t?(window.SmartPortProgress?.forItem(t,S.workPackages,S.subtasks)?.value ?? 0):0;
       return{id,req,act,ok:act>=req};
     });
     return{score:Math.round(vals.reduce((a,x)=>a+Math.min(1,x.req?x.act/x.req:1),0)/vals.length*100),vals};

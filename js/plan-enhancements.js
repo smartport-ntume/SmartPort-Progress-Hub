@@ -22,7 +22,7 @@
     const m=String(id).match(/^WP-([CLPSV])/i);
     return m?m[1].toUpperCase():'';
   }
-  function progressOf(t){return t?.actual_progress ?? t?.actualProgress ?? t?.progress ?? null;}
+  function progressOf(t){return window.SmartPortProgress?.forItem(t,S.workPackages,S.subtasks)?.value ?? null;}
   function statusOf(t){return t?.status || 'Not Updated';}
   function weightOf(t){return t?.weight ?? 1;}
   function tags(v){return arr(v).map(x=>`<span class="tag">${esc(x)}</span>`).join('')||'<span class="muted">—</span>';}

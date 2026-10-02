@@ -24,7 +24,7 @@
   function projectBounds(){const dates=[...S.workPackages.flatMap(t=>[d(t.start),d(t.end)]),...S.checkpoints.map(c=>d(c.date))].filter(x=>!Number.isNaN(+x));if(!dates.length){const now=new Date();return{start:now,end:new Date(+now+86400000)}}return{start:new Date(Math.min(...dates)),end:new Date(Math.max(...dates))}}
   function pos(dt){const b=projectBounds();return clamp((dt-b.start)/(b.end-b.start),0,1)*100}
   function currentCPs(){const cps=[...S.checkpoints].sort((a,b)=>d(a.date)-d(b.date));if(!cps.length)return{prev:null,next:null};const now=new Date();let prev=cps[0],next=cps[cps.length-1];for(const cp of cps){if(d(cp.date)<=now)prev=cp;if(d(cp.date)>=now){next=cp;break}}return{prev,next}}
-  function progressOf(t){return t?.actual_progress ?? t?.actualProgress ?? t?.progress ?? null}
+  function progressOf(t){return window.SmartPortProgress?.forItem(t,S.workPackages,S.subtasks)?.value ?? null}
   function weightOf(t){return t?.weight ?? 1}
   function statusOf(t){return t?.status || 'Not Updated'}
   function lastWeekOf(t){return t?.last_week ?? t?.lastWeek ?? ''}
