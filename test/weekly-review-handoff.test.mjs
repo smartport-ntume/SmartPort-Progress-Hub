@@ -95,6 +95,21 @@ test('an existing unsent batch cannot bypass review and its old payload is refre
   assert.equal(draft.payload.previous_review.members[1].pm_feedback,'乙的最新 PM 意見');
 });
 
+test('PM cross-task handling notes reach only the matching member in the next Word',async()=>{
+  const f=fixture(),decision='跨任務處理：採方案 A，請控制組於 10/09 提供 CAN 介面。';
+  f.db.weekly_report_submissions[0].pm_feedback=decision;
+  f.db.weekly_report_submissions[0].analysis_result={analysis:{review:{issues_and_decisions:{cross_task_issues:{reported_text:'尚待 PM 決策'}}}}};
+  f.db.weekly_report_submissions[1].review_status='APPROVED';
+  await f.automation.publish(f.schedule());
+  const form=f.requests[0].body;
+  const own=(await mammoth.extractRawText({buffer:Buffer.from(await form.get('files[0]').arrayBuffer())})).value;
+  const other=(await mammoth.extractRawText({buffer:Buffer.from(await form.get('files[1]').arrayBuffer())})).value;
+  assert.ok(own.includes(decision));assert.ok(!other.includes(decision));
+  assert.ok(!own.includes('尚待 PM 決策'),'member source must not replace the PM decision');
+  assert.match(own,/上期 PM 意見/);assert.match(own,/本週回覆與處理結果/);
+  assert.doesNotMatch(own,/PM REVIEW|PM 姓名：/);
+});
+
 test('an agent wake-up honors publish time, polls waiting reviews and catches up after a missed week',async()=>{
   const f=fixture(),arms=[];f.automation.stopped=false;f.automation.arm=when=>arms.push(when.toISOString());
   await f.automation.tick();assert.equal(f.requests.length,0);assert.equal(arms.at(-1),'2026-09-14T05:16:00.000Z');

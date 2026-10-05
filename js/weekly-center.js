@@ -53,13 +53,24 @@
       controls();
     }
     function feedbackEditor(item={target_type:'GENERAL',target_id:'',missing_items:[],actions:[]},editable=true){
-      const targets=model().feedbackTargets(detail.feedback_context||snapshot,detail.submission.member_id);
-      const target=targets.find(t=>t.type===item.target_type&&t.id===item.target_id);
-      const title=item.target_type==='GENERAL'?'整份週報共通事項':[target?.parentWp,item.target_id,target?.name!==item.target_id?target?.name:''].filter(Boolean).join(' · ');
+      const title=model().targetTitle(item.target_type,item.target_id,detail.feedback_context,snapshot);
       return `<article class="weekly-center-feedback-editor" data-feedback-type="${esc(item.target_type)}" data-feedback-id="${esc(item.target_id)}"><div class="weekly-center-feedback-target"><span>自動對應工作</span><strong>${esc(title)}</strong></div>
         <label>需要補充<textarea data-feedback-missing rows="8" ${!editable?'readonly':''}>${esc((item.missing_items||[]).join('\n'))}</textarea></label>
         <label>建議下一步<textarea data-feedback-actions rows="8" ${!editable?'readonly':''}>${esc((item.actions||[]).join('\n'))}</textarea></label>
         ${editable?'<button class="btn" data-action="remove-feedback">移除此項回饋</button>':''}</article>`;
+    }
+    function issuesSection(issues,canRetry){
+      const states={none:'成員明確填寫「無」',not_filled:'此欄未填寫',not_found:'未找到此欄位，請查看原始 Word 確認'};
+      const cards=issues?['cross_task_issues','decision_requests'].map((key,index)=>{
+        const item=issues[key]||{},reported=item.status==='reported'&&item.reported_text;
+        const metadata=[['相關工作',(item.related_ids||[]).join('、')],['需協助對象',item.requested_from],['期限',item.deadline],['建議選項',item.options]].filter(([,value])=>value);
+        return `<article class="weekly-center-issue" data-issue="${key}"><h4>${index?'需要 PM 決策':'跨組依賴／共通風險'}</h4>
+          ${reported?`${item.summary?`<p class="muted">AI 整理摘要</p><p>${esc(item.summary)}</p>`:`<p>${esc(item.reported_text)}</p>`}
+          ${metadata.length?`<dl>${metadata.map(([label,value])=>`<dt>${label}</dt><dd>${esc(value)}</dd>`).join('')}</dl>`:''}
+          <details><summary>查看成員填寫原文</summary><p>${esc(item.reported_text)}</p></details>`:`<p class="muted">${states[item.status]||'尚未擷取此欄位，請重新批改原始週報'}</p>`}</article>`;
+      }).join(''):`<p class="muted">這份批改尚未擷取跨任務事項。${canRetry?'更新 Agent 後，可重新批改原始週報；不需重新上傳。':'請開啟原始 Word 週報查看本節內容。'}</p>`;
+      return `<section class="weekly-center-issues" aria-label="跨任務問題與決策需求"><h3>跨任務問題與決策需求</h3><p class="muted">以下為成員回報內容；PM 的處理意見請填在下方，儲存後會帶入下期 Word。</p>${cards}
+        ${issues?.source_text?`<details class="weekly-center-issue-source"><summary>查看本節完整原文</summary><p>${esc(issues.source_text)}</p></details>`:''}</section>`;
     }
     function progressEditor(p,editable,row){
       const overrides=row.review_result?.request?.progress_overrides||{};
@@ -86,6 +97,7 @@
       const expected=model().expected(proposals,snapshot);
       const editable=row.is_current!==false&&feedbackReady&&row.review_status==='PENDING';
       const feedbackEditable=row.is_current!==false&&feedbackReady&&['PENDING','APPROVED','CHANGES_REQUESTED'].includes(row.review_status);
+      const canRetry=row.is_current!==false&&!['APPROVED','REVIEWING','REVIEW_FAILED'].includes(row.review_status)&&!['queued','running'].includes(row.status)&&me.can_trigger_codex;
       const resuming=row.is_current!==false&&row.review_status==='REVIEW_FAILED';
       const recovering=resuming&&assessmentIssue&&!(row.review_result?.decisions||[]).length;
       const decided=new Map((row.review_result?.decisions||[]).map(p=>[Number(p.issue_number),p.status]));
@@ -101,13 +113,14 @@
         ${assessmentIssue?`<p class="weekly-center-message error">${esc(assessmentIssue)}</p>`:''}
         ${feedbackReady&&(review.overall_assessment||analysis.report_summary)?`<p class="weekly-center-feedback">${esc(review.overall_assessment||analysis.report_summary)}</p>`:''}
         ${Object.keys(review).length?`<div class="weekly-center-scores">${[['completeness_score','完整度'],['evidence_score','證據品質'],['schedule_alignment_score','時程一致性']].map(([k,label])=>`<div><b>${esc(review[k]??'—')}</b>${label}</div>`).join('')}</div>`:''}
+        ${feedbackReady?issuesSection(review.issues_and_decisions,canRetry):''}
+        <label>PM 處理意見與整體回饋（將帶入下期週報）<textarea class="weekly-center-notes" data-field="feedback" rows="8" maxlength="4000" ${!feedbackEditable?'readonly':''} placeholder="請回覆跨任務問題、決策、協助對象與期限；退回時請說明需補充內容">${esc(['REVIEWING','REVIEW_FAILED'].includes(row.review_status)?row.review_result?.request?.feedback??row.pm_feedback??'':row.pm_feedback??row.review_result?.request?.feedback??'')}</textarea></label>
         ${feedbackReady?`<h3>工作回饋（可編輯，將帶入下期 Word）</h3><p class="muted">已依工作內容自動歸入 WP／子任務，不需手動指定。直接編輯回饋即可；共通事項放在 Word 前段。</p><div data-field="task-feedback">${model().taskFeedback(row,detail.feedback_context||snapshot).map(item=>feedbackEditor(item,feedbackEditable)).join('')}</div>${feedbackEditable?'<button class="btn" data-action="add-feedback">新增工作回饋</button>':''}`:''}${feedbackReady?list('批改注意事項',analysis.warnings):''}
         <h3>進度更新（${proposals.length} 項）</h3>
         ${(editable||resuming&&!assessmentIssue)&&proposals.length?'<button class="btn" data-action="select-all">全選可核准項目</button>':''}
-        ${proposals.map(p=>{const before=expected[p.issue_number],terminal=decided.get(Number(p.issue_number));return `<article class="weekly-center-change"><label><input type="checkbox" data-proposal="${p.issue_number}" ${resuming&&(terminal==='APPROVED'||(priorSelected.has(Number(p.issue_number))&&before&&terminal!=='REJECTED'))?'checked':''} ${assessmentIssue||(!editable&&!resuming)||!before||(resuming&&terminal)?'disabled':''}><span><b>${esc(p.target_id)} · ${esc(p.target_type)}</b><br>${p.progress==null?'工作紀錄更新（百分比不變）<br>':''}進度 ${esc(before?model().progressLabel(before.progress,'未填'):'找不到工作')} → ${esc(model().progressLabel(p.progress))}<br><small>${esc(before?.status||'—')} → ${esc(p.status??'保留目前狀態')}${terminal?` · ${terminal==='APPROVED'?'已核准':'未採用'}`:''}</small></span></label><p>${esc(p.summary||'')}</p>${p.reported_progress!=null?`<p>成員自報完成度：${esc(p.reported_progress)}%（待 PM 確認）</p>`:''}${progressEditor(p,editable,row)}${p.verification_note?`<p class="weekly-center-feedback"><b>待確認事項：</b>${esc(p.verification_note)}</p>`:''}<details><summary>查看證據與批改依據</summary><p>${esc(p.evidence||'未提供證據')}</p><p>${esc(p.ai_rationale||'')}</p></details></article>`;}).join('')||`<p class="muted">${assessmentIssue?'批改未完成，尚未產生可勾選的進度更新。請重新批改原始週報。':feedbackReady?'批改已完成，但沒有可採用的進度更新。請查看上方缺漏與批改注意事項；可核准週報或退回補件，正式進度不會變更。':'批改完成後，有證據支持的進度更新才會顯示在這裡。'}</p>`}
-        <label>PM 回饋（將帶入下期週報）<textarea class="weekly-center-notes" data-field="feedback" rows="8" maxlength="4000" ${!feedbackEditable?'readonly':''} placeholder="填寫下期需追蹤的事項；退回時請說明需要補充的內容">${esc(['REVIEWING','REVIEW_FAILED'].includes(row.review_status)?row.review_result?.request?.feedback??row.pm_feedback??'':row.pm_feedback??row.review_result?.request?.feedback??'')}</textarea></label>
+        ${proposals.map(p=>{const before=expected[p.issue_number],terminal=decided.get(Number(p.issue_number));return `<article class="weekly-center-change"><label><input type="checkbox" data-proposal="${p.issue_number}" ${resuming&&(terminal==='APPROVED'||(priorSelected.has(Number(p.issue_number))&&before&&terminal!=='REJECTED'))?'checked':''} ${assessmentIssue||(!editable&&!resuming)||!before||(resuming&&terminal)?'disabled':''}><span><b>${esc(model().targetTitle(p.target_type,p.target_id,detail.feedback_context,snapshot))}</b><br>${p.progress==null?'工作紀錄更新（百分比不變）<br>':''}進度 ${esc(before?model().progressLabel(before.progress,'未填'):'找不到工作')} → ${esc(model().progressLabel(p.progress))}<br><small>${esc(before?.status||'—')} → ${esc(p.status??'保留目前狀態')}${terminal?` · ${terminal==='APPROVED'?'已核准':'未採用'}`:''}</small></span></label><p>${esc(p.summary||'')}</p>${p.reported_progress!=null?`<p>成員自報完成度：${esc(p.reported_progress)}%（待 PM 確認）</p>`:''}${progressEditor(p,editable,row)}${p.verification_note?`<p class="weekly-center-feedback"><b>待確認事項：</b>${esc(p.verification_note)}</p>`:''}<details><summary>查看證據與批改依據</summary><p>${esc(p.evidence||'未提供證據')}</p><p>${esc(p.ai_rationale||'')}</p></details></article>`;}).join('')||`<p class="muted">${assessmentIssue?'批改未完成，尚未產生可勾選的進度更新。請重新批改原始週報。':feedbackReady?'批改已完成，但沒有可採用的進度更新。請查看上方缺漏與批改注意事項；可核准週報或退回補件，正式進度不會變更。':'批改完成後，有證據支持的進度更新才會顯示在這裡。'}</p>`}
         <div class="weekly-center-actions">${feedbackEditable?'<button class="btn" data-action="save-feedback">儲存回饋</button>':''}${editable?`<button class="btn primary" data-action="approve">${proposals.length?'核准勾選項目並結案':'核准週報（不更新進度）'}</button><button class="btn danger" data-action="return">退回補件</button>`:''}${resuming&&(!assessmentIssue||recovering)?`<button class="btn primary" data-action="resume_review">${recovering?'解除失敗審核':'重試剩餘審核'}</button>`:''}
-        ${row.is_current!==false&&!['APPROVED','REVIEWING','REVIEW_FAILED'].includes(row.review_status)&&!['queued','running'].includes(row.status)&&me.can_trigger_codex?'<button class="btn" data-action="retry">重新批改原始週報</button>':''}</div>
+        ${canRetry?'<button class="btn" data-action="retry">重新批改原始週報</button>':''}</div>
         ${editable?'<p class="muted">核准前可修改每項核定進度（0～100%），留白表示保留目前進度。原始自報值會保留；未勾選項目記為未採用。</p>':''}
         ${recovering?'<p class="muted">這次審核尚未寫入任何進度。解除後可重新批改原始週報。</p>':''}
         <div class="weekly-center-history"><b>提交版本</b><div>${versions.map(v=>`<button class="btn" data-version="${v.id}" ${v.id===row.id?'disabled':''}>第 ${v.revision||1} 版 · ${model().status(v).label}</button>`).join('')}</div></div>

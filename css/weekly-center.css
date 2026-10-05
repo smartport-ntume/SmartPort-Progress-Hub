@@ -48,3 +48,10 @@
 .weekly-center-feedback-editor button{justify-self:start}
 .weekly-center-progress{display:flex;align-items:center;gap:10px;margin:12px 0;flex-wrap:wrap}
 .weekly-center-progress input{width:130px;padding:8px;border:1px solid #c7d1df;border-radius:6px;font:inherit}
+.weekly-center-issues{margin:1.5rem 0 1rem}
+.weekly-center-issue{border:1px solid #d9e1ec;border-radius:.5rem;padding:1rem;margin:.75rem 0}
+.weekly-center-issue h4{font-size:1rem;margin:0 0 .75rem}
+.weekly-center-issue p,.weekly-center-issue-source p{white-space:pre-wrap;line-height:1.65;margin:.5rem 0}
+.weekly-center-issue dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.4rem .8rem;font-size:.875rem;line-height:1.6}
+.weekly-center-issue dt{font-weight:600}.weekly-center-issue dd{margin:0;white-space:pre-wrap}
+.weekly-center-issues summary{cursor:pointer;font-size:.875rem;color:#24568c}

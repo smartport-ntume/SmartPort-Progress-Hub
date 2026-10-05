@@ -82,6 +82,15 @@
   function feedbackTargets(context, memberId) {
     return window.SmartPortWeeklyFeedback.targets(context, memberId);
   }
+  function targetTitle(type, id, context = {}, fallback = {}) {
+    if (type === 'GENERAL') return '整份週報共通事項';
+    const records = source => type === 'WP' ? source?.work_packages || source?.workPackages || [] : source?.subtasks || [];
+    const current = records(fallback).find(record => record.id === id);
+    const historical = records(context).find(record => record.id === id);
+    const name = historical?.name || current?.name;
+    const parent = type === 'SUBTASK' ? historical?.parent_wp || current?.parent_wp : '';
+    return [parent, id, name && name !== id ? name : '工作名稱未提供'].filter(Boolean).join(' · ');
+  }
   function taskFeedback(row, context = {}, memberId = row.member_id) {
     const review=row.analysis_result?.analysis?.review||row.review||{};
     const frozen=['REVIEWING','REVIEW_FAILED'].includes(row.review_status)?row.review_result?.request?.task_feedback:null;
@@ -90,5 +99,5 @@
     const items=Array.isArray(saved)?saved:missing.length||actions.length?[{target_type:'GENERAL',target_id:'',missing_items:missing,actions}]:[];
     return window.SmartPortWeeklyFeedback.assign(items, context, memberId);
   }
-  window.SmartPortWeeklyReview = { status, latest, expected, taipeiInput, progressLabel, feedbackTargets, taskFeedback, assessmentIssue: weeklyAssessmentIssue };
+  window.SmartPortWeeklyReview = { status, latest, expected, taipeiInput, progressLabel, feedbackTargets, targetTitle, taskFeedback, assessmentIssue: weeklyAssessmentIssue };
 })();
