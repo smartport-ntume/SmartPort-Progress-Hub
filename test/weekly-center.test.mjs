@@ -5,7 +5,7 @@ import { weeklyRecordVersion } from '../worker/src/weekly-proposal.js';
 import { JSDOM } from 'jsdom';
 import { zeroAnalysis, screenshotFailures } from './fixtures/weekly-input-failures.mjs';
 
-const sources=await Promise.all(['weekly-feedback-routing.js','weekly-review-model.js','weekly-center.js'].map(name=>readFile(new URL('../js/'+name,import.meta.url),'utf8')));
+const sources=await Promise.all(['weekly-feedback-routing.js','weekly-review-model.js','weekly-publication.js','weekly-center.js'].map(name=>readFile(new URL('../js/'+name,import.meta.url),'utf8')));
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const proposals=[1,2].map(n=>({issue_number:n,target_type:'SUBTASK',target_id:'C'+n,progress:n*20,status:'On Track',summary:'完成測試',evidence:'測試紀錄'}));
 
@@ -28,7 +28,7 @@ async function fixture(t,db=database(),storage={}){
   sources.forEach(source=>window.eval(source));
   const waiters=new Map(),watched=[];
   const API={
-    async listWeeklyReports(){return {batches:[{id:'b1',week_key:'2026-W37',report_date:'2026-09-14',due_at:'2026-09-21T04:00:00Z',members:db.members,
+    async listWeeklyReports(){return {batches:db.empty?[]:[{id:'b1',week_key:'2026-W37',report_date:'2026-09-14',due_at:'2026-09-21T04:00:00Z',members:db.members,
       submissions:db.rows.map(({analysis_result,...row})=>structuredClone(row))}]};},
     async getWeeklyReport(id){return {week_key:'2026-W37',submission:structuredClone(db.rows.find(r=>r.id===id)),feedback_context:db.feedback_context,runs:[]};},
     async loadSnapshot(){return db.snapshot || {subtasks:proposals.map(p=>({id:p.target_id,actual_progress:0,status:'On Track'})),work_packages:[]};},
@@ -284,4 +284,17 @@ test('old proposal cards and feedback share authoritative full titles with snaps
   await f.click('[data-action="refresh"]');
   assert.match(f.doc.querySelector('.weekly-center-change b').textContent,/Historical task name/);
   assert.equal(f.window.SmartPortWeeklyReview.targetTitle('SUBTASK','removed',{},{}),'removed · 工作名稱未提供');
+});
+
+
+test('manual publication opens with no existing batch; feedback update opens a preview instead of immediately sending',async t=>{
+  const db=database();db.empty=true;
+  const empty=await fixture(t,db);await empty.click('[data-action="publish"]');
+  assert.equal(empty.doc.querySelector('.weekly-publication').hidden,false);
+  assert.equal(empty.doc.querySelector('[data-pub="title"]').textContent,'發布新一期週報');
+  assert.equal(db.calls.length,0);
+  const existing=await fixture(t);await existing.click('[data-action="resend"]');
+  assert.equal(existing.doc.querySelector('[data-pub="title"]').textContent,'更新回饋並補發');
+  assert.equal(existing.doc.querySelector('[data-pub="week"]').disabled,true);
+  assert.equal(existing.db.calls.length,0,'opening the publication pane cannot send a Discord message');
 });

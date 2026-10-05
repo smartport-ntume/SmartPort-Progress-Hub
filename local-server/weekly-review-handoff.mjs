@@ -20,6 +20,8 @@ export function previousReviewHandoff(batch, submissions = []) {
       const reason = !row ? '尚未繳交' : row.review_status === 'REVIEW_FAILED' ? '審核未完成'
         : row.status === 'failed' ? '批改失敗' : ['queued','running'].includes(row.status) ? '等待批改完成' : '待 PM 審核';
       blocked.push({ member_id: member.id, member_name: member.name || member.id, reason });
+      feedback.push({ member_id: member.id, submission_id: row?.id || null, revision: row?.revision || null,
+        review_status: row ? 'PENDING' : 'MISSING', reason, pm_feedback: '', task_feedback: [] });
       continue;
     }
     feedback.push({

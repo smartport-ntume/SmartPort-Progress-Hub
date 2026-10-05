@@ -13,6 +13,7 @@
    - `supabase/migrations/202609100002_passwordless_weekly_portal.sql`
    - `supabase/migrations/202609110002_weekly_review_cycle.sql`
    - `supabase/migrations/202609250001_weekly_editable_feedback.sql`
+   - `supabase/migrations/202610050001_manual_weekly_publication.sql`
 4. 到 Authentication → Providers → Anonymous Sign-Ins 開啟匿名登入。匿名 session 只可搭配當週私密 token 使用週報 RPC；既有 RLS 仍拒絕它讀取主網站資料。
 5. 到 Project Settings → API 保存以下兩項：
    - Project URL
@@ -271,7 +272,7 @@ npm start
 
 在管理中心逐份填寫 **PM 處理意見與整體回饋（將帶入下期週報）** 並完成審核。全數審閱後，Agent 會重新檢查排程；若發送時間已到就接續產生新附件，否則等原訂時間。等待期間每 15 分鐘重試，重啟也會恢復檢查。下一份 Word 會有 **上期 PM 回饋與本週回覆**，只帶入該成員的意見，供逐項回覆處理結果。未審完跨週時不會預建多份舊週報。
 
-自動發送與手動 **補發 Discord** 均遵守審閱條件；已發到 Discord 的舊附件不會自動改寫。首批沒有前期資料時不需等待。測試使用模擬 Discord，正式流程須在更新 Windows Agent 後驗證。
+自動排程遵守審閱條件；PM 可使用 **發布新一期週報** 提前發送，包含尚未繳交或待審者。已發到 Discord 的舊附件不會自動改寫；後續意見完成後，由 PM 決定是否 **更新回饋並補發**。首批沒有前期資料時不需等待。測試使用模擬 Discord，正式流程須在更新 Windows Agent 後驗證。
 
 ### 跨任務事項、完整工作名稱與新版 Word
 
@@ -280,6 +281,31 @@ npm start
 本次不需新增 SQL 或環境變數。若 Agent 由 Windows 工作排程器啟動，先結束該 Agent 工作，再於 Agent 資料夾執行 `git pull --ff-only origin main`，成功後重新執行排程工作。網站按 `Ctrl+F5`；尚未審核的舊週報可按「重新批改原始週報」補擷取跨任務事項，不需重傳 Word。已核准的歷史紀錄維持原結果，可由「開啟原始 Word 週報」查看原文。
 
 新產生或重新下載的 Word 使用暖灰／墨黑配色，分開顯示上期核准進度與本週回報進度，加入新增成果及進度說明；不再產生最後一頁的空白 PM 審閱表，仍保留上期回饋。已發送到 Discord 的附件不會自動更新。
+
+### 手動發布新一期週報與更新回饋
+
+本功能需要新增 SQL。若上一版可編輯 PM 回饋已正常運作：
+
+1. 在 Windows **工作排程器** 結束目前的 Agent 工作；若手動執行 `npm start`，在該視窗按 Ctrl+C。
+2. 在 Supabase SQL Editor 執行 `supabase/migrations/202610050001_manual_weekly_publication.sql` 全文。可安全重複執行，不會發送 Discord 訊息或改動既有提交。
+3. 在 `SmartPort-Progress-Hub-Agent` 資料夾執行：
+
+   ```powershell
+   git pull --ff-only origin main
+   npm install
+   npm run doctor
+   ```
+
+4. 確認 `Manual weekly publication migration` 通過，再由工作排程器重新執行原 Agent 工作；手動啟動者執行 `npm start`，不要同時開兩份 Agent。
+5. 網站按 Ctrl+F5，以 PM 登入 **Workflow → Weekly Reports**。
+
+按 **發布新一期週報**，選本週或未來週次、設定截止時間，再按 **預覽發布名單**。名單會包含全體應繳成員，並區分已審、上期未繳、上期待審與首次／上期無需繳交。按 **確認發布到 Discord** 才會發送 Word 與繳交入口。上期未繳仍保留原缺繳紀錄與補交連結；未完成審閱的草稿意見不會帶入新 Word。預覽需要 Agent 在線，與自動排程是否啟用無關。
+
+後續 PM 意見完成後，可選該週次按 **更新回饋並補發**。重新預覽、確認後會產生標有 **更新版 v2、v3…** 的全員附件；保留原繳交連結、截止日與提交版本，也保留本期既有成員、工作範圍及進度基準。要延長截止，請先操作 **展延截止**，再補發。
+
+同週已手動發布後，自動排程會略過；PM 完成剩餘審核也不會自動重發。連點會由工作佇列與 Agent 防止重複送出；重新整理頁面會恢復追蹤原工作。若網路中斷，選同週 **更新回饋並補發**，預覽會顯示「續送」，沿用已確認的同一版內容，只處理剩餘附件。Webhook 已送達但回應或資料庫紀錄遺失時，仍可能重複該則訊息；Discord Webhook 沒有跨系統的原子提交保證。
+
+未套用 SQL 時，按預覽會明確提示升級，不會偷偷切回舊的補發流程。Webhook 密鑰仍只放在 Agent 的 `.env.local`，不傳給瀏覽器。
 
 ### 星期一沒有收到 Discord 週報附件或上傳連結
 

@@ -150,7 +150,7 @@ test('weekly publisher attaches each personalized DOCX and records delivery', as
     payload: discordBatchPayload()
   };
   const result = await automation.sendDiscord(batch, schedule);
-  assert.deepEqual(result, { sent: true, batchId: 'batch-1', memberCount: 2, messageCount: 1 });
+  assert.deepEqual(result, { sent: true, batchId: 'batch-1', memberCount: 2, messageCount: 1, revision: 1 });
   assert.equal(requests.length, 1);
   assert.match(requests[0].url, /discord\.com\/api\/webhooks\/1234567890\/test_token\?wait=true$/);
   assert.equal(requests[0].init.headers, undefined);
@@ -211,7 +211,7 @@ test('weekly publisher splits attachments and resumes after a delivered chunk', 
     due_at: schedule.dueAt.toISOString(),
     payload: discordBatchPayload(6)
   }, schedule);
-  assert.deepEqual(result, { sent: true, batchId: 'batch-1', memberCount: 6, messageCount: 2 });
+  assert.deepEqual(result, { sent: true, batchId: 'batch-1', memberCount: 6, messageCount: 2, revision: 1 });
   assert.equal(requests.length, 1);
   const body = JSON.parse(requests[0].body.get('payload_json'));
   assert.match(body.content, /2\/2/);

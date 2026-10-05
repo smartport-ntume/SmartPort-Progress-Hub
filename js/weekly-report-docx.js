@@ -57,10 +57,10 @@
     });
   }
 
-  function responseParagraph(prompt, blankLines = 2) {
+  function responseParagraph(prompt, blankLines = 2, keepNext = false) {
     const children = [run(prompt, { color: MUTED, italics: true })];
     for (let index = 0; index < blankLines; index += 1) children.push(run(' ', { break: 1 }));
-    return paragraph('', { children, spacing: { before: 20, after: 20, line: 276 } });
+    return paragraph('', { children, keepNext, spacing: { before: 20, after: 20, line: 276 } });
   }
 
   function cell(content, options = {}) {
@@ -79,8 +79,8 @@
     });
   }
 
-  function labelCell(text, width = 22) {
-    return cell([paragraph(text, { bold: true, spacing: { before: 0, after: 0, line: 260 } })], {
+  function labelCell(text, width = 22, keepNext = false) {
+    return cell([paragraph(text, { bold: true, keepNext, spacing: { before: 0, after: 0, line: 260 } })], {
       fill: PALE_GRAY,
       width
     });
@@ -167,8 +167,8 @@
   function overallStatus() {
     return table([
       row([
-        labelCell('自評完成度', 18), cell([responseParagraph('____ %', 0)], { width: 32 }),
-        labelCell('整體狀態', 18), cell([responseParagraph('☐ 正常　☐ 需注意　☐ 延誤', 0)], { width: 32 })
+        labelCell('自評完成度', 18, true), cell([responseParagraph('____ %', 0, true)], { width: 32 }),
+        labelCell('整體狀態', 18, true), cell([responseParagraph('☐ 正常　☐ 需注意　☐ 延誤', 0, true)], { width: 32 })
       ]),
       row([
         labelCell('本週摘要', 18),
@@ -339,8 +339,13 @@
       paragraph('SMARTPORT PROGRESS HUB', { bold: true, size: 17, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 80 } }),
       paragraph('每週個人工作進度報告', { style: 'Title', bold: true, size: 34, color: '000000', alignment: AlignmentType.CENTER, spacing: { after: 30 } }),
       paragraph('WEEKLY INDIVIDUAL PROGRESS REPORT', { bold: true, size: 18, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 260 } }),
+      ...(model.publicationRevision > 1 ? [paragraph(`發布更新版 v${model.publicationRevision} · 本期週次與繳交連結不變`, { color: MUTED, alignment: AlignmentType.CENTER })] : []),
       metaTable(model),
       spacer(120),
+      ...(model.previousReviewNotice ? [
+        paragraph(`${model.previousReviewNotice.weekKey} · ${model.previousReviewNotice.label}`, { bold: true }),
+        paragraph(model.previousReviewNotice.text, { color: MUTED }), spacer(120)
+      ] : []),
       ...(model.previousReview ? [
         sectionBanner('PM', '上期 PM 回饋與本週回覆'),
         table([

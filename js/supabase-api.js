@@ -461,6 +461,17 @@
         if (error) throw errorFrom(error);
         return data;
       },
+      async weeklyPublication(action, payload, key = crypto.randomUUID()) {
+        const version = await requireClient().rpc('smartport_weekly_publication_version');
+        if (version.error || !(Number(version.data) >= 1)) {
+          throw new Error('請先執行 202610050001_manual_weekly_publication.sql，並更新及重啟 Agent，才能手動發布。');
+        }
+        const { data, error } = await requireClient().rpc('enqueue_weekly_publication', {
+          p_action: action, p_payload: payload, p_idempotency_key: key
+        });
+        if (error) throw errorFrom(error);
+        return { job: normalizeJob(Array.isArray(data) ? data[0] : data) };
+      },
       async approveProposal(issueNumber) {
         return enqueueAndWait('approve_proposal', { issue_number: Number(issueNumber) });
       },

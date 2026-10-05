@@ -55,3 +55,11 @@
 .weekly-center-issue dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.4rem .8rem;font-size:.875rem;line-height:1.6}
 .weekly-center-issue dt{font-weight:600}.weekly-center-issue dd{margin:0;white-space:pre-wrap}
 .weekly-center-issues summary{cursor:pointer;font-size:.875rem;color:#24568c}
+.weekly-publication{margin:1rem 0;padding:1.2rem;border:1px solid #bacade;background:#f8fafd;border-radius:.75rem;line-height:1.6}
+.weekly-publication[hidden],.weekly-publication [hidden]{display:none}
+.weekly-publication-fields{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
+.weekly-publication-fields label{display:grid;gap:.35rem;max-width:100%}
+.weekly-publication-fields input{border:1px solid #aebcd0;padding:.5rem;border-radius:.35rem;max-width:100%;background:white}
+.weekly-publication table{width:100%;border-collapse:collapse;background:white;margin:1rem 0}
+.weekly-publication th,.weekly-publication td{text-align:left;padding:.55rem .75rem;border-bottom:1px solid #d9e1ec}
+.weekly-publication h4{margin:1rem 0 .5rem}

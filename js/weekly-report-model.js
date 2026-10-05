@@ -178,6 +178,14 @@
       feedback: clean(feedback.pm_feedback, 4000), reviewedAt: clean(feedback.reviewed_at, 40),
       generalFeedback: taskFeedback.filter(item=>item.target_type==='GENERAL')
     } : null;
+    const previousReviewNotice = previous && !previousReview ? {
+      weekKey: clean(previous.week_key, 32),
+      label: feedback?.review_status === 'MISSING' ? '上期未繳交' : feedback ? '上期 PM 回饋待補' : '上期無需繳交',
+      text: feedback?.review_status === 'MISSING'
+        ? '本期週報照常發送；上期未繳紀錄與補交入口保留，請由上期連結補交。'
+        : feedback ? '本期週報照常發送；PM 完成上期審閱後，可更新回饋並補發本期週報。'
+        : '本期請依以下工作項目填寫成果、證據與進度。'
+    } : null;
     const placed = new Set();
     for (const task of tasks) {
       task.reviewFeedback = taskFeedback.filter((item,index)=>{
@@ -188,6 +196,7 @@
       });
     }
     const followupFeedback=taskFeedback.filter((item,index)=>item.target_type!=='GENERAL'&&!placed.has(index));
+    const publicationRevision = Math.max(1, Math.trunc(Number(options.publication?.revision) || 1));
     const filenameMember = clean(member.name, 60).replace(/[\\/:*?"<>|\s]+/g, '_') || 'member';
     return {
       schemaVersion: '1.0',
@@ -202,6 +211,8 @@
       weekId: isoWeek(reportDate),
       nextCheckpoint,
       previousReview,
+      previousReviewNotice,
+      publicationRevision,
       followupFeedback,
       cutoffDate: nextCheckpoint?.date || '',
       tasks,
@@ -215,7 +226,7 @@
         dueByCheckpoint: tasks.filter(item => item.scope !== 'OVERDUE').length
       },
       scopeSubtaskIds: tasks.map(item => item.id),
-      filename: `SmartPort_Weekly_${isoDate(reportDate)}_${filenameMember}.docx`
+      filename: `SmartPort_Weekly_${isoDate(reportDate)}_${filenameMember}${publicationRevision > 1 ? `_v${publicationRevision}` : ''}.docx`
     };
   }
 
