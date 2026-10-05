@@ -5,6 +5,7 @@ import { extractWeeklyReport } from './report-extractor.mjs';
 import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
 import { normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES } from '../worker/src/weekly-proposal.js';
 import { reviewTaskFeedback } from '../worker/src/weekly-feedback.js';
+import { extractWeeklyIssues, normalizeWeeklyIssues, WEEKLY_ISSUES_RULES } from '../worker/src/weekly-issues.js';
 
 function boundedString(value, field, maximum) {
   const text = String(value || '');
@@ -62,7 +63,8 @@ export function validateWeeklyAnalysis(value) {
     strengths: boundedStringArray(sourceReview.strengths, 'strength', 20),
     missing_items: boundedStringArray(sourceReview.missing_items, 'missing_item', 50),
     actions: boundedStringArray(sourceReview.actions, 'action', 50),
-    task_feedback: reviewTaskFeedback(sourceReview)
+    task_feedback: reviewTaskFeedback(sourceReview),
+    issues_and_decisions: normalizeWeeklyIssues(sourceReview.issues_and_decisions)
   };
   if (!Array.isArray(value.warnings) || value.warnings.length > 50) {
     throw new Error('codex_output_warnings_must_be_a_bounded_array');
@@ -165,6 +167,7 @@ export class CodexWeeklyRunner {
 
       if (typeof extracted.text !== 'string' || !extracted.text.trim()) throw new Error('weekly_report_contains_no_extractable_text');
       if (!context || typeof context !== 'object' || Array.isArray(context)) throw new Error('weekly_project_context_missing');
+      const issuesSource = extractWeeklyIssues(extracted.text);
       const instructions = [
         'Review the SmartPort weekly report using the complete input JSON below.',
         'The weekly_report_text and project_context values are provided inline; no file reads or tools are needed.',
@@ -174,6 +177,7 @@ export class CodexWeeklyRunner {
         'Check every required_scope_subtask_id and give specific missing items and actions.',
         'Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence.',
         WEEKLY_PROPOSAL_RULES,
+        WEEKLY_ISSUES_RULES,
         'Set assessment_status to completed only after reviewing the supplied report and project context.',
         'If the inputs are inaccessible, set assessment_status to input_unavailable and review to null; never invent zero scores.',
         'A readable blank template or weak report can receive low or zero scores; that is different from inaccessible input.',
@@ -181,7 +185,8 @@ export class CodexWeeklyRunner {
         'Return only the JSON object required by output_schema in the input JSON; the CLI saves the final response.'
       ].join(' ');
       const prompt = instructions + '\n\n' + JSON.stringify({
-        weekly_report_text: extracted.text, project_context: context, output_schema: schema
+        weekly_report_text: extracted.text, issues_and_decisions_source: issuesSource,
+        project_context: context, output_schema: schema
       }) + '\n';
       if (Buffer.byteLength(prompt, 'utf8') > 4 * 1024 * 1024) throw new Error('weekly_analysis_input_too_large');
 
@@ -207,6 +212,7 @@ export class CodexWeeklyRunner {
       });
       const raw = await fs.readFile(resultFile, 'utf8');
       const analysis = validateWeeklyAnalysis(unwrapJson(raw));
+      analysis.review.issues_and_decisions = normalizeWeeklyIssues(analysis.review.issues_and_decisions, issuesSource);
       analysis.warnings.unshift(...extracted.warnings);
       return analysis;
     } finally {

@@ -131,7 +131,12 @@ for (const unknownProgress of [false,true]) test(unknownProgress ? 'reports with
           schedule_alignment_score: 80,
           strengths: [],
           missing_items: ['Add links'],
-          actions: ['Update evidence']
+          actions: ['Update evidence'],
+          issues_and_decisions: {
+            source_text: '跨組依賴／共通風險\n需要控制組協助 due 測試\n需要 PM 決策\n無',
+            cross_task_issues: {status:'reported',reported_text:'需要控制組協助 due 測試',summary:'跨組測試需要協助',related_ids:['due'],requested_from:'控制組',deadline:'',options:''},
+            decision_requests: {status:'none',reported_text:'無',summary:'',related_ids:[],requested_from:'',deadline:'',options:''}
+          }
         },
         warnings: [],
         proposals: unknownProgress ? [{...proposal('due'),progress:100,reported_progress:100,verification_note:'自報 100%，待驗收'}, {...proposal('omitted','STM'),progress:null,status:null,blocker:null,summary:'已完成遠端測試，本地整合中',evidence:'本週遠端 E-stop 已測試',verification_note:'就緒程度不能換算整體完成度'}, proposal('future'),proposal('other','PER')] : [proposal('due'), proposal('omitted', 'STM'), proposal('future'), proposal('other', 'PER')]
@@ -158,6 +163,9 @@ for (const unknownProgress of [false,true]) test(unknownProgress ? 'reports with
 
   assert.equal(response.status, 200);
   const result = await response.json();
+  assert.ok(capturedSchema.properties.review.anyOf[0].required.includes('issues_and_decisions'));
+  assert.equal(result.analysis.review.issues_and_decisions.cross_task_issues.requested_from,'控制組');
+  assert.equal(result.analysis.review.issues_and_decisions.decision_requests.status,'none');
   assert.deepEqual(capturedContext.owner_teams, ['CTL', 'STM']);
   assert.deepEqual(capturedContext.next_checkpoint, {
     id: 'CP1', date: '2026-09-30', name: 'Basic Motion', acl: 'ACL-1',

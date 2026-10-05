@@ -58,7 +58,7 @@ test('CodexWeeklyRunner uses an isolated read-only structured-output job', async
   let invocation;
   const runner = new CodexWeeklyRunner({
     runtimeDir,
-    extractor: async () => ({ text: 'Weekly evidence', warnings: ['converted'] }),
+    extractor: async () => ({ text: 'Weekly evidence\n5　跨任務問題與決策需求　ISSUES AND DECISIONS\n跨組依賴／共通風險\n請控制組確認 P1.4 介面\n需要 PM 決策\n無', warnings: ['converted'] }),
     command: async (command, args, options) => {
       invocation = { command, args, options };
       const output = args[args.indexOf('-o') + 1];
@@ -77,6 +77,8 @@ test('CodexWeeklyRunner uses an isolated read-only structured-output job', async
     });
     assert.equal(result.proposals[0].target_type, 'SUBTASK');
     assert.deepEqual(result.warnings, ['converted']);
+    assert.equal(result.review.issues_and_decisions.cross_task_issues.reported_text, '請控制組確認 P1.4 介面');
+    assert.equal(result.review.issues_and_decisions.decision_requests.status, 'none');
   } finally {
     delete process.env.SMARTPORT_TEST_SECRET;
   }
@@ -90,7 +92,9 @@ test('CodexWeeklyRunner uses an isolated read-only structured-output job', async
   assert.equal(invocation.args.at(-1), '-');
   assert.equal(invocation.args.some(arg => arg.includes('Weekly evidence')), false);
   const input = JSON.parse(invocation.options.input.split('\n\n')[1]);
-  assert.equal(input.weekly_report_text, 'Weekly evidence');
+  assert.match(input.weekly_report_text, /^Weekly evidence/);
+  assert.equal(input.issues_and_decisions_source.cross_task_issues.reported_text, '請控制組確認 P1.4 介面');
+  assert.match(invocation.options.input, /review\.issues_and_decisions/);
   assert.deepEqual(input.project_context, { owner_team: 'CTL' });
   assert.deepEqual(input.output_schema, { type: 'object' });
   assert.match(invocation.options.input, /Traditional Chinese/);

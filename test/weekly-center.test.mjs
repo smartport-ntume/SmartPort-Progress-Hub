@@ -30,7 +30,7 @@ async function fixture(t,db=database(),storage={}){
   const API={
     async listWeeklyReports(){return {batches:[{id:'b1',week_key:'2026-W37',report_date:'2026-09-14',due_at:'2026-09-21T04:00:00Z',members:db.members,
       submissions:db.rows.map(({analysis_result,...row})=>structuredClone(row))}]};},
-    async getWeeklyReport(id){return {week_key:'2026-W37',submission:structuredClone(db.rows.find(r=>r.id===id)),runs:[]};},
+    async getWeeklyReport(id){return {week_key:'2026-W37',submission:structuredClone(db.rows.find(r=>r.id===id)),feedback_context:db.feedback_context,runs:[]};},
     async loadSnapshot(){return db.snapshot || {subtasks:proposals.map(p=>({id:p.target_id,actual_progress:0,status:'On Track'})),work_packages:[]};},
     async saveWeeklyFeedback(id,payload){
       const row=db.rows.find(r=>r.id===id);
@@ -224,4 +224,64 @@ test('old mixed advice opens as automatically matched cards and PM saves without
   await f.click('[data-action="save-feedback"]');
   assert.equal(db.rows[0].pm_task_feedback.find(item=>item.target_id==='S1.1').missing_items[0],'S1.1：PM 修正後的測試要求');
   assert.equal(db.rows[0].pm_task_feedback.find(item=>item.target_type==='GENERAL').actions[0],'統一填報日期');
+});
+
+test('cross-task requests appear before work advice, preserve original text, and save PM decisions',async t=>{
+  const db=database(),review=db.rows[0].analysis_result.analysis.review;
+  const original='請控制組於 10/09 確認 P1.4 介面。\n<img src=x onerror=alert(1)>';
+  review.issues_and_decisions={source_text:original,
+    cross_task_issues:{status:'reported',reported_text:original,summary:'請控制組確認介面',related_ids:['P1.4'],requested_from:'控制組',deadline:'10/09',options:''},
+    decision_requests:{status:'none',reported_text:'無',summary:'',related_ids:[],requested_from:'',deadline:'',options:''}};
+  review.task_feedback=[{target_type:'SUBTASK',target_id:'C1',missing_items:['補測試'],actions:[]}];
+  const f=await fixture(t,db);await f.click('[data-member="m1"]');
+  const section=f.doc.querySelector('.weekly-center-issues');
+  assert.match(section.textContent,/請控制組確認介面/);
+  assert.match(section.textContent,/成員明確填寫「無」/);
+  assert.ok(section.querySelector('details p').textContent.includes(original));
+  assert.equal(section.querySelector('img'),null,'member text is escaped, never interpreted as markup');
+  assert.ok(section.compareDocumentPosition(f.doc.querySelector('[data-field="task-feedback"]'))&4);
+  assert.equal(f.doc.querySelectorAll('[data-field="feedback"]').length,1);
+  f.doc.querySelector('[data-field="feedback"]').value='PM：採方案 A，請控制組於 10/09 提供介面。';
+  await f.click('[data-action="save-feedback"]');
+  await f.click('[data-member="m2"]');await f.click('[data-member="m1"]');
+  assert.equal(f.doc.querySelector('[data-field="feedback"]').value,'PM：採方案 A，請控制組於 10/09 提供介面。');
+  await f.click('[data-action="approve"]');
+  assert.equal(db.calls[0].payload.feedback,db.rows[0].pm_feedback);
+  assert.equal(review.issues_and_decisions.cross_task_issues.reported_text,original);
+});
+
+test('legacy, blank and missing issue fields are never shown as an explicit no-issue answer',async t=>{
+  const db=database(),f=await fixture(t,db);
+  await f.click('[data-member="m1"]');
+  assert.match(f.doc.querySelector('.weekly-center-issues').textContent,/尚未擷取.*重新批改原始週報/s);
+  db.rows[0].analysis_result.analysis.review.issues_and_decisions={source_text:'',cross_task_issues:{status:'not_filled'},decision_requests:{status:'not_found'}};
+  await f.click('[data-action="refresh"]');
+  const section=f.doc.querySelector('.weekly-center-issues');
+  assert.match(section.textContent,/此欄未填寫/);assert.match(section.textContent,/未找到此欄位/);
+  assert.doesNotMatch(section.textContent,/明確填寫「無」/);
+  delete db.rows[0].analysis_result.analysis.review.issues_and_decisions;
+  db.rows[0].review_status='APPROVED';
+  await f.click('[data-action="refresh"]');
+  assert.match(f.doc.querySelector('.weekly-center-issues').textContent,/請開啟原始 Word/);
+  assert.doesNotMatch(f.doc.querySelector('.weekly-center-issues').textContent,/重新批改/);
+});
+
+test('old proposal cards and feedback share authoritative full titles with snapshot fallback',async t=>{
+  const db=database();
+  db.rows[0].analysis_result.proposals=[{...proposals[0],target_id:'P1.4',name:'AI guessed title'},
+    {...proposals[1],target_id:'WP-P1',target_type:'WP'}];
+  db.rows[0].analysis_result.analysis.review.task_feedback=[{target_type:'SUBTASK',target_id:'P1.4',missing_items:['補測試'],actions:[]}];
+  db.feedback_context={subtasks:[{id:'P1.4',parent_wp:'WP-P1'}]};
+  db.snapshot={subtasks:[{id:'P1.4',parent_wp:'WP-P1',name:'Near-field Radar / Ultrasonic Prototype',actual_progress:20}],
+    work_packages:[{id:'WP-P1',name:'Perception',actual_progress:20}]};
+  const f=await fixture(t,db);await f.click('[data-member="m1"]');
+  const title='WP-P1 · P1.4 · Near-field Radar / Ultrasonic Prototype';
+  assert.equal(f.doc.querySelector('.weekly-center-change b').textContent,title);
+  assert.equal(f.doc.querySelector('.weekly-center-feedback-target strong').textContent,title);
+  assert.equal(f.doc.querySelectorAll('.weekly-center-change b')[1].textContent,'WP-P1 · Perception');
+  assert.doesNotMatch(f.doc.querySelector('[data-field="detail"]').textContent,/AI guessed title/);
+  db.feedback_context.subtasks[0].name='Historical task name';
+  await f.click('[data-action="refresh"]');
+  assert.match(f.doc.querySelector('.weekly-center-change b').textContent,/Historical task name/);
+  assert.equal(f.window.SmartPortWeeklyReview.targetTitle('SUBTASK','removed',{},{}),'removed · 工作名稱未提供');
 });

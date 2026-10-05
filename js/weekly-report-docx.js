@@ -6,13 +6,14 @@
     cs: 'Arial'
   };
   const LANGUAGE = { value: 'en-US', eastAsia: 'zh-TW' };
-  const NAVY = '1F3B63';
-  const BLUE = 'DCE8F8';
-  const PALE_BLUE = 'F3F7FC';
-  const PALE_GRAY = 'F7F8FA';
+  // Palette A: warm gray surfaces and ink headings, shared by all Word downloads.
+  const NAVY = '363431';
+  const BLUE = 'E5E0D8';
+  const PALE_BLUE = 'F4F1EC';
+  const PALE_GRAY = 'F5F3EF';
   const BORDER_COLOR = 'D9D9D9';
-  const TEXT = '172033';
-  const MUTED = '667085';
+  const TEXT = '242321';
+  const MUTED = '625E58';
 
   function api() {
     if (!window.docx) throw new Error('Word 產生器尚未載入，請重新整理頁面');
@@ -50,6 +51,7 @@
       children,
       alignment: options.alignment || AlignmentType.LEFT,
       spacing: options.spacing || { before: 0, after: 80, line: 276 },
+      style: options.style,
       keepNext: !!options.keepNext,
       pageBreakBefore: !!options.pageBreakBefore
     });
@@ -113,7 +115,7 @@
         color: 'FFFFFF',
         alignment: AlignmentType.LEFT,
         spacing: { before: options.before ?? 180, after: 80, line: 300 },
-        pageBreakBefore: !!options.pageBreakBefore,
+        pageBreakBefore: false,
         keepNext: true
       })
     ];
@@ -274,12 +276,12 @@
       ], { header: true }),
       row([labelCell('所屬 WP'), cell(`${task.parentWp}　${task.parentWpName}`), labelCell('分類'), cell(`${task.categoryName} (${task.ownerTeam})`)]),
       row([labelCell('計畫期間'), cell(`${valueText(task.start)} ～ ${valueText(task.end)}`), labelCell('目標節點'), cell(valueText(task.targetCp))]),
-      row([labelCell('上次進度'), cell(task.currentProgress == null ? '—' : `${task.currentProgress}%`), labelCell('目前狀態'), cell(task.currentStatus)]),
+      row([labelCell('上期核准進度'), cell(task.currentProgress == null ? '—' : `${task.currentProgress}%`), labelCell('本週回報進度'), cell([responseParagraph('____ %', 0)])]),
       row([labelCell('預期成果／證據'), cell(evidenceText(task), { columnSpan: 3 })]),
       ...taskFeedbackRows(task.reviewFeedback),
-      row([labelCell('本週實際工作與成果'), cell([responseParagraph('請具體描述完成內容、結果及可驗證產出。', hasFeedback ? 2 : 4)], { columnSpan: 3 })]),
+      row([labelCell('本週新增成果與進度說明'), cell([responseParagraph('本週完成哪些工作？請說明進度增加、持平或下修的原因，並附成果數值、圖表或證據。', hasFeedback ? 2 : 4)], { columnSpan: 3 })]),
       row([labelCell('成果證據／連結'), cell([responseParagraph('請填文件、Issue、PR、測試結果、影片或其他證據。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
-      row([labelCell('回報進度／狀態'), cell([responseParagraph('完成度：____ %　　☐ 正常　☐ 需注意　☐ 延誤　☐ 已完成', 0)], { columnSpan: 3 })]),
+      row([labelCell('本週狀態'), cell([responseParagraph('☐ 正常　☐ 需注意　☐ 延誤　☐ 已完成', 0)], { columnSpan: 3 })]),
       row([labelCell('阻礙／風險'), cell([responseParagraph('如無請填「無」；如有，請說明影響、原因及預估延誤。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
       row([labelCell('需要 PM 協助'), cell([responseParagraph('如無請填「無」；如有，請明確列出決策、資源或跨組協調需求。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
       row([labelCell('下一步／承諾日期'), cell([responseParagraph('下一個具體行動：　　　　　　　　　預計完成：YYYY/MM/DD', hasFeedback ? 0 : 1)], { columnSpan: 3 })])
@@ -295,10 +297,11 @@
       ]),
       row([labelCell('所屬 WP'), cell(`${task.parentWp}　${task.parentWpName}`), labelCell('分類'), cell(`${task.categoryName} (${task.ownerTeam})`)]),
       row([labelCell('計畫期間'), cell(`${valueText(task.start)} ～ ${valueText(task.end)}`), labelCell('目標節點'), cell(valueText(task.targetCp))]),
+      row([labelCell('上期核准進度'), cell(task.currentProgress == null ? '—' : `${task.currentProgress}%`), labelCell('本週回報進度'), cell([responseParagraph('____ %', 0)])]),
       row([labelCell('預期成果／證據'), cell(evidenceText(task), { columnSpan: 3 })]),
       ...taskFeedbackRows(task.reviewFeedback),
-      row([labelCell('本週準備／預計交付'), cell([responseParagraph('請列出為如期完成所需的準備、下一個具體行動、可驗收產出及日期。', 4)], { columnSpan: 3 })]),
-      row([labelCell('就緒程度'), cell([responseParagraph('____ %', 0)]), labelCell('時程判斷'), cell([responseParagraph('☐ 可如期　☐ 有風險　☐ 需調整排程', 0)])]),
+      row([labelCell('本週準備／預計交付'), cell([responseParagraph('請列出本週完成的準備、進度變更原因、下一個具體行動、可驗收產出及日期。', 4)], { columnSpan: 3 })]),
+      row([labelCell('就緒程度'), cell([responseParagraph('____ %', 0)]), labelCell('時程判斷'), cell(['☐ 可如期', '☐ 有風險', '☐ 需調整排程'].map(text => paragraph(text, { color: MUTED, spacing: { after: 20, line: 260 } })))]),
       row([labelCell('依賴／風險／需協助'), cell([responseParagraph('請列出前置條件、跨組依賴或 PM 決策；如無請填「無」。', 2)], { columnSpan: 3 })])
     ], [22, 28, 22, 28]);
   }
@@ -330,23 +333,11 @@
     ], [25, 75]);
   }
 
-  function pmReviewTable() {
-    return table([
-      row([labelCell('PM 回饋', 22), cell([responseParagraph('請填寫具體回饋、建議或肯定事項。', 3)], { width: 78 })]),
-      row([labelCell('追蹤事項', 22), cell([responseParagraph('請列出責任人、待辦事項及追蹤期限；如無請填「無」。', 2)], { width: 78 })]),
-      row([labelCell('審閱結果', 22), cell('☐ 通過　☐ 補充後通過　☐ 退回修改', { width: 78 })]),
-      row([labelCell('PM 確認', 22), cell('PM 姓名：　　　　　　　　　確認日期：YYYY/MM/DD', { width: 78 })])
-    ], [22, 78]);
-  }
-
   function buildDocument(model) {
     const { AlignmentType, Document, PageOrientation } = api();
-    const checkpointSummary = model.nextCheckpoint
-      ? `${model.nextCheckpoint.id} (${model.nextCheckpoint.dateDisplay})`
-      : '尚未設定後續 CP，僅列逾期任務';
     const children = [
       paragraph('SMARTPORT PROGRESS HUB', { bold: true, size: 17, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 80 } }),
-      paragraph('每週個人工作進度報告', { bold: true, size: 34, color: '000000', alignment: AlignmentType.CENTER, spacing: { after: 30 } }),
+      paragraph('每週個人工作進度報告', { style: 'Title', bold: true, size: 34, color: '000000', alignment: AlignmentType.CENTER, spacing: { after: 30 } }),
       paragraph('WEEKLY INDIVIDUAL PROGRESS REPORT', { bold: true, size: 18, color: MUTED, alignment: AlignmentType.CENTER, spacing: { after: 260 } }),
       metaTable(model),
       spacer(120),
@@ -361,11 +352,13 @@
         paragraph('以上 PM 意見是上期審閱紀錄；本週成果請填在回覆欄及任務明細。', { color: MUTED, size: 18 }),
         spacer(120)
       ] : []),
-      sectionBanner('CP', '下一個檢核點預覽　NEXT CHECKPOINT PREVIEW', { pageBreakBefore: !!model.previousReview }),
+      paragraph('', { size: 2, spacing: { after: 0, line: 20 }, pageBreakBefore: !!model.previousReview, keepNext: true }),
+      sectionBanner('CP', '下一個檢核點預覽　NEXT CHECKPOINT PREVIEW'),
       checkpointPreviewTable(model),
       spacer(120),
-      paragraph(`系統已帶入 ${model.counts.total} 項工作：逾期 ${model.counts.overdue}、進行中 ${model.counts.active}、尚未開始 ${model.counts.upcoming}。下一檢核邊界：${checkpointSummary}。請勿刪除工作 ID，Codex 將依 ID 核對甘特圖。`, { color: MUTED, size: 18, spacing: { after: 160 } }),
-      sectionBanner('1', '本週整體狀態　OVERALL STATUS', { pageBreakBefore: !model.previousReview }),
+      paragraph('上期核准進度由系統帶入；本週回報進度由成員填寫，經 PM 在網站確認後更新正式進度。請保留工作 ID。', { color: MUTED, size: 18, spacing: { after: 160 } }),
+      paragraph('', { size: 2, spacing: { after: 0, line: 20 }, pageBreakBefore: false, keepNext: true }),
+      sectionBanner('1', '本週整體狀態　OVERALL STATUS'),
       overallStatus(),
       spacer(160),
       sectionBanner('2', '本週任務總覽　SYSTEM GENERATED TASK SCOPE'),
@@ -373,7 +366,7 @@
     ];
 
     if (model.currentTasks.length) {
-      children.push(spacer(120), sectionBanner('3A', '逾期與進行中任務明細', { pageBreakBefore: true }));
+      children.push(paragraph('', { size: 2, spacing: { after: 0, line: 20 }, pageBreakBefore: true, keepNext: true }), sectionBanner('3A', '逾期與進行中任務明細'));
       model.currentTasks.forEach((task, index) => {
         children.push(paragraph(`${task.id}　${task.name}`, {
           bold: true,
@@ -386,7 +379,7 @@
     }
 
     if (model.upcomingTasks.length) {
-      children.push(spacer(120), sectionBanner('3B', `${model.nextCheckpoint?.id || '下一 CP'} 前尚未開始任務`, { pageBreakBefore: true }));
+      children.push(paragraph('', { size: 2, spacing: { after: 0, line: 20 }, pageBreakBefore: true, keepNext: true }), sectionBanner('3B', `${model.nextCheckpoint?.id || '下一 CP'} 前尚未開始任務`));
       model.upcomingTasks.forEach((task, index) => {
         children.push(paragraph(`${task.id}　${task.name}`, {
           bold: true,
@@ -409,10 +402,7 @@
       commitmentsTable(),
       spacer(160),
       sectionBanner('5', '跨任務問題與決策需求　ISSUES AND DECISIONS'),
-      issuesTable(),
-      spacer(160),
-      sectionBanner('6', 'PM 審閱　PM REVIEW'),
-      pmReviewTable()
+      issuesTable()
     );
 
     return new Document({
@@ -420,6 +410,7 @@
       title: `SmartPort ${model.member.name} 每週個人工作進度報告`,
       description: `甘特圖自動產生之 ${model.reportDate} 個人週報`,
       styles: {
+        paragraphStyles: [{ id: 'Title', name: 'Title', basedOn: 'Normal', run: { font: FONT, size: 34, bold: true, color: '000000' } }],
         default: {
           document: {
             run: { font: FONT, language: LANGUAGE, size: 20, color: TEXT },

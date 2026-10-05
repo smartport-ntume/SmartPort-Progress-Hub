@@ -1,6 +1,7 @@
 import { corsHeaders, safeReturnUrl } from './cors.js';
 import { weeklyAssessmentIssue } from './weekly-assessment.js';
 import { reviewTaskFeedback, assignTaskFeedback, TASK_FEEDBACK_SCHEMA } from './weekly-feedback.js';
+import { normalizeWeeklyIssues, WEEKLY_ISSUES_SCHEMA, WEEKLY_ISSUES_RULES } from './weekly-issues.js';
 import { applyWeeklyProposal, normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES, WEEKLY_PROPOSAL_STATUSES } from './weekly-proposal.js';
 import {
   normalizeTeamConfig,
@@ -448,8 +449,9 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
     type:'object',additionalProperties:false,required:['assessment_status','report_summary','review','warnings','proposals'],properties:{
       assessment_status:{type:'string',enum:['completed','input_unavailable']},
       report_summary:{type:'string',maxLength:8000},
-      review:{anyOf:[{type:'object',additionalProperties:false,required:['overall_assessment','completeness_score','evidence_score','schedule_alignment_score','strengths','missing_items','actions','task_feedback'],properties:{
+      review:{anyOf:[{type:'object',additionalProperties:false,required:['overall_assessment','completeness_score','evidence_score','schedule_alignment_score','strengths','missing_items','actions','task_feedback','issues_and_decisions'],properties:{
         task_feedback:TASK_FEEDBACK_SCHEMA,
+        issues_and_decisions:WEEKLY_ISSUES_SCHEMA,
         overall_assessment:{type:'string',maxLength:8000},completeness_score:{type:'number',minimum:0,maximum:100},evidence_score:{type:'number',minimum:0,maximum:100},schedule_alignment_score:{type:'number',minimum:0,maximum:100},
         strengths:{type:'array',maxItems:20,items:{type:'string',maxLength:2000}},missing_items:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}},actions:{type:'array',maxItems:50,items:{type:'string',maxLength:2000}}
       }},{type:'null'}]},
@@ -479,7 +481,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
         method:'POST',headers:{'Authorization':`Bearer ${env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
         body:JSON.stringify({
           model:env.OPENAI_MODEL||'gpt-5-mini',store:false,
-          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. Write feedback in Traditional Chinese; keep IDs and enum values unchanged. Set assessment_status to completed only after reading the report and project context; if either is inaccessible, use input_unavailable with review=null and no proposals, never invented zero scores. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence. Scores are 0 to 100 and feedback must be specific and concise. ' + WEEKLY_PROPOSAL_RULES,
+          instructions:'You are the SmartPort weekly-report reviewer and progress mapper. Write feedback in Traditional Chinese; keep IDs and enum values unchanged. Set assessment_status to completed only after reading the report and project context; if either is inaccessible, use input_unavailable with review=null and no proposals, never invented zero scores. First grade whether the report covers every required_scope_subtask_id with concrete completed work, evidence, schedule impact, blockers, help needed, and next action. Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence. Scores are 0 to 100 and feedback must be specific and concise. ' + WEEKLY_PROPOSAL_RULES + ' ' + WEEKLY_ISSUES_RULES,
           input:[{role:'user',content:[
             {type:'input_text',text:`Map this SmartPort weekly report into proposed WP/Subtask progress updates. Project context JSON:\n${JSON.stringify(context)}`},
             {type:'input_file',file_id:uploaded.id}
@@ -499,6 +501,7 @@ async function analyzeWeeklyReportAI(repo, token, env, payload, author) {
   analysis.warnings=Array.isArray(analysis.warnings)?analysis.warnings:[];
   analysis.warnings.unshift(...scopeWarnings);
   analysis.proposals=Array.isArray(analysis.proposals)?analysis.proposals.map(normalizeWeeklyProposal):[];
+  analysis.review.issues_and_decisions=normalizeWeeklyIssues(analysis.review.issues_and_decisions);
   analysis.review.task_feedback=assignTaskFeedback(reviewTaskFeedback(analysis.review).map(item=>{
     const valid=item.target_type==='GENERAL'||(item.target_type==='WP'?scopedWps:scopedSubs).some(record=>record.id===item.target_id);
     if(valid)return item;

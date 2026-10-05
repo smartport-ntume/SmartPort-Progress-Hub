@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import mammoth from 'mammoth';
+import { extractWeeklyIssues } from '../worker/src/weekly-issues.js';
 
 async function browserWeeklyModules({ includeDocx = false } = {}) {
   const window = {};
@@ -134,6 +135,13 @@ test('generated personal weekly report is a readable DOCX with scoped task IDs',
   assert.match(extracted.value, /C1\.1/);
   assert.match(extracted.value, /S1\.2/);
   assert.doesNotMatch(extracted.value, /其他人工作/);
+  assert.match(extracted.value, /上期核准進度/);
+  assert.match(extracted.value, /本週回報進度/);
+  assert.match(extracted.value, /本週新增成果與進度說明/);
+  assert.doesNotMatch(extracted.value, /PM REVIEW|PM 姓名：|完成度：____ %/);
+  const issues = extractWeeklyIssues(extracted.value);
+  assert.equal(issues.cross_task_issues.status, 'not_filled');
+  assert.equal(issues.decision_requests.status, 'not_filled');
 });
 
 test('Word places edited feedback inside the matching task and retains completed and standalone WP follow-ups',async()=>{
@@ -157,7 +165,7 @@ test('Word places edited feedback inside the matching task and retains completed
   for(const item of items)for(const line of [...item.missing_items,...item.actions])assert.ok(text.includes(line),line);
   assert.ok(text.includes('PM 回饋原文'));
   const taskStart=text.indexOf('S1.1　任務流程整合'),feedbackAt=text.indexOf('S1.1 補齊狀態轉移測試');
-  assert.ok(taskStart<feedbackAt&&feedbackAt<text.indexOf('本週實際工作與成果',taskStart),'feedback is inside the matching fill-in task');
+  assert.ok(taskStart<feedbackAt&&feedbackAt<text.indexOf('本週新增成果與進度說明',taskStart),'feedback is inside the matching fill-in task');
   assert.equal(text.split('WP-C1 補測試影片').length,2,'WP advice is not repeated for every child');
 });
 
