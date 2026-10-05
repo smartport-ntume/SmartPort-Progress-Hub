@@ -78,6 +78,7 @@ export async function createWeeklyReportAttachments(payload = {}) {
       checkpoints: payload.checkpoints,
       checkpointReferences: payload.checkpoint_references,
       previousReview: payload.previous_review,
+      publication: payload.publication,
       memberId: member.id,
       reportDate: payload.report_date
     });

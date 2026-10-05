@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mammoth from 'mammoth';
-import { WeeklyReportAutomation, weeklySchedule } from '../local-server/weekly-report-automation.mjs';
+import { WeeklyReportAutomation, weeklySchedule, manualWeeklySchedule } from '../local-server/weekly-report-automation.mjs';
 import { previousReviewHandoff } from '../local-server/weekly-review-handoff.mjs';
 
 const options={enabled:true,timezone:'Asia/Taipei',publishWeekday:1,publishHour:13,publishMinute:0,
@@ -135,4 +135,137 @@ test('feedback changing while preparing attachments prevents any message from be
   f.automation.reviewGate=async schedule=>{calls++;if(calls===3)f.db.weekly_report_submissions[1].review_status='PENDING';return gate(schedule);};
   const result=await f.automation.publish(f.schedule());
   assert.equal(result.deferred,true);assert.equal(f.requests.length,0);
+});
+
+
+const manualInput=()=>({report_date:'2026-09-14',due_at:'2026-09-21T04:00:00Z'});
+async function confirm(f,input=manualInput(),id='manual-1') {
+  const preview=await f.automation.previewPublication(input);
+  const job={id,actor_login:'pm'};
+  return {preview,job,input:{...input,preview_token:preview.preview_token}};
+}
+async function attachmentText(request,index=0){
+  const file=request.body.get(`files[${index}]`);
+  return (await mammoth.extractRawText({buffer:Buffer.from(await file.arrayBuffer())})).value;
+}
+function addMember(f,n){
+  const config=f.files['project/team_config.json'];
+  config.members.push({id:'m'+n,name:'成員'+n});
+  config.categories.push({id:'TEAM'+n,name:'組'+n,active:true});
+  config.category_owners['TEAM'+n]='m'+n;
+  f.db.weekly_report_batches[0].payload.team_config=structuredClone(config);
+}
+
+test('manual preview is read-only and includes missing and pending members without their draft feedback',async()=>{
+  const f=fixture();addMember(f,3);
+  f.db.weekly_report_submissions[1].pm_feedback='未確認草稿勿發布';
+  f.db.weekly_report_submissions[1].pm_task_feedback=[{target_id:'P1',actions:['未確認任務草稿']}];
+  const before=structuredClone(f.db),c=await confirm(f);
+  assert.deepEqual(c.preview.counts,{REVIEWED:1,MISSING:1,PENDING:1,NOT_REQUIRED:0});
+  assert.deepEqual(f.db,before);assert.equal(f.writes.length,0);assert.equal(f.requests.length,0);
+  const result=await f.automation.publishManually(c.input,c.job);
+  assert.equal(result.memberCount,3);assert.equal(result.revision,1);
+  const current=f.db.weekly_report_batches[1];
+  assert.deepEqual(f.db.weekly_report_submissions,before.weekly_report_submissions);
+  assert.deepEqual(f.db.weekly_report_batches[0],before.weekly_report_batches[0],'old missing record and portal are not changed');
+  assert.equal(current.payload.previous_review.members[1].pm_feedback,'');
+  const texts=await Promise.all([0,1,2].map(i=>attachmentText(f.requests[0],i)));
+  assert.match(texts[0],/甲：請補介面測試紀錄/);
+  assert.match(texts[1],/上期 PM 回饋待補/);assert.match(texts[2],/上期未繳交/);
+  assert.doesNotMatch(texts.join(''),/未確認草稿勿發布|未確認任務草稿/);
+  const message=JSON.parse(f.requests[0].body.get('payload_json'));
+  assert.match(message.content,/上期未繳或待審者也有本期附件/);
+  assert.ok(message.content.includes(current.token));
+  assert.deepEqual(message.allowed_mentions,{parse:[]});
+});
+
+test('manual publish works before the scheduled hour and with automatic publication disabled',async()=>{
+  const f=fixture();f.setNow('2026-09-14T01:00:00Z');f.automation.options={...options,enabled:false};
+  const c=await confirm(f);await f.automation.publishManually(c.input,c.job);
+  assert.equal(f.requests.length,1);
+});
+
+test('manual publication and automatic catch-up serialize and never resend after PM finishes later',async()=>{
+  const f=fixture(),c=await confirm(f);
+  await Promise.all([f.automation.publishManually(c.input,c.job),f.automation.publish(f.schedule())]);
+  assert.equal(f.requests.length,1);assert.equal(f.db.weekly_report_batches.length,2);
+  f.db.weekly_report_submissions[1].review_status='APPROVED';
+  f.db.weekly_report_submissions[1].pm_feedback='後來完成的意見';
+  await f.automation.publish(f.schedule());
+  await f.automation.publishManually(c.input,c.job);
+  assert.equal(f.requests.length,1);
+  assert.doesNotMatch(await attachmentText(f.requests[0],1),/後來完成的意見/);
+  await assert.rejects(()=>f.automation.previewPublication(manualInput()),/此週已發布/);
+});
+
+test('a changed roster, official progress or confirmed feedback invalidates the preview without sending',async()=>{
+  for(const change of [f=>addMember(f,3),f=>{f.files['project/subtasks.json'].subtasks.push({id:'C1',name:'新工作',owner_team:'CTL',actual_progress:30});},
+    f=>{f.db.weekly_report_submissions[0].pm_feedback='更新確認意見';}]){
+    const f=fixture(),c=await confirm(f);change(f);
+    await assert.rejects(()=>f.automation.publishManually(c.input,c.job),/重新預覽/);
+    assert.equal(f.requests.length,0);assert.equal(f.db.weekly_report_batches.length,1);
+  }
+});
+
+test('feedback update publishes v2 with reviewed feedback while preserving portal, scope, baseline and submissions',async()=>{
+  const f=fixture(),c=await confirm(f);await f.automation.publishManually(c.input,c.job);
+  const batch=f.db.weekly_report_batches[1],before=structuredClone(batch);
+  f.db.weekly_report_submissions.push({id:'current-submission',batch_id:batch.id,member_id:'m1',revision:1,is_current:true,status:'queued',review_status:'PENDING'});
+  const submissions=structuredClone(f.db.weekly_report_submissions);
+  f.db.weekly_report_submissions[1].review_status='APPROVED';
+  f.db.weekly_report_submissions[1].pm_feedback='乙已確認的更新意見';
+  f.files['project/subtasks.json'].subtasks=[{id:'P1',name:'新基準',owner_team:'PER',actual_progress:70}];
+  const update=await confirm(f,{batch_id:batch.id},'manual-update');
+  assert.equal(update.preview.revision,2);
+  await f.automation.publishManually(update.input,update.job);
+  assert.equal(f.requests.length,2);assert.equal(f.db.weekly_report_batches.length,2);
+  for(const key of ['id','token','due_at','accept_until','pm_user_id'])assert.equal(batch[key],before[key]);
+  for(const key of ['team_config','subtasks','work_packages','checkpoints'])assert.deepEqual(batch.payload[key],before.payload[key]);
+  assert.deepEqual(f.db.weekly_report_submissions.at(-1),submissions.at(-1));
+  assert.match(JSON.parse(f.requests[1].body.get('payload_json')).content,/更新版 v2/);
+  assert.match(f.requests[1].body.get('files[1]').name,/_v2\.docx$/);
+  assert.match(await attachmentText(f.requests[1],1),/乙已確認的更新意見/);
+  assert.match(await attachmentText(f.requests[1],1),/發布更新版 v2/);
+  assert.doesNotMatch(await attachmentText(f.requests[0],1),/乙已確認的更新意見/);
+  await f.automation.publishManually(update.input,update.job);
+  await f.automation.publish(f.schedule());assert.equal(f.requests.length,2,'job replay and scheduler do not create v3');
+});
+
+test('interrupted manual delivery resumes only remaining chunks from the confirmed snapshot, even across weeks',async()=>{
+  const f=fixture();for(let i=3;i<=6;i++)addMember(f,i);
+  const send=f.automation.fetchFn;let fail=true,attempts=0;
+  f.automation.fetchFn=async(...args)=>{attempts++;if(attempts===2&&fail)throw new Error('simulated network failure');return send(...args);};
+  const c=await confirm(f);await assert.rejects(()=>f.automation.publishManually(c.input,c.job),/simulated network failure/);
+  const batch=f.db.weekly_report_batches[1];
+  assert.equal(JSON.parse(batch.discord_message_id).length,1);assert.equal(batch.discord_message_sent_at,null);
+  f.db.weekly_report_submissions.push({id:'s6',batch_id:'old',member_id:'m6',is_current:true,revision:1,status:'completed',review_status:'APPROVED',pm_feedback:'發送途中才完成的意見'});
+  f.files['project/team_config.json'].members[5].name='新名字';
+  const resume=await f.automation.previewPublication({batch_id:batch.id});
+  assert.equal(resume.resume,true);assert.equal(resume.revision,1);
+  assert.equal(resume.members[5].member_name,'成員6');assert.equal(resume.members[5].state,'MISSING');
+  fail=false;f.setNow('2026-09-22T05:00:00Z');
+  await f.automation.publishManually(c.input,c.job);
+  assert.equal(f.requests.length,2);assert.equal(f.requests[1].body.get('files[1]'),null);
+  const text=await attachmentText(f.requests[1]);assert.match(text,/上期未繳交/);assert.doesNotMatch(text,/發送途中才完成的意見|新名字/);
+  await f.automation.publishManually(c.input,c.job);assert.equal(f.requests.length,2);
+});
+
+test('automatic catch-up resumes a confirmed partial manual edition but respects a closed batch',async()=>{
+  const f=fixture();let fail=true;const send=f.automation.fetchFn;
+  f.automation.fetchFn=(...args)=>{if(fail)throw new Error('temporary network failure');return send(...args);};
+  const c=await confirm(f);await assert.rejects(()=>f.automation.publishManually(c.input,c.job),/temporary/);
+  const batch=f.db.weekly_report_batches[1];batch.status='CLOSED';fail=false;
+  await assert.rejects(()=>f.automation.publish(f.schedule()),/weekly_batch_closed/);assert.equal(f.requests.length,0);
+  batch.status='OPEN';await f.automation.publish(f.schedule());assert.equal(f.requests.length,1);
+});
+
+test('first publication and new members need no previous feedback; invalid dates and deadlines are rejected',async()=>{
+  const f=fixture();f.db.weekly_report_batches=[];f.db.weekly_report_submissions=[];
+  const c=await confirm(f);assert.equal(c.preview.counts.NOT_REQUIRED,2);
+  await f.automation.publishManually(c.input,c.job);assert.equal(f.requests.length,1);
+  const now=new Date('2026-09-14T05:00:00Z');
+  for(const report_date of ['2026-02-30','2026-09-15','2026-09-07'])assert.throws(()=>manualWeeklySchedule({...manualInput(),report_date},now));
+  for(const due_at of ['invalid','2026-09-14T04:00:00Z'])assert.throws(()=>manualWeeklySchedule({...manualInput(),due_at},now));
+  const next=manualWeeklySchedule({report_date:'2026-12-28',due_at:'2027-01-04T04:00:00Z'},now);
+  assert.equal(next.weekKey,'2026-W53');
 });

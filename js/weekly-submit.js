@@ -148,6 +148,7 @@
       checkpoints: payload.checkpoints,
       checkpointReferences: payload.checkpoint_references,
       previousReview: payload.previous_review,
+      publication: payload.publication,
       memberId,
       reportDate: payload.report_date || batch.report_date
     });

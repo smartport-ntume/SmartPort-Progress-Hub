@@ -72,6 +72,9 @@ if (!problems.length) {
     const review = await supabase.rpc('smartport_weekly_review_version');
     add('Weekly review cycle migration', !review.error && Number(review.data) >= 2,
       review.error || Number(review.data)<2 ? 'Run 202609250001_weekly_editable_feedback.sql' : `version ${review.data}`);
+    const publication = await supabase.rpc('smartport_weekly_publication_version');
+    add('Manual weekly publication migration', !publication.error && Number(publication.data) >= 1,
+      publication.error || Number(publication.data) < 1 ? 'Run 202610050001_manual_weekly_publication.sql' : `version ${publication.data}`);
     if (config.weeklyAutomation.enabled) {
       const weekly = await supabase.from('weekly_report_batches').select('id').limit(1);
       add(

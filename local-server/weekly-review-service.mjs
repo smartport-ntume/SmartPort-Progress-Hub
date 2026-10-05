@@ -221,6 +221,11 @@ export class WeeklyReviewService {
 
   async manageBatch(job) {
     await this.assertPm(job);
+    if (['publication_preview_publish','publication_publish','publication_preview_update','publication_update'].includes(job.payload.action)) {
+      if (!this.automation) throw new Error('weekly_discord_automation_not_configured');
+      if (job.payload.action.includes('preview_')) return { preview: await this.automation.previewPublication(job.payload) };
+      return this.automation.publishManually(job.payload, job);
+    }
     const batch = await this.batch(job.payload.batch_id);
     if (job.payload.action === 'extend') {
       const due = new Date(job.payload.due_at);

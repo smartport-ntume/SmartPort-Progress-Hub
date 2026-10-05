@@ -200,3 +200,20 @@ test('review stores PM task feedback separately from the original AI review and 
   assert.equal(f.row.review_result.decisions[0].original_progress,20);
   assert.equal(f.row.feedback_version,1);
 });
+
+
+test('manual publication rechecks PM permission at execution and previews never call the sender',async()=>{
+  const f=fixture(),calls=[];
+  f.service.automation={
+    async previewPublication(input){calls.push(['preview',input]);return {preview_token:'test-preview'};},
+    async publishManually(input,job){calls.push(['send',input,job.id]);return {sent:true};}
+  };
+  const job={...f.job,kind:'manage_weekly_batch',payload:{action:'publication_preview_publish',report_date:'2026-10-05'}};
+  assert.deepEqual(await f.service.manageBatch(job),{preview:{preview_token:'test-preview'}});
+  assert.deepEqual(calls.map(c=>c[0]),['preview']);
+  job.payload.action='publication_publish';f.tables.profiles[0].active=false;
+  await assert.rejects(()=>f.service.manageBatch(job),/weekly_action_no_longer_authorized/);assert.equal(calls.length,1);
+  f.tables.profiles[0].active=true;f.tables.profiles[0].can_trigger_codex=false;
+  assert.deepEqual(await f.service.manageBatch(job),{sent:true});
+  assert.deepEqual(calls.map(c=>c[0]),['preview','send'],'publication needs PM, but does not invoke Codex');
+});

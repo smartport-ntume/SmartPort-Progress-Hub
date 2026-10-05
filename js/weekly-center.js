@@ -11,12 +11,12 @@
     const summary=document.createElement('summary');summary.textContent='手動產生／上傳週報與提案紀錄';manual.append(summary);
     while(parent.firstChild)manual.append(parent.firstChild);
     const root=document.createElement('section');root.className='weekly-center';
-    root.innerHTML=`<div class="weekly-center-head"><h2>週報管理中心</h2><button class="btn" data-action="refresh">重新整理</button></div>
+    root.innerHTML=`<div class="weekly-center-head"><h2>週報管理中心</h2><div class="weekly-center-actions"><button class="btn primary" data-action="publish">發布新一期週報</button><button class="btn" data-action="refresh">重新整理</button></div></div>
       <div class="weekly-center-tools"><label>週次<select data-field="batch" aria-label="週報週次"></select></label>
       <label>狀態<select data-field="filter"><option value="all">全部成員</option><option value="missing">尚未繳交</option><option value="pending">待 PM 審核</option><option value="failed">處理失敗</option><option value="returned">退回補件</option><option value="approved">已核准</option></select></label>
-      <button class="btn" data-action="resend">補發 Discord</button><label>截止時間（台灣）<input type="datetime-local" data-field="deadline"></label><button class="btn" data-action="extend">展延截止</button>
+      <button class="btn" data-action="resend">更新回饋並補發</button><label>截止時間（台灣）<input type="datetime-local" data-field="deadline"></label><button class="btn" data-action="extend">展延截止</button>
       <button class="btn" data-action="older">更早週次</button></div>
-      <div class="weekly-center-message" data-field="message" role="status" aria-live="polite"></div><div class="weekly-center-message" data-field="jobs" role="status" aria-live="polite"></div><div class="weekly-center-counts" data-field="counts"></div><p class="weekly-center-message" data-field="handoff" role="status"></p>
+      <div data-field="publication"></div><div class="weekly-center-message" data-field="message" role="status" aria-live="polite"></div><div class="weekly-center-message" data-field="jobs" role="status" aria-live="polite"></div><div class="weekly-center-counts" data-field="counts"></div><p class="weekly-center-message" data-field="handoff" role="status"></p>
       <div class="weekly-center-grid"><div class="weekly-center-roster" data-field="roster"></div><section class="weekly-center-detail" data-field="detail">選擇成員查看週報。</section></div>`;
     parent.append(root,manual);
     const el=name=>root.querySelector(`[data-field="${name}"]`);
@@ -24,6 +24,7 @@
     const active=()=>batches.find(b=>b.id===batchId);
     const jobKey='smartport.weeklyCenterJobs';
     const pendingJobs=new Map(),watching=new Set();
+    const publication=window.SmartPortWeeklyPublication?.mount(el('publication'),{API,onPublished:()=>load(false,false)});
     const pendingFor=id=>[...pendingJobs.values()].some(job=>job.targetId===id);
     function saveJobs(){
       try{sessionStorage.setItem(jobKey,JSON.stringify([...pendingJobs.entries()]));}catch(_){/* The queue also remains in Supabase. */}
@@ -34,6 +35,7 @@
       root.querySelectorAll('[data-action]').forEach(b=>{
         const name=b.dataset.action;
         if(['refresh','older'].includes(name)){b.disabled=busy;return;}
+        if(name==='publish'){b.disabled=busy||!publication;return;}
         const target=['resend','extend'].includes(name)?batchId:detail?.submission.id;
         b.disabled=busy||!active()||pendingFor(target);
       });
@@ -45,7 +47,7 @@
       const waiting=people.filter(({member,row})=>member.active!==false&&member.weekly_report_required!==false
         && !(row?.status==='completed'&&['APPROVED','CHANGES_REQUESTED'].includes(row.review_status)&&row.is_current!==false));
       el('handoff').textContent=waiting.length
-        ? `下期週報等待本期全員完成 PM 審閱：${waiting.map(({member,row})=>`${member.name}（${model().status(row).label}）`).join('、')}。審閱完成後才會依排程發送並帶入個人回饋。`
+        ? `自動發布下期週報仍等待本期全員完成 PM 審閱：${waiting.map(({member,row})=>`${member.name}（${model().status(row).label}）`).join('、')}。需要提前發送時，可使用「發布新一期週報」，未繳與待審者也會收到。`
         : '本期全員已完成 PM 審閱；下期週報發送時會帶入各人的 PM 意見。';
       el('counts').innerHTML=`<span>應繳 ${people.length} 人</span><span>未繳 ${count('missing')}</span><span>待審 ${count('pending')}</span><span>失敗 ${count('failed')}</span><span>已核准 ${count('approved')}</span><span>截止 ${esc(stamp(batch.due_at))}</span>`;
       const visible=people.filter(p=>el('filter').value==='all'||model().status(p.row).key===el('filter').value);
@@ -178,14 +180,15 @@
       if(busy)return;
       if(name==='refresh'){await load();message('已更新。');return;}
       if(name==='older'){await load(true);return;}
+      if(name==='publish'){publication?.open({batches});return;}
+      if(name==='resend'){if(active())publication?.open({batch:active()});return;}
       if(name==='add-feedback'){el('task-feedback').insertAdjacentHTML('beforeend',feedbackEditor());return;}
       if(name==='select-all'){el('detail').querySelectorAll('[data-proposal]:not(:disabled)').forEach(b=>b.checked=true);return;}
       const batch=active();if(!batch)return;
       let id=batch.id,payload={};
       const target=['resend','extend'].includes(name)?batch.id:detail?.submission.id;
       if(pendingFor(target))return;
-      if(name==='resend'){if(!confirm(`補發 ${batch.week_key} 的全部 Word 附件與原繳交連結到 Discord？`))return;}
-      else if(name==='extend'){
+      if(name==='extend'){
         const due=new Date(el('deadline').value+'+08:00');
         if(!Number.isFinite(+due)||+due<=Math.max(Date.now(),+new Date(batch.due_at)))throw new Error('請選擇比原截止時間及現在更晚的日期。');
         payload={due_at:due.toISOString()};if(!confirm(`截止時間展延至 ${stamp(due)}？截止後仍可直接補交並標記逾期。`))return;

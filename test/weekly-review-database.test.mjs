@@ -27,7 +27,7 @@ test('Postgres enforces weekly review permissions, report versions, durable feed
   `);
   const migrations=['202609030001_gateway.sql','202609080001_team_config.sql',
     '202609100001_weekly_discord_automation.sql','202609100002_passwordless_weekly_portal.sql',
-    '202609110002_weekly_review_cycle.sql','202609250001_weekly_editable_feedback.sql'];
+    '202609110002_weekly_review_cycle.sql','202609250001_weekly_editable_feedback.sql','202610050001_manual_weekly_publication.sql'];
   for(const name of migrations){
     let sql=await readFile(new URL('../supabase/migrations/'+name,import.meta.url),'utf8');
     // Supabase installs pgcrypto. PGlite's PostgreSQL core already supplies gen_random_uuid;
@@ -60,6 +60,53 @@ test('Postgres enforces weekly review permissions, report versions, durable feed
     await asUser(member);await assert.rejects(()=>rpc('get_pm_weekly_report',[batchId]),/pm_role_required/);
     await asUser(engineer);await assert.rejects(()=>rpc('enqueue_weekly_report_action',['resend',batchId,{},'denied-action']),/pm_role_required/);
     await assert.rejects(()=>db.query(`update public.weekly_report_submissions set review_status='APPROVED'`),/permission denied/);
+  });
+  await t.test('manual publication is PM-only, preview-only until confirmed, and idempotent by week',async()=>{
+    const input={report_date:'2099-01-12',due_at:'2099-01-19T04:00:00Z'},digest='a'.repeat(64);
+    for(const user of [null,member,engineer]){
+      await asUser(user);
+      await assert.rejects(()=>rpc('enqueue_weekly_publication',['preview_publish',input,'denied-publication']),/pm_role_required/);
+    }
+    await asUser(pm);assert.equal(await rpc('smartport_weekly_publication_version'),1);
+    await assert.rejects(()=>rpc('enqueue_gateway_job',['manage_weekly_batch',{action:'publication_publish'},'generic-bypass']),/unsupported_job_kind/);
+    for(const report_date of ['2099-02-30','2099-01-13','2020-01-06'])await assert.rejects(()=>rpc('enqueue_weekly_publication',[
+      'preview_publish',{...input,report_date},'bad-date-'+report_date]));
+    for(const due_at of [null,'2020-01-01T00:00:00Z','2099-01-10T00:00:00Z'])await assert.rejects(()=>rpc('enqueue_weekly_publication',[
+      'preview_publish',{...input,due_at},'bad-deadline-'+due_at]),/invalid_weekly_publication_deadline/);
+    await assert.rejects(()=>rpc('enqueue_weekly_publication',['publish',input,'missing-preview']),/preview_required/);
+    await assert.rejects(()=>rpc('enqueue_weekly_publication',['preview_update',{batch_id:member},'missing-batch']),/weekly_batch_not_found/);
+    const preview=await rpc('enqueue_weekly_publication',['preview_publish',{...input,token:'should-be-ignored',pm_user_id:member},'preview-new-week']);
+    assert.equal(preview.payload.action,'publication_preview_publish');assert.equal(preview.payload.publication_week,'2099-W03');
+    assert.equal(preview.payload.token,undefined);assert.equal(preview.payload.pm_user_id,undefined);
+    assert.equal(preview.actor_id,pm);assert.equal(preview.kind,'manage_weekly_batch');
+    await admin();
+    assert.equal((await db.query('select count(*)::int as n from public.weekly_report_batches')).rows[0].n,1,'enqueue creates no batch or message');
+    await asUser(pm);
+    const args=['publish',{...input,preview_token:digest},'publish-new-week'];
+    const queued=await rpc('enqueue_weekly_publication',args);
+    assert.equal((await rpc('enqueue_weekly_publication',args)).id,queued.id);
+    await assert.rejects(()=>rpc('enqueue_weekly_publication',['publish',args[1],'publish-second-click']),/weekly_publication_in_progress/);
+    await admin();await db.query("update public.profiles set role='PM' where user_id=$1",[engineer]);
+    await asUser(engineer);
+    await assert.rejects(()=>rpc('enqueue_weekly_publication',['publish',args[1],'second-pm-same-week']),/weekly_publication_in_progress/);
+    await admin();
+    await db.query("update public.profiles set role='ENGINEER' where user_id=$1",[engineer]);
+    await db.query("update public.gateway_jobs set status='failed' where id=$1",[queued.id]);
+    await asUser(pm);
+    const retry=await rpc('enqueue_weekly_publication',['publish',args[1],'publish-after-failure']);assert.notEqual(retry.id,queued.id);
+    const update=await rpc('enqueue_weekly_publication',['update',{batch_id:batchId,preview_token:digest},'update-existing-week']);
+    assert.deepEqual(update.payload,{action:'publication_update',batch_id:batchId,preview_token:digest,publication_week:'2099-W01'});
+    await assert.rejects(()=>rpc('enqueue_weekly_publication',['update',{batch_id:batchId,preview_token:digest},'duplicate-feedback-update']),/weekly_publication_in_progress/);
+    await admin();
+    await db.query("delete from public.gateway_jobs where kind='manage_weekly_batch' and payload->>'action' like 'publication_%'");
+    await db.query("update public.weekly_report_batches set status='CLOSED' where id=$1",[batchId]);
+    await asUser(pm);await assert.rejects(()=>rpc('enqueue_weekly_publication',['preview_update',{batch_id:batchId},'closed-publication']),/weekly_batch_closed/);
+    await admin();await db.query("update public.weekly_report_batches set status='OPEN' where id=$1",[batchId]);
+    await db.exec(await readFile(new URL('../supabase/migrations/202610050001_manual_weekly_publication.sql',import.meta.url),'utf8'));
+    await asUser(pm);assert.equal(await rpc('smartport_weekly_publication_version'),1,'migration may be rerun');
+    await admin();await db.exec('set role anon');
+    await assert.rejects(()=>rpc('enqueue_weekly_publication',['preview_publish',input,'anon-publication']),/permission denied/);
+    await admin();
   });
   const first=await submit();await complete(first);
   await t.test('feedback survives expiration of the temporary job record',async()=>{
