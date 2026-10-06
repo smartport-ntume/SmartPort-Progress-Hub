@@ -87,7 +87,9 @@
       ${field('Target CP',s.target_cp?chip('cp',s.target_cp,`${s.target_cp} · ${cp?.date||''}`):'<span class="muted">—</span>')}
       ${field('FSR',arr(s.fsrs).map(id=>chip('fsr',id)).join(' ')||'<span class="muted">—</span>')}
       ${field('Description',esc(s.description||'—'))}
+      ${window.SmartPortAPI?.listTechnicalDocuments&&['PM','ENGINEER'].includes(window.SmartPortAPI.getRole())?'<section id="taskTechnicalDocuments" class="technical-documents"></section>':''}
       ${dateConflict(s)?`<div class="alert danger"><b>Schedule / Target CP conflict</b><br>Subtask end ${esc(s.end)} is later than ${esc(s.target_cp)} (${esc(cp?.date||'')}).</div>`:''}`);
+    window.SmartPortDocuments?.drawer(document.getElementById('taskTechnicalDocuments'),window.SmartPortAPI,id);
   }
 
   function cpIdFromElement(el){

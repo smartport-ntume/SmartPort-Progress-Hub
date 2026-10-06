@@ -10,13 +10,14 @@ function numericIssue(value) {
 }
 
 export class GatewayJobHandler {
-  constructor({ app, env, internalBearer, supabase, reportBucket = 'weekly-reports', weeklyReview = null }) {
+  constructor({ app, env, internalBearer, supabase, reportBucket = 'weekly-reports', weeklyReview = null, technicalDocs = null }) {
     this.app = app;
     this.env = env;
     this.internalBearer = internalBearer;
     this.supabase = supabase;
     this.reportBucket = reportBucket;
     this.weeklyReview = weeklyReview;
+    this.technicalDocs = technicalDocs;
   }
 
   async request(path, method = 'GET', payload = null, actor = 'supabase-user') {
@@ -173,6 +174,9 @@ export class GatewayJobHandler {
         );
       case 'analyze_weekly_report':
         return this.analyzeWeeklyReport(job);
+      case 'archive_technical_document':
+        if (!this.technicalDocs) throw new Error('technical_document_service_unavailable');
+        return this.technicalDocs.archive(job);
       case 'review_weekly_submission':
         if (!this.weeklyReview) throw new Error('weekly_review_service_unavailable');
         return this.weeklyReview.review(job);

@@ -14,6 +14,7 @@
    - `supabase/migrations/202609110002_weekly_review_cycle.sql`
    - `supabase/migrations/202609250001_weekly_editable_feedback.sql`
    - `supabase/migrations/202610050001_manual_weekly_publication.sql`
+   - `supabase/migrations/202610060001_technical_documents.sql`
 4. 到 Authentication → Providers → Anonymous Sign-Ins 開啟匿名登入。匿名 session 只可搭配當週私密 token 使用週報 RPC；既有 RLS 仍拒絕它讀取主網站資料。
 5. 到 Project Settings → API 保存以下兩項：
    - Project URL
@@ -36,6 +37,10 @@ Migration 會建立：
 | `weekly_report_upload_grants` | 15 分鐘、一次性的 Storage 上傳授權 | 不能直接讀取 |
 | `weekly_report_submissions` | 提交版本、歸檔路徑、批改結果與 PM 決定 | token RPC 顯示狀態與回饋；PM 可審核 |
 | `weekly_report_analysis_runs` | 不隨暫存工作清理的批改執行歷史 | Agent 寫入；PM 透過管理中心查看 |
+| `technical_document_versions` | 階段 PDF 文件與歷史版本索引 | 成員 token RPC 或 Engineer／PM 查閱；Agent 歸檔 |
+| `technical-documents` | 10 MB private PDF 暫存 bucket | 成員依一次性 grant 上傳；Agent 下載／刪除 |
+
+PDF 文件庫建置與成員 Read 權限設定請見 [技術文件上傳與設定](TECHNICAL_DOCUMENTS.md)。
 
 `project_snapshots` 的 GUEST 與 MEMBER 列會發布相同的甘特圖、需求與 Checkpoint 內容，讓 Guest 在唯讀頁面看到完整的專案快照；但 GUEST 快照會移除成員姓名與分類負責人對應，只保留分類名稱與顏色。這不會提高 Guest 權限：RLS 仍只允許讀取指定 audience，前端仍隱藏 reports、review、settings，且 Guest 不能建立或修改工作。
 

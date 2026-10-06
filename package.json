@@ -16,7 +16,8 @@
     "snapshot": "node --env-file-if-exists=.env.local local-server/publish-snapshot.mjs",
     "preview": "node scripts/preview.mjs",
     "check": "node scripts/check-syntax.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "docs:setup": "node --env-file-if-exists=.env.local scripts/setup-technical-docs.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.114.0",

@@ -81,6 +81,12 @@ Word 使用暖灰／墨黑配色。每項工作分開顯示 **上期核准進度
 
 進度卡與工作回饋共用完整標題，例如 `WP-P1 · P1.4 · Near-field Radar / Ultrasonic Prototype`；名稱來自批次專案資料與最新專案資料，舊提案不需重批即可顯示。舊批改若尚未擷取跨任務事項，更新並重啟 Agent 後按 **重新批改原始週報**，無需重新上傳。此次更新不需新增 SQL；已發送的 Discord 附件不會被改寫。
 
+### 階段成果 PDF 技術文件
+
+成員可在週報繳交頁選擇負責的工作細項，自行上傳階段成果 PDF（10 MB 以內）。文件以「WP ID＋標題／細項 ID＋標題」歸檔到私人 `SmartPort-Technical-Docs`，同一文件可更新版本並保留歷史；Dashboard 開啟細項即可查看 PDF 連結。此操作不變更正式進度，也不受週報截止時間限制。
+
+首次啟用需建立私人文件庫、執行 `202610060001_technical_documents.sql` 並更新 Agent。建庫可使用 `npm run docs:setup`；詳見 [技術文件上傳與設定](docs/TECHNICAL_DOCUMENTS.md)。
+
 ### 每週自動建立、Discord 發布與收件
 
 啟用後，持續運行的 Windows Agent 會在每週一 13:00（`Asia/Taipei`）建立當週批次，從 Private Git 凍結當下的甘特圖、Checkpoint 與成員分工，為每位應繳成員產生個人 `.docx`，並直接附加到 Discord 訊息。成員在 Discord 下載與自己姓名相同的 Word，填寫後直接開啟訊息中的當週專用網址、選擇姓名並上傳；不需要 GitHub 帳號或訪客密碼。入口頁會在背景建立獨立的 Supabase 匿名工作階段，也可重新下載同一格式的空白週報，並顯示全員的繳交／批改狀態；Agent 離線時工作留在 Supabase，恢復後再自動批改，最後仍進入既有 PM Review Queue。
