@@ -4,6 +4,7 @@ import { loadConfig, agentConfigProblems } from './config.mjs';
 import { CodexWeeklyRunner } from './codex-runner.mjs';
 import { runCommand } from './command.mjs';
 import { GitRepositoryStore } from './git-store.mjs';
+import { TechnicalDocumentArchive } from './technical-documents.mjs';
 
 const config = loadConfig();
 const checks = [];
@@ -69,6 +70,17 @@ if (!problems.length) {
     });
     const { error } = await supabase.from('gateway_jobs').select('id').limit(1);
     add('Supabase migration', !error, error ? error.message : 'gateway_jobs is available');
+    const documents = await supabase.from('technical_document_versions').select('id').limit(1);
+    add('Technical document migration', !documents.error,
+      documents.error ? 'Run 202610060001_technical_documents.sql' : 'document version index available');
+    if (resolvedGitHubToken) {
+      try {
+        const archive = new TechnicalDocumentArchive({ ...config.technicalDocs, fetchImpl: fetch, token: resolvedGitHubToken });
+        await archive.checkRepository();
+        const ref = await archive.github(`/git/ref/heads/${encodeURIComponent(config.technicalDocs.branch)}`);
+        add('Private technical document repository', !!ref?.object?.sha, ref?.object?.sha ? config.technicalDocs.repository : 'Initialize main with a README');
+      } catch (error) { add('Private technical document repository', false, error.message); }
+    }
     const review = await supabase.rpc('smartport_weekly_review_version');
     add('Weekly review cycle migration', !review.error && Number(review.data) >= 2,
       review.error || Number(review.data)<2 ? 'Run 202609250001_weekly_editable_feedback.sql' : `version ${review.data}`);

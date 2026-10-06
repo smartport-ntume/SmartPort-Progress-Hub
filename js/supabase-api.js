@@ -404,6 +404,11 @@
         return { ok: true, mode: 'supabase', agent: data || null };
       },
       loadSnapshot: () => snapshotRow('project_snapshots'),
+      async listTechnicalDocuments(subtaskId) {
+        const { data, error } = await requireClient().rpc('list_technical_documents', { p_subtask_id: subtaskId });
+        if (error) throw errorFrom(error);
+        return data || [];
+      },
       loadReference: () => snapshotRow('reference_snapshots'),
       request: requestPath,
       uploadWeeklyReport,

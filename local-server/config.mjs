@@ -61,6 +61,10 @@ export function loadConfig(env = process.env, rootDir = process.cwd()) {
       agentId: String(env.SUPABASE_AGENT_ID || 'vincent-windows-agent'),
       reportBucket: String(env.SUPABASE_REPORT_BUCKET || 'weekly-reports')
     },
+    technicalDocs: {
+      repository: String(env.TECHNICAL_DOCS_REPO || 'smartport-ntume/SmartPort-Technical-Docs'),
+      branch: String(env.TECHNICAL_DOCS_BRANCH || 'main')
+    },
     project: {
       fullName: String(env.PROJECT_REPO || 'smartport-ntume/SmartPort-Project-Control'),
       url: String(env.PROJECT_REPO_URL || 'https://github.com/smartport-ntume/SmartPort-Project-Control.git'),

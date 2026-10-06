@@ -12,6 +12,8 @@ import { SupabaseRealtimeAgent } from './supabase-realtime-agent.mjs';
 import { SupabaseSnapshotPublisher } from './supabase-sync.mjs';
 import { WeeklyReportAutomation } from './weekly-report-automation.mjs';
 import { WeeklyReviewService } from './weekly-review-service.mjs';
+import { TechnicalDocumentArchive } from './technical-documents.mjs';
+import { buildMemberSnapshot } from './snapshot.mjs';
 
 const config = loadConfig();
 const problems = agentConfigProblems(config);
@@ -81,7 +83,11 @@ const handler = new GatewayJobHandler({
   env: workerEnv,
   internalBearer,
   supabase,
-  reportBucket: config.supabase.reportBucket
+  reportBucket: config.supabase.reportBucket,
+  technicalDocs: new TechnicalDocumentArchive({
+    supabase, getProject: () => buildMemberSnapshot(projectStore), fetchImpl: nativeFetch,
+    token: githubToken, ...config.technicalDocs
+  })
 });
 const publisher = new SupabaseSnapshotPublisher({
   supabase,

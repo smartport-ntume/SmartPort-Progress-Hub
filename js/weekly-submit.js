@@ -12,6 +12,7 @@
   let selectedModel = null;
   let subscription = null;
   let feedbackSequence = 0;
+  let technicalDocuments = null;
 
   function toast(message) {
     const element = $('#toast');
@@ -69,6 +70,10 @@
     if (error) throw error;
     batch = data;
     renderBatch();
+    if (!technicalDocuments && window.SmartPortDocuments) {
+      technicalDocuments = window.SmartPortDocuments.portal({ client, token, root: $('#technicalDocumentPanel'), toast });
+    }
+    technicalDocuments?.load($('#memberSelect').value);
     await loadFeedback();
     subscribe();
   }
@@ -311,7 +316,7 @@
     }
   }
 
-  $('#memberSelect').addEventListener('change', () => { renderScope(); loadFeedback(); });
+  $('#memberSelect').addEventListener('change', () => { renderScope(); loadFeedback(); technicalDocuments?.load($('#memberSelect').value); });
   $('#downloadButton').addEventListener('click', downloadReport);
   $('#reportFile').addEventListener('change', () => {
     try { validateFile($('#reportFile').files?.[0]); }
