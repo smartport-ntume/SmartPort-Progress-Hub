@@ -138,6 +138,11 @@ test('generated personal weekly report is a readable DOCX with scoped task IDs',
   assert.match(extracted.value, /上期核准進度/);
   assert.match(extracted.value, /本週回報進度/);
   assert.match(extracted.value, /本週新增成果與進度說明/);
+  assert.equal(extracted.value.split('完成工項的步驟').length - 1, model.tasks.length, 'active, overdue and upcoming tasks each have step planning');
+  assert.equal(extracted.value.split('目前做到哪一步').length - 1, model.tasks.length);
+  assert.match(extracted.value, /已完成／進行中／未開始/);
+  assert.match(extracted.value, /目前第 ____ 步／共 ____ 步/);
+  assert.match(extracted.value, /並行步驟可複選/);
   assert.doesNotMatch(extracted.value, /PM REVIEW|PM 姓名：|完成度：____ %/);
   const issues = extractWeeklyIssues(extracted.value);
   assert.equal(issues.cross_task_issues.status, 'not_filled');
@@ -167,6 +172,7 @@ test('Word places edited feedback inside the matching task and retains completed
   const taskStart=text.indexOf('S1.1　任務流程整合'),feedbackAt=text.indexOf('S1.1 補齊狀態轉移測試');
   assert.ok(taskStart<feedbackAt&&feedbackAt<text.indexOf('本週新增成果與進度說明',taskStart),'feedback is inside the matching fill-in task');
   assert.equal(text.split('WP-C1 補測試影片').length,2,'WP advice is not repeated for every child');
+  assert.equal(text.split('完成工項的步驟').length-1,model.tasks.length,'completed tasks retained for follow-up also have the new field');
 });
 
 test('Word routes legacy mixed feedback into task fill-in sections without PM target selection',async()=>{

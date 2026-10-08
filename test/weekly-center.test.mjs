@@ -108,6 +108,17 @@ test('a valid zero-score report without proposals can be approved explicitly wit
   assert.deepEqual(f.db.calls[0].payload.issue_numbers,[]);
 });
 
+test('PM sees task steps and the current step as a work record without a fabricated percentage',async t=>{
+  const db=database(),steps='1. 介面定義（已完成）\n2. CAN 收送測試（進行中）\n3. 整合驗證（未開始）\n目前第 2 步／共 3 步';
+  db.rows[0].analysis_result.proposals=[{...proposals[0],progress:null,reported_progress:null,summary:steps,evidence:steps,status:'In Progress'}];
+  const f=await fixture(t,db);await f.click('[data-member="m1"]');
+  const change=f.doc.querySelector('.weekly-center-change');
+  assert.ok(change.textContent.includes(steps));
+  assert.match(change.textContent,/工作紀錄更新（百分比不變）/);
+  assert.doesNotMatch(change.textContent,/67%|66\.7%/);
+  assert.equal(change.querySelector('[data-proposal]').disabled,false);
+});
+
 test('reloading restores multiple job watchers without disabling other members',async t=>{
   const first=await fixture(t);
   await first.click('[data-member="m3"]');await first.click('[data-action="retry"]');

@@ -37,6 +37,18 @@ test('explicit self-reported task completion remains a selectable candidate with
   assert.match(record.last_update_summary,/成員自報/);
 });
 
+test('step-only work records preserve ordered states and do not convert the current step into completion',()=>{
+  const steps='1. 介面定義（已完成）\n2. CAN 收送測試（進行中）\n3. 整合驗證（未開始）\n目前第 2 步／共 3 步';
+  const normalized=normalizeWeeklyProposal({...workRecord(),summary:steps,evidence:steps,status:'In Progress'});
+  assert.equal(normalized.summary,steps);assert.equal(normalized.evidence,steps);
+  const record={actual_progress:30};
+  applyWeeklyProposal(record,{...workRecord(),...normalized});
+  assert.equal(record.actual_progress,30);
+  assert.equal(record.self_progress,undefined);
+  assert.ok(record.actual_evidence.includes(steps));
+  assert.ok(record.last_update_summary.includes(steps));
+});
+
 test('record proposals reject missing evidence, invented zero conversions and stale work-record snapshots',()=>{
   const p=workRecord();
   for(const progress of [undefined,'', '50',-1,101])assert.throws(()=>normalizeWeeklyProposal({...p,progress}),/invalid_progress/);
