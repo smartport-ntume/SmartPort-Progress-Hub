@@ -24,7 +24,6 @@
   }
   function progressOf(t){return window.SmartPortProgress?.forItem(t,S.workPackages,S.subtasks)?.value ?? null;}
   function statusOf(t){return t?.status || 'Not Updated';}
-  function weightOf(t){return t?.weight ?? 1;}
   function tags(v){return arr(v).map(x=>`<span class="tag">${esc(x)}</span>`).join('')||'<span class="muted">—</span>';}
   function visibleWps(){return S.workPackages.filter(w=>filter==='ALL'||familyOfWp(w.id)===filter);}
   function visibleCount(){const ids=new Set(visibleWps().map(w=>w.id));return ids.size+S.subtasks.filter(s=>ids.has(s.parent_wp)).length;}
@@ -53,16 +52,16 @@
 
   function ensurePlanHeader(){
     const tr=document.querySelector('#planTable thead tr');if(!tr)return;
-    tr.innerHTML='<th>WP / Subtask</th><th>Owner</th><th>Start</th><th>End</th><th>Weight</th><th>Target CP</th><th>Actual</th><th>工作內容</th><th>IF / FSR</th><th></th>';
+    tr.innerHTML='<th>WP / Subtask</th><th>Owner</th><th>Start</th><th>End</th><th>Target CP</th><th>Actual</th><th>工作內容</th><th>IF / FSR</th><th></th>';
   }
 
   function wpRow(w){
     const p=progressOf(w);
-    return `<tr class="plan-row clickable" data-open-wp="${esc(w.id)}"><td><b>${esc(w.id)}</b> ${esc(w.name||'')}<div class="muted">${esc(w.group||'')}</div></td><td>${esc(w.owner||'')}</td><td>${esc(w.start||'')}</td><td>${esc(w.end||'')}</td><td>${esc(weightOf(w))}</td><td>${wpTargetCps(w.id).map(cpBadge).join(' ')||'<span class="muted">—</span>'}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(w))}</div></td><td class="plan-desc-cell">${w.description?`<div class="plan-description">${esc(w.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(w.ifs)}<br>${tags(w.fsrs)}</td><td><button class="btn smallbtn" data-edit-wp="${esc(w.id)}">Edit</button></td></tr>`;
+    return `<tr class="plan-row clickable" data-open-wp="${esc(w.id)}"><td><b>${esc(w.id)}</b> ${esc(w.name||'')}<div class="muted">${esc(w.group||'')}</div></td><td>${esc(w.owner||'')}</td><td>${esc(w.start||'')}</td><td>${esc(w.end||'')}</td><td>${wpTargetCps(w.id).map(cpBadge).join(' ')||'<span class="muted">—</span>'}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(w))}</div></td><td class="plan-desc-cell">${w.description?`<div class="plan-description">${esc(w.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(w.ifs)}<br>${tags(w.fsrs)}</td><td><button class="btn smallbtn" data-edit-wp="${esc(w.id)}">Edit</button></td></tr>`;
   }
   function subRow(s){
     const p=progressOf(s);
-    return `<tr class="plan-row subtask-plan-row clickable" data-open-sub="${esc(s.id)}"><td style="padding-left:28px">↳ <b>${esc(s.id)}</b> ${esc(s.name||'')}<div class="muted">Parent: ${esc(s.parent_wp||'')}</div></td><td>${esc(s.owner_team||'')}</td><td>${esc(s.start||'')}</td><td>${esc(s.end||'')}</td><td>${esc(weightOf(s))}</td><td>${cpBadge(s.target_cp||'')}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(s))}</div></td><td class="plan-desc-cell">${s.description?`<div class="plan-description">${esc(s.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(s.ifs)}<br>${tags(s.fsrs)}</td><td><button class="btn smallbtn" data-edit-subtask="${esc(s.id)}">Edit</button></td></tr>`;
+    return `<tr class="plan-row subtask-plan-row clickable" data-open-sub="${esc(s.id)}"><td style="padding-left:28px">↳ <b>${esc(s.id)}</b> ${esc(s.name||'')}<div class="muted">Parent: ${esc(s.parent_wp||'')}</div></td><td>${esc(s.owner_team||'')}</td><td>${esc(s.start||'')}</td><td>${esc(s.end||'')}</td><td>${cpBadge(s.target_cp||'')}</td><td>${p==null?'—':p+'%'}<div class="muted">${esc(statusOf(s))}</div></td><td class="plan-desc-cell">${s.description?`<div class="plan-description">${esc(s.description)}</div>`:'<span class="muted">—</span>'}</td><td>${tags(s.ifs)}<br>${tags(s.fsrs)}</td><td><button class="btn smallbtn" data-edit-subtask="${esc(s.id)}">Edit</button></td></tr>`;
   }
 
   function renderPlanRows(resetScroll=false){

@@ -28,12 +28,14 @@ async function browserModules() {
         clearTimeout,
         crypto
       });
-      const [feedbackCode, modelCode, documentCode] = await Promise.all([
+      const [feedbackCode, taskCode, modelCode, documentCode] = await Promise.all([
         readFile(new URL('../js/weekly-feedback-routing.js', import.meta.url), 'utf8'),
+        readFile(new URL('../js/weekly-task-records.js', import.meta.url), 'utf8'),
         readFile(new URL('../js/weekly-report-model.js', import.meta.url), 'utf8'),
         readFile(new URL('../js/weekly-report-docx.js', import.meta.url), 'utf8')
       ]);
       vm.runInContext(feedbackCode, context, { filename: 'weekly-feedback-routing.js' });
+      vm.runInContext(taskCode, context, { filename: 'weekly-task-records.js' });
       vm.runInContext(modelCode, context, { filename: 'weekly-report-model.js' });
       vm.runInContext(documentCode, context, { filename: 'weekly-report-docx.js' });
       if (!window.SmartPortWeeklyReport?.build || !window.SmartPortWeeklyDocx?.create) {

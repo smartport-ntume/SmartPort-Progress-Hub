@@ -123,6 +123,7 @@
     const feedback = previous?.members?.find(row => row.member_id === memberId);
     const taskFeedback = feedback && ['APPROVED','CHANGES_REQUESTED'].includes(feedback.review_status)
       ? window.SmartPortWeeklyFeedback.assign(feedback.task_feedback || [], options, memberId) : [];
+    const previousSteps = window.SmartPortWeeklyTasks?.steps(feedback?.task_steps) || [];
     const feedbackTaskIds = new Set(taskFeedback.filter(item=>item.target_type==='SUBTASK').map(item=>item.target_id));
 
     const tasks = (options.subtasks || []).filter(item => {
@@ -188,6 +189,8 @@
     } : null;
     const placed = new Set();
     for (const task of tasks) {
+      task.steps = (previousSteps.find(item => item.target_type === 'SUBTASK' && item.target_id === task.id)?.steps || []).map(step => ({ ...step, status: null }));
+      task.stepsFromWeek = task.steps.length ? clean(previous?.week_key, 32) : '';
       task.reviewFeedback = taskFeedback.filter((item,index)=>{
         const matches=item.target_type==='SUBTASK'&&item.target_id===task.id
           ||item.target_type==='WP'&&item.target_id===task.parentWp&&!placed.has(index);

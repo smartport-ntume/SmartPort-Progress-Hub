@@ -14,6 +14,7 @@ async function browserWeeklyModules({ includeDocx = false } = {}) {
   });
   const feedbackCode = await readFile(new URL('../js/weekly-feedback-routing.js', import.meta.url), 'utf8');
   vm.runInContext(feedbackCode, context);
+  vm.runInContext(await readFile(new URL('../js/weekly-task-records.js', import.meta.url), 'utf8'), context);
   const modelCode = await readFile(new URL('../js/weekly-report-model.js', import.meta.url), 'utf8');
   vm.runInContext(modelCode, context);
   if (includeDocx) {
@@ -140,10 +141,10 @@ test('generated personal weekly report is a readable DOCX with scoped task IDs',
   assert.match(extracted.value, /本週回報進度/);
   assert.match(extracted.value, /本週新增成果與進度說明/);
   assert.equal(extracted.value.split('完成工項的步驟').length - 1, model.tasks.length, 'active, overdue and upcoming tasks each have step planning');
-  assert.equal(extracted.value.split('目前做到哪一步').length - 1, model.tasks.length);
-  assert.match(extracted.value, /已完成／進行中／未開始/);
-  assert.match(extracted.value, /目前第 ____ 步／共 ____ 步/);
-  assert.match(extracted.value, /並行步驟可複選/);
+  assert.doesNotMatch(extracted.value, /目前做到哪一步|目前第 ____ 步／共 ____ 步/);
+  assert.match(extracted.value, /已完成.*進行中.*未開始/);
+  assert.match(extracted.value, /（__%）/);
+  assert.doesNotMatch(extracted.value, /成果證據／連結|上期需要補充|建議下一步/);
   assert.equal(extracted.value.split('優先度（擇一）').length - 1, model.tasks.length);
   assert.equal(extracted.value.split('下一步／承諾日期').length - 1, model.tasks.length);
   assert.equal(extracted.value.split('☐ 高　☐ 中　☐ 低').length - 1, model.tasks.length);
@@ -177,9 +178,9 @@ test('Word places edited feedback inside the matching task and retains completed
   const dom=new JSDOM(html);
   const tables=[...dom.window.document.querySelectorAll('table')].filter(table=>{
     const cells=table.querySelector('tr')?.querySelectorAll('td, th');
-    return cells?.length===2&&cells[0].textContent==='上期需要補充'&&cells[1].textContent==='建議下一步';
+    return cells?.length===1&&cells[0].textContent==='上期工作回饋';
   });
-  assert.ok(tables.length>=4,'task, standalone WP and general feedback pair both headings in one table');
+  assert.ok(tables.length>=4,'task, standalone WP and general advice share one unified feedback column');
   dom.window.close();
   for(const item of items)for(const line of [...item.missing_items,...item.actions])assert.ok(text.includes(line),line);
   assert.ok(text.includes('PM 回饋原文'));

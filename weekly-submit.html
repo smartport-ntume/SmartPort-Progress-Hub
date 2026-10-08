@@ -6,20 +6,21 @@
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
   <title>SmartPort 每週週報</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="css/weekly-submit.css?v=20260914.0300">
+  <link rel="stylesheet" href="css/weekly-submit.css?v=20261008.2300">
   <link rel="stylesheet" href="css/technical-documents.css?v=20261006.1600">
+  <link rel="stylesheet" href="css/design-system.css?v=20261008.2300">
 </head>
 <body>
   <header class="portal-header">
     <div>
       <div class="portal-brand">SmartPort Progress Hub</div>
-      <h1>每週個人工作進度報告</h1>
+      <h1 id="portalTitle">每週個人工作進度報告</h1><p data-hint-for="portalTitle">從個人連結開啟，不需要帳號或密碼。選擇姓名後下載與上傳週報。</p>
     </div>
-    <span class="portal-build">Build 20261008.1645</span>
+    <span class="portal-build" title="Build 20261008.2300">WEEKLY REPORT</span>
   </header>
 
   <main class="portal-shell">
-    <section id="portalMessage" class="portal-message">正在開啟本週週報，不需要帳號或密碼…</section>
+    <section id="portalMessage" class="portal-message">正在開啟本週週報…</section>
 
     <section id="batchCard" class="portal-card" hidden>
       <div class="batch-head">
@@ -42,14 +43,14 @@
         <section class="step-card">
           <span class="step-number">2</span>
           <div>
-            <h3>如需可重新下載</h3>
-            <button id="downloadButton" class="button" type="button" disabled>重新下載我的 Word 週報</button>
+            <h3 id="downloadTitle">下載 Word</h3><p data-hint-for="downloadTitle">Discord 附件與這裡是同一份個人週報，可隨時重新下載。</p>
+            <button id="downloadButton" class="button" type="button" disabled>下載我的週報</button>
           </div>
         </section>
         <section class="step-card">
           <span class="step-number">3</span>
           <div>
-            <h3>上傳完成版</h3>
+            <h3 id="uploadTitle">上傳完成版</h3><p data-hint-for="uploadTitle">接受 .docx 或 .doc；補交會建立新版並保留歷史紀錄。</p>
             <input id="reportFile" type="file" accept=".doc,.docx" disabled>
             <button id="submitButton" class="button primary" type="button" disabled>上傳並送出批改</button>
           </div>
@@ -63,7 +64,7 @@
 
       <section class="submission-panel">
         <div class="section-head">
-          <div><h3>繳交狀態</h3><p>上傳後會自動由本機 Agent 取得並交給 Codex 批改。</p></div>
+          <div><h3 id="submissionTitle">繳交狀態</h3><p data-hint-for="submissionTitle">上傳後會自動由本機 Agent 取得並交給 Codex 批改。</p></div>
           <button id="refreshButton" class="button small" type="button">重新整理</button>
         </div>
         <div id="submissionRows" class="submission-rows muted">尚無繳交紀錄。</div>
@@ -72,14 +73,16 @@
   </main>
 
   <div id="toast" class="toast" hidden></div>
+  <script src="js/ui-hints.js?v=20261008.2300"></script>
   <script src="js/runtime-config.js?v=20260914.0300"></script>
   <script src="vendor/supabase-2.114.0.js?v=20260914.0300"></script>
   <script src="vendor/docx-9.5.1.iife.js?v=20260914.0300"></script>
   <script src="js/weekly-feedback-routing.js?v=20260926.2000"></script>
-  <script src="js/weekly-report-model.js?v=20261005.1900"></script>
-  <script src="js/weekly-report-docx.js?v=20261008.1645"></script>
+  <script src="js/weekly-task-records.js?v=20261008.2300"></script>
+  <script src="js/weekly-report-model.js?v=20261008.2300"></script>
+  <script src="js/weekly-report-docx.js?v=20261008.2300"></script>
   <script src="js/weekly-review-model.js?v=20261005.1700"></script>
-  <script src="js/technical-documents.js?v=20261006.1600"></script>
-  <script src="js/weekly-submit.js?v=20261006.1600"></script>
+  <script src="js/technical-documents.js?v=20261008.2300"></script>
+  <script src="js/weekly-submit.js?v=20261008.2300"></script>
 </body>
 </html>

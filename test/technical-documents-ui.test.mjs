@@ -88,7 +88,8 @@ test('real Dashboard Gantt and traceability drawers expose private PDF links to 
   const bar = w.document.querySelector('.sub-row-gantt .bar'); assert.ok(bar);
   bar.click(); await tick();
   assert.equal(w.document.querySelector('#taskTechnicalDocuments a').href, archived.html_url);
-  assert.ok(w.document.querySelector('[name="exec_progress"]'), 'PM editor still present');
+  assert.ok(w.document.querySelector('.reviewed-result'), 'current reviewed result remains visible');
+  assert.equal(w.document.querySelector('[name="exec_progress"]'), null, 'the drawer no longer asks PM to re-enter weekly results');
   w.SmartPortTraceability.openSubtask('C1.1'); await tick();
   assert.equal(w.document.querySelector('#taskTechnicalDocuments a').href, archived.html_url);
   assert.deepEqual(loaded, ['C1.1', 'C1.1']);

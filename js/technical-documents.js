@@ -39,13 +39,13 @@
     try {
       const rows = await api.listTechnicalDocuments(subtaskId);
       if (!root.isConnected) return;
-      root.innerHTML = `<h3>技術文件</h3><p class="muted">私人文件庫，開啟 PDF 需有 GitHub 讀取權限。</p>${list(rows)}`;
+      root.innerHTML = `<h3>${window.SmartPortUI?.hint('技術文件','私人文件庫，開啟 PDF 需有 GitHub 讀取權限。')||'技術文件'}</h3>${list(rows)}`;
     } catch (error) { if (root.isConnected) root.innerHTML = `<h3>技術文件</h3><p>${esc(errorText(error))}</p>`; }
   }
   function portal({ client, token, root, toast }) {
     let member = '', data = { tasks: [], versions: [] }, sequence = 0, busy = false, ready = false;
     const $ = selector => root.querySelector(selector);
-    root.innerHTML = `<div class="section-head"><div><h3>技術文件 · PDF</h3><p>完成一個階段就可以上傳，選填、不受週報截止日限制。上傳後可在 Dashboard 的對應細項查看。</p></div><button type="button" class="button small" data-refresh-docs>重新整理文件</button></div>
+    root.innerHTML = `<div class="section-head"><div><h3>${window.SmartPortUI?.hint('技術文件 · PDF','完成一個階段就可以上傳，選填、不受週報截止日限制。文件存入私人 GitHub 文件庫，歸檔後可從 Dashboard 開啟；需要文件庫讀取權限。上傳文件不會變更進度百分比。')||'技術文件 · PDF'}</h3></div><button type="button" class="button small" data-refresh-docs>重新整理文件</button></div>
       <p data-doc-message role="status">請先選擇姓名。</p>
       <fieldset class="td-form" disabled>
         <label for="technicalTask">工作細項</label><select id="technicalTask"><option value="">請選擇細項</option></select>
@@ -94,7 +94,7 @@
         $('#technicalTask').innerHTML = '<option value="">請選擇細項</option>' + data.tasks.map(t => `<option value="${esc(t.id)}">${esc(t.wp_id)} · ${esc(t.wp_name)} ／ ${esc(t.id)} · ${esc(t.name)}</option>`).join('');
         if (data.tasks.some(t => t.id === selected)) $('#technicalTask').value = selected;
         choices(); $('[data-doc-list]').innerHTML = list(data.versions, true);
-        message(data.tasks.length ? '文件會存入私人 GitHub 文件庫；歸檔完成後即可開啟。這項操作不會變更進度百分比。' : '目前沒有分配給你的工作細項，請聯絡 PM。');
+        message(data.tasks.length ? '' : '目前沒有分配給你的工作細項，請聯絡 PM。');
       } catch (error) { if (current === sequence) message(errorText(error)); }
       if (current === sequence) controls();
     }

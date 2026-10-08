@@ -8,10 +8,8 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(100, number)) : null;
   }
 
-  function weightOf(item) {
-    const number = Number(item?.weight);
-    return Number.isFinite(number) && number > 0 ? number : 1;
-  }
+  // All children contribute equally, including old records with stored weights.
+  function weightOf() { return 1; }
 
   function forWorkPackage(workPackage, subtasks = []) {
     const children = (Array.isArray(subtasks) ? subtasks : [])
@@ -67,10 +65,10 @@
 
   function label(info) {
     if (!info?.derived) return '';
-    if (info.value === null) return '子 WP 尚未填寫進度';
+    if (info.value === null) return '子項目尚未填寫進度';
     return info.missingWeight > 0
-      ? `子 WP 加權 · 已填 ${info.reported}/${info.children}`
-      : '子 WP 加權平均';
+      ? `子項目平均 · 已填 ${info.reported}/${info.children}`
+      : '子項目平均';
   }
 
   window.SmartPortProgress = Object.freeze({
