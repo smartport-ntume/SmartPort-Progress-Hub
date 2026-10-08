@@ -40,6 +40,7 @@
   }
 
   function renderReportOptions(){
+    window.SmartPortUI?.condense();
     const categories=window.SmartPortTeam?.activeCategories(Store.state.teamConfig)||[];
     const manual=$('#weeklyManualOwner');
     if(manual){
@@ -73,17 +74,17 @@
     root.innerHTML=`
       <div class="weekly-intake-grid">
         <div class="panel weekly-upload-panel">
-          <div class="panel-title"><span>個人週報產生與回收</span><span class="revision-badge">Gantt → Word → Local Codex</span></div>
+          <div class="panel-title"><span id="weeklyIntakeTitle">個人週報產生與回收</span></div>
           <form id="weeklyReportUploadForm" class="weekly-upload-body">
-            <div class="alert info"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>首頁會先預覽下一個 CP、車輛能力與 Review / Check；內容只含逾期未完成，以及該 CP 檢核前應完成的 Subtask。</div>
+            <div class="alert info" data-hint-for="weeklyIntakeTitle"><b>先選人，系統會依其負責分類產生本週 Word。</b><br>首頁會先預覽下一個 CP、車輛能力與 Review / Check；內容只含逾期未完成，以及該 CP 檢核前應完成的 Subtask。</div>
             <div class="weekly-meta-grid">
               <div class="field"><label>Report Date</label><input id="weeklyDate" name="report_date" type="date" required></div>
               <div class="field"><label>Report Member</label><select id="weeklyMember" name="member_id" required></select></div>
             </div>
             <div id="weeklyScopePreview" class="weekly-scope-preview muted">請選擇成員。</div>
             <div class="weekly-template-actions">
-              <button id="weeklyDownloadBtn" class="btn primary" type="button" disabled>下載此人的 Word 週報</button>
-              <span class="muted">Word 內會自動帶入工作 ID、計畫期間、目前進度與預期成果。</span>
+              <button id="weeklyDownloadBtn" data-help="Word 會帶入工作 ID、日期、目前核准進度與預期成果。" class="btn primary" type="button" disabled>下載此人的 Word 週報</button>
+
             </div>
             <div class="weekly-step-divider"><span>填寫完成後上傳</span></div>
             <label id="weeklyDropZone" class="weekly-dropzone" for="weeklyReportFile">
@@ -94,7 +95,7 @@
             <div id="weeklySelectedFile" class="weekly-selected-file muted">尚未選擇檔案</div>
             <div class="weekly-upload-actions">
               <button id="weeklyAnalyzeBtn" class="btn primary" type="submit" disabled>上傳並批改</button>
-              <span class="muted">Local Codex 會檢查完整度、證據與甘特圖一致性，再建立 Proposed Updates。</span>
+
             </div>
           </form>
         </div>
@@ -282,8 +283,7 @@
       <div class="weekly-ai-summary"><b>Codex 批改結論</b><br>${esc(review.overall_assessment||analysis.report_summary||'Codex 已完成週報檢查。')}</div>
       ${Number.isFinite(Number(review.completeness_score))?`<div class="weekly-score-grid"><div class="weekly-score"><b>${esc(review.completeness_score)}</b><span>完整度</span></div><div class="weekly-score"><b>${esc(review.evidence_score)}</b><span>證據品質</span></div><div class="weekly-score"><b>${esc(review.schedule_alignment_score)}</b><span>時程一致性</span></div></div>`:''}
       ${reviewList('做得好的地方',review.strengths)}
-      ${reviewList('需要補充',review.missing_items)}
-      ${reviewList('建議下一步',review.actions)}
+      ${reviewList('工作回饋',[...new Set([...(review.missing_items||[]),...(review.actions||[])])])}
       <div class="muted">${analysis.model?`${esc(analysis.model)} · `:''}產生 ${created.length} 筆 Proposed Update${analysis.warnings?.length?` · ${analysis.warnings.length} warning(s)`:''}</div>
       ${(created||[]).map(p=>`<div class="weekly-ai-proposal"><div class="weekly-ai-proposal-head"><span class="weekly-ai-proposal-id">${esc(p.target_type)} ${esc(p.target_id)} → ${esc(window.SmartPortWeeklyReview.progressLabel(p.progress))}</span><span class="ai-confidence">confidence ${Math.round(Number(p.ai_confidence||0)*100)}%</span></div><div class="weekly-ai-proposal-meta">${esc(p.status??'保留目前狀態')} · ${esc(p.summary||'')}${p.verification_note?`<p>待確認：${esc(p.verification_note)}</p>`:''}</div></div>`).join('')||'<div class="muted" style="margin-top:12px">週報沒有足夠資訊形成可審核的進度更新。</div>'}
       ${analysis.warnings?.length?`<div class="alert" style="margin-top:12px"><b>AI warnings</b><br>${analysis.warnings.map(esc).join('<br>')}</div>`:''}`;

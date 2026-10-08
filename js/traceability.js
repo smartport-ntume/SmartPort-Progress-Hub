@@ -16,7 +16,7 @@
     title.textContent=titleText;body.innerHTML=html;body.onsubmit=null;
     drawer.classList.add('open');backdrop.classList.add('open');
   }
-  function chip(kind,id,label=id){return `<button type="button" class="trace-chip trace-${kind}" data-trace-${kind}="${esc(id)}">${esc(label)}</button>`;}
+  function chip(kind,id,label=id){return `<button type="button" class="trace-chip trace-${kind}" data-trace-${kind}="${esc(id)}" data-help="${esc(kind==='fsr'?fsrById(id)?.requirement||id:kind==='wp'?wpById(id)?.name||id:kind==='subtask'?subById(id)?.name||id:cpById(id)?.name||id)}">${esc(label)}</button>`;}
   function field(label,html){return `<div class="field"><label>${esc(label)}</label><div class="trace-field">${html||'<span class="muted">—</span>'}</div></div>`;}
   function criteriaOf(cp){
     return arr(cp?.criteria).map(([id,req])=>{const wp=wpById(id),act=wp&&progressOf(wp)!=null?Number(progressOf(wp)):0;return{id,req:Number(req)||0,act,ok:act>=(Number(req)||0)};});

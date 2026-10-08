@@ -1,3 +1,5 @@
+import { extractWeeklyReport } from './report-extractor.mjs';
+import { extractTaskSteps } from '../worker/src/weekly-task-reviews.js';
 import { randomBytes, createHash } from 'node:crypto';
 import { previousReviewHandoff, pendingReviewError } from './weekly-review-handoff.mjs';
 import {
@@ -300,9 +302,27 @@ export class WeeklyReportAutomation {
     if (previous.error) throw new Error('weekly_previous_batch_lookup_failed: ' + previous.error.message);
     if (!previous.data) return previousReviewHandoff(null);
     const submissions = await this.supabase.from('weekly_report_submissions')
-      .select('id,member_id,revision,is_current,status,review_status,pm_feedback,pm_task_feedback,analysis_result,reviewed_at')
+      .select('id,member_id,revision,is_current,status,review_status,pm_feedback,pm_task_feedback,analysis_result,reviewed_at,report_path')
       .eq('batch_id', previous.data.id);
     if (submissions.error) throw new Error('weekly_previous_review_lookup_failed: ' + submissions.error.message);
+    // Older analyses did not retain step plans. Read each current archived Word
+    // once per version; never alter the submitted file or a PM review decision.
+    this.stepCache ||= new Map();
+    for (const row of submissions.data || []) {
+      if (row.is_current === false || row.review_status === 'SUPERSEDED' || row.analysis_result?.analysis?.task_steps != null
+        || !row.report_path?.startsWith('weekly_reports/') || !this.projectStore.readBuffer) continue;
+      const cacheKey = `${row.id}:${row.revision}:${row.report_path}`;
+      let steps = this.stepCache.get(cacheKey);
+      if (!steps) {
+        const buffer = await this.projectStore.readBuffer(row.report_path);
+        if (buffer.length > 10 * 1024 * 1024) throw new Error('weekly_report_file_too_large');
+        const extracted = await extractWeeklyReport({ filename: row.report_path, buffer, libreOfficeBin: this.options.libreOfficeBin });
+        steps = extractTaskSteps(extracted.text, previous.data.payload);
+        if (this.stepCache.size >= 200) this.stepCache.clear();
+        this.stepCache.set(cacheKey, steps);
+      }
+      row.analysis_result = { ...row.analysis_result, analysis: { ...row.analysis_result?.analysis, task_steps: steps } };
+    }
     const gate = previousReviewHandoff(previous.data, submissions.data || []);
     if (!readOnly && gate.ready && String(previous.data.last_error || '').startsWith('下一期週報等待 ')) {
       const cleared = await this.supabase.from('weekly_report_batches').update({ last_error: null })

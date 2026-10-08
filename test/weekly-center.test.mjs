@@ -5,7 +5,7 @@ import { weeklyRecordVersion } from '../worker/src/weekly-proposal.js';
 import { JSDOM } from 'jsdom';
 import { zeroAnalysis, screenshotFailures } from './fixtures/weekly-input-failures.mjs';
 
-const sources=await Promise.all(['weekly-feedback-routing.js','weekly-review-model.js','weekly-publication.js','weekly-center.js'].map(name=>readFile(new URL('../js/'+name,import.meta.url),'utf8')));
+const sources=await Promise.all(['ui-hints.js','weekly-task-records.js','weekly-feedback-routing.js','weekly-review-model.js','weekly-publication.js','weekly-center.js'].map(name=>readFile(new URL('../js/'+name,import.meta.url),'utf8')));
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const proposals=[1,2].map(n=>({issue_number:n,target_type:'SUBTASK',target_id:'C'+n,progress:n*20,status:'On Track',summary:'完成測試',evidence:'測試紀錄'}));
 
@@ -66,7 +66,7 @@ test('both screenshot failures expose retry and explain why there are no selecta
   for(const member of ['m3','m4']){
     await f.click(`[data-member="${member}"]`);
     const detail=f.doc.querySelector('[data-field="detail"]');
-    assert.match(detail.textContent,/批改未完成，尚未產生可勾選的進度更新/);
+    assert.match(detail.textContent,/批改未完成，請重新批改原始週報/);
     assert.equal(detail.querySelector('.weekly-center-scores'),null);
     assert.equal(detail.querySelector('[data-action="approve"]'),null);
     assert.equal(detail.querySelector('[data-action="select-all"]'),null);
@@ -114,7 +114,7 @@ test('PM sees task steps and the current step as a work record without a fabrica
   const f=await fixture(t,db);await f.click('[data-member="m1"]');
   const change=f.doc.querySelector('.weekly-center-change');
   assert.ok(change.textContent.includes(steps));
-  assert.match(change.textContent,/工作紀錄更新（百分比不變）/);
+  assert.match(change.textContent,/採用工作紀錄/);
   assert.doesNotMatch(change.textContent,/67%|66\.7%/);
   assert.equal(change.querySelector('[data-proposal]').disabled,false);
 });
@@ -155,9 +155,9 @@ test('PM can select work records with unknown completion and see self-report ver
   db.snapshot={subtasks:proposals.map(p=>({id:p.target_id,actual_progress:null,status:'In Progress'}))};
   const f=await fixture(t,db);await f.click('[data-member="m1"]');
   const detail=f.doc.querySelector('[data-field="detail"]');
-  assert.match(detail.textContent,/工作紀錄更新（百分比不變）/);
-  assert.match(detail.textContent,/未填 → 保留目前進度/);
-  assert.match(detail.textContent,/成員自報完成度：100%（待 PM 確認）/);
+  assert.match(detail.textContent,/採用工作紀錄/);
+  assert.match(f.doc.querySelector('[data-task="C1"] h4 [data-help]').dataset.help,/目前 未填.*提案 保留目前進度/);
+  assert.match(detail.textContent,/成員回報 100%/);
   assert.match(detail.textContent,/本地 E-stop 待驗證/);
   assert.doesNotMatch(detail.textContent,/null%/);
   await f.click('[data-action="select-all"]');await f.click('[data-action="approve"]');
@@ -171,23 +171,22 @@ test('PM center identifies who blocks the next weekly handoff and shows readines
   db.rows.forEach(row=>{row.review_status='APPROVED';row.analysis_result.analysis=zeroAnalysis();});
   db.rows[4].review_status='PENDING';
   const f=await fixture(t,db);
-  assert.match(f.doc.querySelector('[data-field="handoff"]').textContent,/失敗審核成員（待 PM 審核）/);
+  assert.match(f.doc.querySelector('[data-field="handoff"] [data-help]').dataset.help,/失敗審核成員（待 PM 審核）/);
   db.rows[4].review_status='CHANGES_REQUESTED';db.rows[4].pm_feedback='下期請補測試紀錄';
   await f.click('[data-action="refresh"]');
-  assert.match(f.doc.querySelector('[data-field="handoff"]').textContent,/全員已完成 PM 審閱/);
+  assert.match(f.doc.querySelector('[data-field="handoff"]').textContent,/下期自動發布已就緒/);
 });
 
 test('PM edits task advice and progress before approving without overwriting the AI source',async t=>{
   const db=database();db.rows[0].analysis_result.analysis.review.task_feedback=[{target_type:'SUBTASK',target_id:'C1',missing_items:['AI 缺漏'],actions:['AI 下一步']}];
   const f=await fixture(t,db);await f.click('[data-member="m1"]');
-  f.doc.querySelector('[data-feedback-missing]').value='PM 修改缺漏\n補影片';
-  f.doc.querySelector('[data-feedback-actions]').value='PM 指定下一步';
+  f.doc.querySelector('[data-feedback-text]').value='PM 修改缺漏\n補影片\nPM 指定下一步';
   f.doc.querySelector('[data-progress="1"]').value='15';
   f.doc.querySelector('[data-proposal="1"]').checked=true;
   await f.click('[data-action="approve"]');
   assert.deepEqual(f.db.calls[0].payload.progress_overrides,{'1':15});
   assert.equal(f.db.calls[0].payload.task_feedback[0].missing_items[1],'補影片');
-  assert.equal(f.db.calls[0].payload.task_feedback[0].actions[0],'PM 指定下一步');
+  assert.equal(f.db.calls[0].payload.task_feedback[0].missing_items[2],'PM 指定下一步');
   assert.equal(db.rows[0].analysis_result.analysis.review.task_feedback[0].actions[0],'AI 下一步');
 });
 
@@ -207,17 +206,16 @@ test('saving edited advice persists without closing review and a second save use
   await f.click('[data-action="add-feedback"]');
   const editors=f.doc.querySelectorAll('.weekly-center-feedback-editor');const editor=editors[editors.length-1];
   assert.equal(editor.querySelector('select'),null);
-  editor.querySelector('[data-feedback-missing]').value='C1：待補測試影片';
-  editor.querySelector('[data-feedback-actions]').value='C1：下週驗證';
+  editor.querySelector('[data-feedback-text]').value='C1：待補測試影片\nC1：下週驗證';
   f.doc.querySelector('[data-field="feedback"]').value='PM 意見';
   await f.click('[data-action="save-feedback"]');
   assert.equal(f.db.rows[0].review_status,'PENDING');assert.equal(f.db.calls.length,0);
-  assert.equal(f.db.rows[0].feedback_version,1);assert.equal(f.db.rows[0].pm_task_feedback.at(-1).actions[0],'C1：下週驗證');
+  assert.equal(f.db.rows[0].feedback_version,1);assert.equal(f.db.rows[0].pm_task_feedback.at(-1).missing_items[1],'C1：下週驗證');
   f.doc.querySelector('[data-field="feedback"]').value='PM 修正版';
   await f.click('[data-action="save-feedback"]');assert.equal(f.db.rows[0].feedback_version,2);
   await f.click('[data-member="m2"]');await f.click('[data-member="m1"]');
   assert.equal(f.doc.querySelector('[data-field="feedback"]').value,'PM 修正版');
-  assert.equal([...f.doc.querySelectorAll('[data-feedback-actions]')].at(-1).value,'C1：下週驗證');
+  assert.match(f.doc.querySelector('[data-feedback-id="C1"] [data-feedback-text]').value,/C1：下週驗證/);
   f.doc.querySelector('[data-field="feedback"]').value='';
   await f.click('[data-action="save-feedback"]');await f.click('[data-action="refresh"]');
   assert.equal(f.doc.querySelector('[data-field="feedback"]').value,'');
@@ -230,14 +228,14 @@ test('old mixed advice opens as automatically matched cards and PM saves without
   db.rows[0].analysis_result.analysis.review.task_feedback=[{target_type:'GENERAL',target_id:'',missing_items:['S1.1：缺測試紀錄','S1.2：缺回歸測試','S1.4：缺停止距離'],actions:['統一填報日期']}];
   const f=await fixture(t,db);await f.click('[data-member="m1"]');
   assert.equal(f.doc.querySelector('[data-feedback-target]'),null);
-  assert.match(f.doc.querySelector('[data-feedback-id="S1.1"]').textContent,/WP-S1.*S1.1/);
-  f.doc.querySelector('[data-feedback-id="S1.1"] [data-feedback-missing]').value='S1.1：PM 修正後的測試要求';
+  assert.match(f.doc.querySelector('[data-task="S1.1"] h4').textContent,/WP-S1.*S1.1/);
+  f.doc.querySelector('[data-feedback-id="S1.1"] [data-feedback-text]').value='S1.1：PM 修正後的測試要求';
   await f.click('[data-action="save-feedback"]');
   assert.equal(db.rows[0].pm_task_feedback.find(item=>item.target_id==='S1.1').missing_items[0],'S1.1：PM 修正後的測試要求');
-  assert.equal(db.rows[0].pm_task_feedback.find(item=>item.target_type==='GENERAL').actions[0],'統一填報日期');
+  assert.equal(db.rows[0].pm_task_feedback.find(item=>item.target_type==='GENERAL').missing_items[0],'統一填報日期');
 });
 
-test('cross-task requests appear before work advice, preserve original text, and save PM decisions',async t=>{
+test('cross-task requests remain alongside work review, preserve original text, and save PM decisions',async t=>{
   const db=database(),review=db.rows[0].analysis_result.analysis.review;
   const original='請控制組於 10/09 確認 P1.4 介面。\n<img src=x onerror=alert(1)>';
   review.issues_and_decisions={source_text:original,
@@ -250,7 +248,7 @@ test('cross-task requests appear before work advice, preserve original text, and
   assert.match(section.textContent,/成員明確填寫「無」/);
   assert.ok(section.querySelector('details p').textContent.includes(original));
   assert.equal(section.querySelector('img'),null,'member text is escaped, never interpreted as markup');
-  assert.ok(section.compareDocumentPosition(f.doc.querySelector('[data-field="task-feedback"]'))&4);
+  assert.ok(f.doc.querySelector('[data-field="task-feedback"]')); // Task review comes first; original requests remain available.
   assert.equal(f.doc.querySelectorAll('[data-field="feedback"]').length,1);
   f.doc.querySelector('[data-field="feedback"]').value='PM：採方案 A，請控制組於 10/09 提供介面。';
   await f.click('[data-action="save-feedback"]');
@@ -287,13 +285,13 @@ test('old proposal cards and feedback share authoritative full titles with snaps
     work_packages:[{id:'WP-P1',name:'Perception',actual_progress:20}]};
   const f=await fixture(t,db);await f.click('[data-member="m1"]');
   const title='WP-P1 · P1.4 · Near-field Radar / Ultrasonic Prototype';
-  assert.equal(f.doc.querySelector('.weekly-center-change b').textContent,title);
-  assert.equal(f.doc.querySelector('.weekly-center-feedback-target strong').textContent,title);
-  assert.equal(f.doc.querySelectorAll('.weekly-center-change b')[1].textContent,'WP-P1 · Perception');
+  assert.equal(f.doc.querySelector('[data-task="P1.4"] > h4').textContent.replace(/\?$/,''),title);
+  assert.equal(f.doc.querySelector('[data-task="P1.4"] > h4').textContent.replace(/\?$/,''),title);
+  assert.equal(f.doc.querySelector('[data-task="WP-P1"] > h4').textContent.replace(/\?$/,''),'WP-P1 · Perception');
   assert.doesNotMatch(f.doc.querySelector('[data-field="detail"]').textContent,/AI guessed title/);
   db.feedback_context.subtasks[0].name='Historical task name';
   await f.click('[data-action="refresh"]');
-  assert.match(f.doc.querySelector('.weekly-center-change b').textContent,/Historical task name/);
+  assert.match(f.doc.querySelector('[data-task="P1.4"] > h4').textContent,/Historical task name/);
   assert.equal(f.window.SmartPortWeeklyReview.targetTitle('SUBTASK','removed',{},{}),'removed · 工作名稱未提供');
 });
 
@@ -308,4 +306,20 @@ test('manual publication opens with no existing batch; feedback update opens a p
   assert.equal(existing.doc.querySelector('[data-pub="title"]').textContent,'更新回饋並補發');
   assert.equal(existing.doc.querySelector('[data-pub="week"]').disabled,true);
   assert.equal(existing.db.calls.length,0,'opening the publication pane cannot send a Discord message');
+});
+
+test('each task keeps its plain-language score, unified advice and approval control together; save retains live choices',async t=>{
+ const db=database();db.rows[0].analysis_result.analysis.review.task_reviews=[{target_type:'SUBTASK',target_id:'C1',score:78,summary:'已完成介面，還缺測試日期。',to_80:['補本次測試日期。'],to_100:['附測試文件與版本。']}];
+ db.rows[0].analysis_result.analysis.review.task_feedback=[{target_type:'SUBTASK',target_id:'C1',missing_items:['補本次測試日期。'],actions:['附測試文件與版本。']}];
+ const f=await fixture(t,db);await f.click('[data-member="m1"]');
+ const task=f.doc.querySelector('[data-task="C1"]');
+ assert.equal(task.querySelectorAll('textarea').length,1);
+ assert.ok(task.querySelector('[data-proposal="1"]'));assert.ok(task.querySelector('[data-progress="1"]'));
+ assert.match(task.querySelector('.task-rubric').textContent,/78.*到 80 分.*補本次測試日期.*到 100 分.*附測試文件與版本/s);
+ assert.equal(task.querySelector('[data-feedback-text]').value,'補本次測試日期。\n附測試文件與版本。');
+ assert.ok(f.doc.querySelector('.weekly-center-top [data-field="roster"]'));
+ f.doc.querySelector('[data-proposal="1"]').checked=true;f.doc.querySelector('[data-progress="1"]').value='37';
+ await f.click('[data-action="save-feedback"]');
+ assert.equal(f.doc.querySelector('[data-proposal="1"]').checked,true);assert.equal(f.doc.querySelector('[data-progress="1"]').value,'37');
+ assert.deepEqual(db.rows[0].pm_task_feedback[0].actions,[]);
 });

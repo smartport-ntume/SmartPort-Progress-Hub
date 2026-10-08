@@ -1,3 +1,4 @@
+import { normalizeTaskSteps } from '../worker/src/weekly-task-reviews.js';
 import { reviewTaskFeedback, assignTaskFeedback } from '../worker/src/weekly-feedback.js';
 
 const REVIEWED = new Set(['APPROVED', 'CHANGES_REQUESTED']);
@@ -21,11 +22,12 @@ export function previousReviewHandoff(batch, submissions = []) {
         : row.status === 'failed' ? '批改失敗' : ['queued','running'].includes(row.status) ? '等待批改完成' : '待 PM 審核';
       blocked.push({ member_id: member.id, member_name: member.name || member.id, reason });
       feedback.push({ member_id: member.id, submission_id: row?.id || null, revision: row?.revision || null,
-        review_status: row ? 'PENDING' : 'MISSING', reason, pm_feedback: '', task_feedback: [] });
+        review_status: row ? 'PENDING' : 'MISSING', reason, pm_feedback: '', task_feedback: [], task_steps: normalizeTaskSteps(row?.analysis_result?.analysis?.task_steps) });
       continue;
     }
     feedback.push({
       member_id: member.id, submission_id: row.id, revision: row.revision || 1,
+      task_steps: normalizeTaskSteps(row.analysis_result?.analysis?.task_steps),
       review_status: row.review_status, reviewed_at: row.reviewed_at || null,
       pm_feedback: String(row.pm_feedback || '').slice(0, 4000),
       task_feedback: assignTaskFeedback(row.pm_task_feedback ?? reviewTaskFeedback(row.analysis_result?.analysis?.review), batch.payload, member.id)

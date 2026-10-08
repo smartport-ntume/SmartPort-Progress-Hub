@@ -190,7 +190,7 @@ for (const unknownProgress of [false,true]) test(unknownProgress ? 'reports with
     assert.equal(result.proposals[1].schema_version,'1.1');
     assert.match(createdIssueBodies[1],/保留目前進度/);
   }
-  assert.ok(result.analysis.warnings.some(item => item.includes('Required scope restored from Private Git')));
+  assert.ok(result.analysis.warnings.some(item => item.includes('已補入本期應回報工項：')));
   assert.ok(result.analysis.warnings.some(item => item.includes('future')));
   assert.ok(result.analysis.warnings.some(item => item.includes('outside this member')));
 });

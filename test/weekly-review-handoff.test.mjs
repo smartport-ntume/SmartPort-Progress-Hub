@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import mammoth from 'mammoth';
+import * as docx from 'docx';
 import { WeeklyReportAutomation, weeklySchedule, manualWeeklySchedule } from '../local-server/weekly-report-automation.mjs';
 import { previousReviewHandoff } from '../local-server/weekly-review-handoff.mjs';
 
@@ -42,6 +43,28 @@ function fixture(){
     logger:{info(){},error(){}},fetchFn:async(url,init)=>{requests.push(init);return {ok:true,async json(){return {id:'message-'+requests.length};}};}});
   return {db,requests,writes,files,automation,setNow(value){now=new Date(value);},schedule:()=>weeklySchedule(now,options)};
 }
+
+test('legacy archived step plans carry by current revision without changing review state or archived files',async()=>{
+  const f=fixture(),batch=f.db.weekly_report_batches[0],row=f.db.weekly_report_submissions[0];
+  batch.payload.subtasks=[{id:'C1.1',name:'CAN Interface',owner_team:'CTL',parent_wp:'WP-C1'}];
+  row.report_path='weekly_reports/2026-W37/m1-v1.docx';
+  const make=async name=>docx.Packer.toBuffer(new docx.Document({sections:[{children:[
+    new docx.Paragraph('C1.1　CAN Interface'),new docx.Paragraph('完成工項的步驟'),
+    new docx.Paragraph('1. '+name+'（75％）'),new docx.Paragraph('☑ 已完成 ☐ 進行中 ☐ 未開始'),
+    new docx.Paragraph('本週新增成果與進度說明')]}]}));
+  let archive=await make('介面測試'),reads=0;
+  f.automation.projectStore.readBuffer=async path=>{reads++;assert.equal(path,row.report_path);return archive;};
+  const before=structuredClone(f.db);
+  const gate=await f.automation.reviewGate(f.schedule(),{readOnly:true});
+  assert.equal(gate.ready,false,'an outstanding PM review still blocks automatic publication');
+  assert.deepEqual(gate.review.members[0].task_steps[0].steps,[{name:'介面測試',completion_percent:75,status:'completed'}]);
+  assert.equal(gate.review.members[1].task_steps.length,0,'another member never inherits this plan');
+  await f.automation.reviewGate(f.schedule(),{readOnly:true});assert.equal(reads,1,'the same archive is parsed once');
+  assert.deepEqual(f.db,before);assert.equal(f.writes.length,0);assert.equal(f.requests.length,0);
+  row.revision=2;row.report_path='weekly_reports/2026-W37/m1-v2.docx';archive=await make('新版整合測試');
+  const updated=await f.automation.reviewGate(f.schedule(),{readOnly:true});
+  assert.equal(reads,2);assert.equal(updated.review.members[0].task_steps[0].steps[0].name,'新版整合測試');
+});
 
 test('latest revisions must all have PM decisions; missing, failed, pending and replacement uploads hold the next batch',()=>{
   const {db}=fixture(),batch=db.weekly_report_batches[0],rows=db.weekly_report_submissions;

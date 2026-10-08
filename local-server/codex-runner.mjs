@@ -4,6 +4,7 @@ import { runCommand } from './command.mjs';
 import { extractWeeklyReport } from './report-extractor.mjs';
 import { weeklyAssessmentIssue } from '../worker/src/weekly-assessment.js';
 import { normalizeWeeklyProposal, WEEKLY_PROPOSAL_RULES } from '../worker/src/weekly-proposal.js';
+import { normalizeTaskReviews, extractTaskSteps, TASK_REVIEW_RULES, requireTaskReviewCoverage } from '../worker/src/weekly-task-reviews.js';
 import { reviewTaskFeedback } from '../worker/src/weekly-feedback.js';
 import { extractWeeklyIssues, normalizeWeeklyIssues, WEEKLY_ISSUES_RULES } from '../worker/src/weekly-issues.js';
 
@@ -64,6 +65,7 @@ export function validateWeeklyAnalysis(value) {
     missing_items: boundedStringArray(sourceReview.missing_items, 'missing_item', 50),
     actions: boundedStringArray(sourceReview.actions, 'action', 50),
     task_feedback: reviewTaskFeedback(sourceReview),
+    task_reviews: normalizeTaskReviews(sourceReview.task_reviews),
     issues_and_decisions: normalizeWeeklyIssues(sourceReview.issues_and_decisions)
   };
   if (!Array.isArray(value.warnings) || value.warnings.length > 50) {
@@ -178,6 +180,7 @@ export class CodexWeeklyRunner {
         'Use next_checkpoint capability and review_checks as the gate criteria for schedule alignment and missing evidence.',
         WEEKLY_PROPOSAL_RULES,
         WEEKLY_ISSUES_RULES,
+        TASK_REVIEW_RULES,
         'Set assessment_status to completed only after reviewing the supplied report and project context.',
         'If the inputs are inaccessible, set assessment_status to input_unavailable and review to null; never invent zero scores.',
         'A readable blank template or weak report can receive low or zero scores; that is different from inaccessible input.',
@@ -212,7 +215,11 @@ export class CodexWeeklyRunner {
       });
       const raw = await fs.readFile(resultFile, 'utf8');
       const analysis = validateWeeklyAnalysis(unwrapJson(raw));
+      if (schema?.properties?.review?.anyOf?.[0]?.required?.includes('task_reviews')) {
+        requireTaskReviewCoverage(analysis.review.task_reviews, context);
+      }
       analysis.review.issues_and_decisions = normalizeWeeklyIssues(analysis.review.issues_and_decisions, issuesSource);
+      analysis.task_steps = extractTaskSteps(extracted.text, context);
       analysis.warnings.unshift(...extracted.warnings);
       return analysis;
     } finally {

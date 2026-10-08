@@ -172,7 +172,7 @@ function flattenV041(baseline, currentRegistry) {
         owner_team: s.owner || wp.owner || '',
         start: s.start || '',
         end: s.end || '',
-        weight: Number.isFinite(Number(s.weight)) ? Number(s.weight) : 1,
+        weight: 1,
         target_cp: old.target_cp || '',
         ifs: Array.isArray(s.ifs) ? s.ifs : [],
         fsrs: Array.isArray(s.fsrs) ? s.fsrs : [],

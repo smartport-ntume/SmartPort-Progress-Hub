@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFile} from 'node:fs/promises';
+import * as docx from 'docx';
+import {extractWeeklyReport} from '../local-server/report-extractor.mjs';
+import {extractTaskSteps,normalizeTaskReviews,requireTaskReviewCoverage} from '../worker/src/weekly-task-reviews.js';
+import {previousReviewHandoff} from '../local-server/weekly-review-handoff.mjs';
+import {createWeeklyReportAttachments} from '../local-server/weekly-report-attachments.mjs';
+const context={team_config:{members:[{id:'m1',name:'甲'},{id:'m2',name:'乙'}],categories:[{id:'CTL',name:'控制'}],category_owners:{CTL:'m1'}},work_packages:[{id:'WP-C1',name:'Motion'}],subtasks:[{id:'C1.1',name:'CAN Interface',parent_wp:'WP-C1',owner_team:'CTL',start:'2026-09-01',end:'2026-10-12',actual_progress:20}],checkpoints:[{id:'CP1',date:'2026-10-30'}]};
+test('native Word checkboxes survive extraction and step plans carry into the next member report without copying status',async()=>{
+ const children=[new docx.Paragraph('C1.1　CAN Interface'),new docx.Paragraph('WP-C1　Motion'),new docx.Paragraph('完成工項的步驟'),new docx.Paragraph('1. 確認介面（25%）'),new docx.Paragraph({children:[new docx.CheckBox({checked:true}),new docx.TextRun(' 已完成　'),new docx.CheckBox(),new docx.TextRun(' 進行中　'),new docx.CheckBox(),new docx.TextRun(' 未開始')]}),new docx.Paragraph('2. 桌面測試（70%）'),new docx.Paragraph('☐ 已完成 ☑ 進行中 ☐ 未開始'),new docx.Paragraph('3. 整合驗收（100%）'),new docx.Paragraph('☐ 已完成 ☐ 進行中 ☑ 未開始'),new docx.Paragraph('本週新增成果與進度說明'),new docx.Paragraph('完成介面確認，實際進度 20%。')];
+ const buffer=await docx.Packer.toBuffer(new docx.Document({sections:[{children}]}));
+ const extracted=await extractWeeklyReport({filename:'filled.docx',buffer});
+ const steps=extractTaskSteps(extracted.text,context);
+ assert.equal(steps.length,1);assert.equal(steps[0].target_id,'C1.1');
+ assert.deepEqual(steps[0].steps.map(s=>[s.name,s.completion_percent,s.status]),[['確認介面',25,'completed'],['桌面測試',70,'in_progress'],['整合驗收',100,'not_started']]);
+ const batch={id:'old',week_key:'2026-W40',report_date:'2026-10-01',payload:context};
+ const row={id:'s1',member_id:'m1',is_current:true,status:'completed',review_status:'APPROVED',analysis_result:{analysis:{task_steps:steps,review:{task_feedback:[]}}}};
+ const gate=previousReviewHandoff(batch,[row]);
+ assert.equal(gate.review.members.find(m=>m.member_id==='m2').task_steps.length,0);
+ const payload={...context,report_date:'2026-10-08',team_config:{...context.team_config,members:[context.team_config.members[0]]},previous_review:gate.review};
+ const [next]=await createWeeklyReportAttachments(payload);
+ const nextText=(await extractWeeklyReport({filename:next.filename,buffer:next.buffer})).text;
+ const carried=extractTaskSteps(nextText,context)[0].steps;
+ assert.deepEqual(carried.map(s=>[s.name,s.completion_percent,s.status]),[['確認介面',25,null],['桌面測試',70,null],['整合驗收',100,null]]);
+ assert.match(nextText,/上期核准進度\s+20%/);assert.doesNotMatch(nextText,/目前做到哪一步|成果證據／連結/);
+});
+test('legacy free text steps retain names and ambiguous checkboxes never imply completed work',()=>{
+ const text='C1.1　CAN Interface\n完成工項的步驟\n1. 步驟：介面定義　狀態：已完成\n2. 步驟：CAN 測試（75%） 狀態：☑ 已完成 ☑ 進行中 ☐ 未開始\n3. 步驟：________ 狀態：________\n目前做到哪一步\n目前第 2 步';
+ const steps=extractTaskSteps(text,context)[0].steps;
+ assert.equal(steps.length,2);assert.equal(steps[0].name,'介面定義');assert.equal(steps[0].status,'completed');assert.equal(steps[1].completion_percent,75);assert.equal(steps[1].status,null);
+});
+test('per-task score guidance is specific, threshold-aware and never invented for historical reviews',()=>{
+ assert.deepEqual(normalizeTaskReviews(undefined),[]);
+ const base={target_type:'SUBTASK',target_id:'C1.1',score:78,summary:'已寫測試結果，缺日期。',to_80:['補測試日期。'],to_100:['附本次測試文件與版本。']};
+ assert.equal(normalizeTaskReviews([base])[0].score,78);
+ assert.deepEqual(normalizeTaskReviews([{...base,score:80}])[0].to_80,[]);
+ assert.deepEqual(normalizeTaskReviews([{...base,score:100}])[0].to_100,[]);
+ assert.throws(()=>normalizeTaskReviews([{...base,to_80:[]}]),/guidance_missing/);
+ assert.throws(()=>normalizeTaskReviews([{...base,score:null}]),/invalid/);
+ assert.throws(()=>normalizeTaskReviews([base,base]),/invalid/);
+ assert.throws(()=>requireTaskReviewCoverage([base],{required_scope_subtask_ids:['C1.1','C1.2']}),/C1.2/);
+ requireTaskReviewCoverage([base],{required_scope_subtask_ids:['C1.1']});
+});
+test('all old and new subtask weights are ignored consistently and missing progress stays distinguishable',async()=>{
+ const window={};vm.runInNewContext(await readFile(new URL('../js/progress-aggregation.js',import.meta.url),'utf8'),{window});
+ const p=window.SmartPortProgress;const tasks=[{parent_wp:'WP-C1',actual_progress:100,weight:99},{parent_wp:'WP-C1',actual_progress:0,weight:1}];
+ assert.equal(p.forWorkPackage({id:'WP-C1'},tasks).value,50);
+ tasks[1].actual_progress=null;const info=p.forWorkPackage({id:'WP-C1'},tasks);assert.equal(info.value,50);assert.equal(info.reported,1);assert.doesNotMatch(p.label(info),/加權|weight/i);
+ tasks[0].actual_progress=null;assert.equal(p.forWorkPackage({id:'WP-C1'},tasks).value,null);
+});
