@@ -23,6 +23,7 @@ export const WEEKLY_PROPOSAL_RULES = [
   'Prefer SUBTASK updates for identifiable tasks; use WP only for whole-package evidence. Stay within owner_teams. required_scope_subtask_ids is a coverage checklist, not an exclusion filter: include concrete current-week work or explicit completion claims for other owned tasks too, including already-completed tasks needing correction.',
   'Template prompts, unchecked boxes, blank fields, planned future work and reviewer recommendations alone are not reported accomplishments.',
   'Carried-forward PM feedback is a historical review, not new accomplishments; map only the member\'s concrete responses and current-week work, never the unchanged feedback itself.',
+  'Each task now has 下一步／承諾日期, 預計完成日期 and 優先度（擇一）. Preserve an explicitly selected 高/中/低 priority and stated due date with the member\'s next action in that task\'s proposal summary, clearly labelled as a future plan. Unchecked boxes, multiple conflicting selections or blank dates are unspecified: do not guess. Planned actions and priority alone are not completed work and do not justify a progress proposal.',
   'Do not invent evidence, blockers, tests, dates, completion percentages, or targets. Return no proposals only when the report contains no concrete in-scope updates.'
 ].join(' ');
 
