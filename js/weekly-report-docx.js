@@ -259,15 +259,28 @@
     return table(rows, [12, 13, 12, 31, 17, 15]);
   }
 
-  function taskFeedbackRows(items = [], span = 3) {
+  function taskFeedbackRows(items = [], span = 3, replyBlankLines = 1) {
     if (!items.length) return [];
     return [...items.flatMap(item => [
       ...(item.missing_items?.length ? [row([labelCell(`上期需要補充\n${item.target_id || '整份週報'}`), cell(item.missing_items.map(text=>`• ${text}`).join('\n'), { columnSpan: span })], { cantSplit: false })] : []),
       ...(item.actions?.length ? [row([labelCell(`上期建議下一步\n${item.target_id || '整份週報'}`), cell(item.actions.map(text=>`• ${text}`).join('\n'), { columnSpan: span })], { cantSplit: false })] : [])
-    ]), row([labelCell('本週回覆與處理結果'), cell([responseParagraph('請逐項回覆以上事項的處理結果與佐證；未完成請填原因及預計完成日。', 1)], { columnSpan: span })], { cantSplit: false })];
+    ]), row([labelCell('本週回覆與處理結果'), cell([responseParagraph('請逐項回覆以上事項的處理結果與佐證；未完成請填原因及預計完成日。', replyBlankLines)], { columnSpan: span })], { cantSplit: false })];
+  }
+
+  function taskStepRows() {
+    return [
+      row([labelCell('完成工項的步驟'), cell([
+        paragraph('請依完成順序列出步驟，並標示「已完成／進行中／未開始」；步驟可自行增減。', { color: MUTED, italics: true }),
+        paragraph('1. 步驟：________________　狀態：________\n2. 步驟：________________　狀態：________\n3. 步驟：________________　狀態：________', { color: MUTED, italics: true, spacing: { before: 20, after: 20, line: 276 } })
+      ], { columnSpan: 3 })], { cantSplit: false }),
+      row([labelCell('目前做到哪一步'), cell([
+        paragraph('目前第 ____ 步／共 ____ 步；正在做：________________\n尚未開始請填「未開始」；全部完成請填「全部完成」；並行步驟可複選。', { color: MUTED, italics: true, spacing: { before: 20, after: 20, line: 276 } })
+      ], { columnSpan: 3 })], { cantSplit: false })
+    ];
   }
 
   function currentTaskTable(task) {
+    // Feedback and step planning share the page; editable cells grow as members type.
     const hasFeedback = !!task.reviewFeedback?.length;
     return table([
       row([
@@ -278,12 +291,13 @@
       row([labelCell('計畫期間'), cell(`${valueText(task.start)} ～ ${valueText(task.end)}`), labelCell('目標節點'), cell(valueText(task.targetCp))]),
       row([labelCell('上期核准進度'), cell(task.currentProgress == null ? '—' : `${task.currentProgress}%`), labelCell('本週回報進度'), cell([responseParagraph('____ %', 0)])]),
       row([labelCell('預期成果／證據'), cell(evidenceText(task), { columnSpan: 3 })]),
-      ...taskFeedbackRows(task.reviewFeedback),
-      row([labelCell('本週新增成果與進度說明'), cell([responseParagraph('本週完成哪些工作？請說明進度增加、持平或下修的原因，並附成果數值、圖表或證據。', hasFeedback ? 2 : 4)], { columnSpan: 3 })]),
-      row([labelCell('成果證據／連結'), cell([responseParagraph('請填文件、Issue、PR、測試結果、影片或其他證據。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
+      ...taskStepRows(),
+      ...taskFeedbackRows(task.reviewFeedback, 3, 0),
+      row([labelCell('本週新增成果與進度說明'), cell([responseParagraph('本週完成哪些工作？請說明進度增加、持平或下修的原因，並附成果數值、圖表或證據。', hasFeedback ? 0 : 4)], { columnSpan: 3 })]),
+      row([labelCell('成果證據／連結'), cell([responseParagraph('請填文件、Issue、PR、測試結果、影片或其他證據。', hasFeedback ? 0 : 2)], { columnSpan: 3 })]),
       row([labelCell('本週狀態'), cell([responseParagraph('☐ 正常　☐ 需注意　☐ 延誤　☐ 已完成', 0)], { columnSpan: 3 })]),
-      row([labelCell('阻礙／風險'), cell([responseParagraph('如無請填「無」；如有，請說明影響、原因及預估延誤。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
-      row([labelCell('需要 PM 協助'), cell([responseParagraph('如無請填「無」；如有，請明確列出決策、資源或跨組協調需求。', hasFeedback ? 1 : 2)], { columnSpan: 3 })]),
+      row([labelCell('阻礙／風險'), cell([responseParagraph('如無請填「無」；如有，請說明影響、原因及預估延誤。', hasFeedback ? 0 : 2)], { columnSpan: 3 })]),
+      row([labelCell('需要 PM 協助'), cell([responseParagraph('如無請填「無」；如有，請明確列出決策、資源或跨組協調需求。', hasFeedback ? 0 : 2)], { columnSpan: 3 })]),
       row([labelCell('下一步／承諾日期'), cell([responseParagraph('下一個具體行動：　　　　　　　　　預計完成：YYYY/MM/DD', hasFeedback ? 0 : 1)], { columnSpan: 3 })])
     ], [22, 28, 22, 28]);
   }
@@ -294,11 +308,12 @@
       row([
         cell(`${task.id}　${task.name}`, { bold: true, fill: BLUE, columnSpan: 3 }),
         cell(`${checkpoint} 前待辦　${valueText(task.end, task.targetCp)}`, { bold: true, fill: BLUE })
-      ]),
+      ], { header: true }),
       row([labelCell('所屬 WP'), cell(`${task.parentWp}　${task.parentWpName}`), labelCell('分類'), cell(`${task.categoryName} (${task.ownerTeam})`)]),
       row([labelCell('計畫期間'), cell(`${valueText(task.start)} ～ ${valueText(task.end)}`), labelCell('目標節點'), cell(valueText(task.targetCp))]),
       row([labelCell('上期核准進度'), cell(task.currentProgress == null ? '—' : `${task.currentProgress}%`), labelCell('本週回報進度'), cell([responseParagraph('____ %', 0)])]),
       row([labelCell('預期成果／證據'), cell(evidenceText(task), { columnSpan: 3 })]),
+      ...taskStepRows(),
       ...taskFeedbackRows(task.reviewFeedback),
       row([labelCell('本週準備／預計交付'), cell([responseParagraph('請列出本週完成的準備、進度變更原因、下一個具體行動、可驗收產出及日期。', 4)], { columnSpan: 3 })]),
       row([labelCell('就緒程度'), cell([responseParagraph('____ %', 0)]), labelCell('時程判斷'), cell(['☐ 可如期', '☐ 有風險', '☐ 需調整排程'].map(text => paragraph(text, { color: MUTED, spacing: { after: 20, line: 260 } })))]),
