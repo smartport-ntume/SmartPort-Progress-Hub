@@ -58,7 +58,9 @@ export function extractWeeklyIssues(reportText) {
   const report = String(reportText || '').replace(/\r\n?/g, '\n');
   // The current section follows the task pages; a previous PM comment may quote
   // an older section with the same heading earlier in the report.
-  const heading = [...report.matchAll(/^(?:5[\s.、．]*)?跨任務問題與決策需求(?:\s+ISSUES AND DECISIONS)?[ \t]*$/gim)].at(-1);
+  // New templates use section 04 after removing the standalone commitments
+  // table; section 5 and unnumbered headings remain valid for older reports.
+  const heading = [...report.matchAll(/^(?:0?[45][\s.、．]*)?跨任務問題與決策需求(?:\s+ISSUES AND DECISIONS)?[ \t]*$/gim)].at(-1);
   if (!heading) return { source_text: '', cross_task_issues: empty(), decision_requests: empty() };
   const rest = report.slice(heading.index + heading[0].length);
   const end = /\n(?:6\s*\n\s*)?(?:6[\s.、．]*)?PM\s*審閱(?:\s+PM\s+REVIEW)?[ \t]*(?:\n|$)/i.exec(rest);

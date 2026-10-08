@@ -56,6 +56,15 @@ test('prior PM comments quoting the same section are not treated as this week’
   assert.match(source.cross_task_issues.reported_text, /10\/09/);
 });
 
+test('renumbered issues sections preserve member requests in the redesigned Word template', () => {
+  for (const number of ['4', '04', '5', '05']) {
+    const source = extractWeeklyIssues(report.replace(heading, `${number}　跨任務問題與決策需求　ISSUES AND DECISIONS`));
+    assert.equal(source.cross_task_issues.status, 'reported');
+    assert.match(source.cross_task_issues.reported_text, /10\/09.*P1\.4/);
+    assert.equal(source.decision_requests.status, 'reported');
+  }
+});
+
 test('only source-supported metadata is retained and requests never become progress proposals', () => {
   const source = extractWeeklyIssues(report);
   const ai = structuredClone(source);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import mammoth from 'mammoth';
+import { JSDOM } from 'jsdom';
 import { extractWeeklyIssues } from '../worker/src/weekly-issues.js';
 
 async function browserWeeklyModules({ includeDocx = false } = {}) {
@@ -143,6 +144,10 @@ test('generated personal weekly report is a readable DOCX with scoped task IDs',
   assert.match(extracted.value, /已完成／進行中／未開始/);
   assert.match(extracted.value, /目前第 ____ 步／共 ____ 步/);
   assert.match(extracted.value, /並行步驟可複選/);
+  assert.equal(extracted.value.split('優先度（擇一）').length - 1, model.tasks.length);
+  assert.equal(extracted.value.split('下一步／承諾日期').length - 1, model.tasks.length);
+  assert.equal(extracted.value.split('☐ 高　☐ 中　☐ 低').length - 1, model.tasks.length);
+  assert.doesNotMatch(extracted.value, /下週工作計畫|NEXT WEEK COMMITMENTS/);
   assert.doesNotMatch(extracted.value, /PM REVIEW|PM 姓名：|完成度：____ %/);
   const issues = extractWeeklyIssues(extracted.value);
   assert.equal(issues.cross_task_issues.status, 'not_filled');
@@ -166,13 +171,23 @@ test('Word places edited feedback inside the matching task and retains completed
   assert.equal(model.tasks.flatMap(task=>task.reviewFeedback).filter(item=>item.target_id==='WP-C1').length,1);
   assert.equal(model.followupFeedback[0].target_id,'WP-closed');
   const blob=await window.SmartPortWeeklyDocx.create(model);
-  const text=(await mammoth.extractRawText({buffer:Buffer.from(await blob.arrayBuffer())})).value;
+  const buffer=Buffer.from(await blob.arrayBuffer());
+  const text=(await mammoth.extractRawText({buffer})).value;
+  const html=(await mammoth.convertToHtml({buffer})).value;
+  const dom=new JSDOM(html);
+  const tables=[...dom.window.document.querySelectorAll('table')].filter(table=>{
+    const cells=table.querySelector('tr')?.querySelectorAll('td, th');
+    return cells?.length===2&&cells[0].textContent==='上期需要補充'&&cells[1].textContent==='建議下一步';
+  });
+  assert.ok(tables.length>=4,'task, standalone WP and general feedback pair both headings in one table');
+  dom.window.close();
   for(const item of items)for(const line of [...item.missing_items,...item.actions])assert.ok(text.includes(line),line);
   assert.ok(text.includes('PM 回饋原文'));
   const taskStart=text.indexOf('S1.1　任務流程整合'),feedbackAt=text.indexOf('S1.1 補齊狀態轉移測試');
   assert.ok(taskStart<feedbackAt&&feedbackAt<text.indexOf('本週新增成果與進度說明',taskStart),'feedback is inside the matching fill-in task');
   assert.equal(text.split('WP-C1 補測試影片').length,2,'WP advice is not repeated for every child');
   assert.equal(text.split('完成工項的步驟').length-1,model.tasks.length,'completed tasks retained for follow-up also have the new field');
+  assert.equal(text.split('優先度（擇一）').length-1,model.tasks.length+model.followupFeedback.length,'every task and standalone WP follow-up has its own priority');
 });
 
 test('Word routes legacy mixed feedback into task fill-in sections without PM target selection',async()=>{
