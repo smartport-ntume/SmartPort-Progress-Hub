@@ -6,7 +6,7 @@
   const ACCENT = '274A78';
   const PAPER = 'F7F9FC';
   const PALE = 'FFFFFF';
-  const LINE = 'DFE5ED';
+  const LINE = 'CAD3DF';
   const PAGE_WIDTH = 11906;
   const MARGIN = 960;
   const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
@@ -38,9 +38,8 @@
       keepNext, spacing: { before: 20, after: 30, line: 245 } });
   }
   function borders() {
-    const line = { style: api().BorderStyle.SINGLE, color: LINE, size: 4 };
-    const none = { style: api().BorderStyle.NONE, size: 0, color: 'FFFFFF' };
-    return { top: none, bottom: line, left: none, right: none, insideHorizontal: line, insideVertical: none };
+    const line = { style: api().BorderStyle.SINGLE, color: LINE, size: 4, space: 0 };
+    return { top: line, bottom: line, left: line, right: line, insideHorizontal: line, insideVertical: line };
   }
   function cell(content, options = {}) {
     return new (api().TableCell)({
