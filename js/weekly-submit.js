@@ -227,8 +227,6 @@
     renderSubmissions();
     if (!batch.can_submit) {
       message('此週報批次已關閉。', true);
-    } else if (overdue) {
-      message('已超過截止時間，仍可直接繳交，系統將註記逾期。');
     } else {
       message('');
     }
