@@ -8,11 +8,13 @@ const TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon'
 };
 
 function isPublicFrontendPath(pathname, allowPublicSnapshot) {
   if (pathname === '/index.html' || pathname === '/weekly-submit.html') return true;
+  if (pathname === '/assets/container-yard.webp') return true;
   if (allowPublicSnapshot && pathname === '/data/public-snapshot.json') return true;
   return /^\/(?:js|css|vendor)\/[^/]+\.(?:js|css)$/.test(pathname);
 }

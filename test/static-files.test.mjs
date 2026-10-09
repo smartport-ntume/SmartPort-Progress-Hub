@@ -24,12 +24,16 @@ test('static server exposes only the frontend allowlist', async t => {
   ]));
   await fs.mkdir(path.join(root, 'js'));
   await fs.mkdir(path.join(root, 'vendor'));
+  await fs.mkdir(path.join(root, 'assets'));
   await fs.mkdir(path.join(root, 'data'));
   await fs.mkdir(path.join(root, 'local-server'));
   await fs.writeFile(path.join(root, 'index.html'), '<h1>SmartPort</h1>');
   await fs.writeFile(path.join(root, 'weekly-submit.html'), '<h1>Weekly report</h1>');
   await fs.writeFile(path.join(root, 'js', 'app.js'), 'window.app=true;');
   await fs.writeFile(path.join(root, 'vendor', 'supabase.js'), 'window.supabase={};');
+  const photo = Buffer.from('RIFFfixtureWEBP');
+  await fs.writeFile(path.join(root, 'assets', 'container-yard.webp'), photo);
+  await fs.writeFile(path.join(root, 'assets', 'private.json'), 'private');
   await fs.writeFile(path.join(root, '.env.local'), 'SESSION_SECRET=private');
   await fs.writeFile(path.join(root, 'local-server', 'server.mjs'), 'private');
   await fs.writeFile(path.join(root, 'data', 'public-snapshot.json'), '{"public":true}\n');
@@ -56,7 +60,16 @@ test('static server exposes only the frontend allowlist', async t => {
   assert.equal(await serveStaticFile({ method: 'GET', url: '/vendor/supabase.js' }, vendorResponse, root), true);
   assert.equal(vendorResponse.status, 200);
 
-  for (const url of ['/.env.local', '/local-server/server.mjs', '/package.json', '/../.env.local', '/data/public-snapshot.json']) {
+  const photoResponse = responseRecorder();
+  assert.equal(await serveStaticFile({ method: 'GET', url: '/assets/container-yard.webp' }, photoResponse, root), true);
+  assert.equal(photoResponse.headers['Content-Type'], 'image/webp');
+  assert.deepEqual(photoResponse.body, photo);
+  const photoHead = responseRecorder();
+  assert.equal(await serveStaticFile({ method: 'HEAD', url: '/assets/container-yard.webp' }, photoHead, root), true);
+  assert.equal(photoHead.headers['Content-Length'], photo.length);
+  assert.equal(photoHead.body, null);
+
+  for (const url of ['/.env.local', '/local-server/server.mjs', '/package.json', '/../.env.local', '/data/public-snapshot.json', '/assets/private.json', '/assets/other.webp', '/assets/%2e%2e/.env.local']) {
     const denied = responseRecorder();
     assert.equal(await serveStaticFile({ method: 'GET', url }, denied, root), false);
     assert.equal(denied.status, null);

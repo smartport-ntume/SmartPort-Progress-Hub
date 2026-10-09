@@ -1,0 +1,112 @@
+/* Photo-backed surfaces. Keep data and controls on quiet, high-contrast layers. */
+:root {
+  --harbor-photo: url('../assets/container-yard.webp');
+  --harbor-glass: rgba(255, 255, 255, .82);
+  --harbor-paper: rgba(255, 255, 255, .94);
+  --muted: #526179;
+  --line: rgba(96, 120, 149, .22);
+  --shadow: 0 8px 32px rgba(22, 42, 68, .08), inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+body { min-height: 100vh; isolation: isolate; background: #e9eff5; }
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(238, 245, 251, .46), rgba(234, 240, 247, .56)), var(--harbor-photo) center 57% / cover no-repeat;
+}
+body > header:not(.portal-header) {
+  background: rgba(255, 255, 255, .82);
+  border-bottom-color: rgba(255, 255, 255, .8);
+  box-shadow: 0 4px 28px rgba(22, 42, 68, .07);
+  backdrop-filter: blur(18px) saturate(115%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+}
+.card, .panel, .portal-card, .weekly-center-person, .weekly-center-detail {
+  background: var(--harbor-glass);
+  border-color: rgba(255, 255, 255, .8);
+  box-shadow: var(--shadow);
+}
+.card, .portal-card, .weekly-center-detail {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.card { background: rgba(255, 255, 255, .76); }
+.panel-title { background: rgba(255, 255, 255, .44); }
+/* This badge still carries inline colours from the original dark header. */
+body #roleBadge { color: #314c73 !important; background: #eaf0f8 !important; }
+/* A frosted frame around dense data; opaque grid headers preserve scroll clarity. */
+.gantt-wrap, .panel table, .cp-timeline, .weekly-task-review, .feedback-pm, .feedback-task-score {
+  background-color: var(--harbor-paper);
+}
+body th { background: #f3f6fa; color: #526179; }
+.g-head { background: #fff; }
+.weekly-center-top {
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, .8);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .87);
+  box-shadow: var(--shadow);
+}
+.weekly-center-head, .weekly-center-counts {
+  padding: 16px 20px;
+  border: 1px solid rgba(255, 255, 255, .78);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .88);
+}
+.weekly-center-counts { margin-bottom: 18px; }
+.weekly-center-message[data-field=handoff] {
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .92);
+}
+.weekly-center-detail { background: rgba(255, 255, 255, .9); }
+.weekly-review-actions, body .drawer, .drawer-head, body .nav-menu-popover {
+  background: rgba(255, 255, 255, .97);
+}
+.portal-header {
+  margin: 28px auto 20px;
+  max-width: 1120px;
+  padding: 28px 32px;
+  border: 1px solid rgba(255, 255, 255, .8);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .84);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.portal-build, .portal-card p, .portal-message { color: #526179; }
+.portal-card { background: rgba(255, 255, 255, .9); }
+.portal-message:not(.error) { background: rgba(255, 255, 255, .94); }
+/* The access gate injects its original styles at runtime; extra specificity keeps the shared theme. */
+body #smartportAccessGate {
+  background: linear-gradient(135deg, rgba(14, 30, 49, .62), rgba(21, 44, 69, .44)), var(--harbor-photo) center 57% / cover no-repeat;
+}
+body .sp-gate-card {
+  background: rgba(255, 255, 255, .94);
+  border: 1px solid rgba(255, 255, 255, .75);
+  box-shadow: 0 24px 80px rgba(6, 20, 36, .3), inset 0 1px 0 #fff;
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+body .sp-gate-hint { color: #526179; }
+@media (max-width: 1180px) { .portal-header { margin-left: 30px; margin-right: 30px; } }
+@media (max-width: 640px) {
+  body::before { background-position: center, 38% center; }
+  .weekly-center-top { padding: 16px; }
+  .weekly-center-head, .weekly-center-counts { padding: 14px; }
+  .portal-header { margin: 16px 12px; padding: 24px 20px; }
+}
+/* Readable fallbacks for browsers without glass effects and users requesting less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card, .panel, .portal-card, .weekly-center-detail, body > header, body .sp-gate-card { background: rgba(255, 255, 255, .96); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .card, .panel, .portal-card, .weekly-center-person, .weekly-center-detail, .weekly-center-top, .weekly-center-head, .weekly-center-counts, body > header, body .sp-gate-card { background: #fff; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media print {
+  body { background: #fff; }
+  body::before { display: none; }
+  .card, .panel, .portal-card, .weekly-center-detail, body > header { background: #fff; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
