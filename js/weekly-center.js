@@ -13,12 +13,13 @@
     const summary=document.createElement('summary');summary.textContent='手動產生／上傳週報與提案紀錄';manual.append(summary);
     while(parent.firstChild)manual.append(parent.firstChild);
     const root=document.createElement('section');root.className='weekly-center';
-    root.innerHTML=`<div class="weekly-center-head"><h2>週報管理中心</h2><div class="weekly-center-actions"><button class="btn primary" data-action="publish">發布新一期週報</button><button class="btn" data-action="refresh">重新整理</button></div></div>
-      <div class="weekly-center-top"><div class="weekly-center-tools"><label>週次<select data-field="batch" aria-label="週報週次"></select></label>
-      <label>狀態<select data-field="filter"><option value="all">全部成員</option><option value="missing">尚未繳交</option><option value="pending">待 PM 審核</option><option value="failed">處理失敗</option><option value="returned">退回補件</option><option value="approved">已核准</option></select></label>
-      <button class="btn" data-action="resend">更新回饋並補發</button><label>截止時間（台灣）<input type="datetime-local" data-field="deadline"></label><button class="btn" data-action="extend">展延截止</button>
-      <button class="btn" data-action="older">更早週次</button></div><nav class="weekly-center-roster" data-field="roster" aria-label="選擇週報成員"></nav></div>
-      <div data-field="publication"></div><div class="weekly-center-message" data-field="message" role="status" aria-live="polite"></div><div class="weekly-center-message" data-field="jobs" role="status" aria-live="polite"></div><div class="weekly-center-counts" data-field="counts"></div><p class="weekly-center-message" data-field="handoff" role="status"></p>
+    root.innerHTML=`<div class="weekly-center-console"><div class="weekly-center-head"><h2>週報管理中心</h2><div class="weekly-center-actions"><button class="btn" data-action="refresh">重新整理</button><button class="btn primary" data-action="publish">發布新一期週報</button></div></div>
+      <div class="weekly-center-top"><div class="weekly-center-tools"><div class="weekly-center-filters"><label>週次<select data-field="batch" aria-label="週報週次"></select></label>
+      <label>狀態<select data-field="filter"><option value="all">全部成員</option><option value="missing">尚未繳交</option><option value="pending">待 PM 審核</option><option value="failed">處理失敗</option><option value="returned">退回補件</option><option value="approved">已核准</option></select></label></div>
+      <div class="weekly-center-deadline"><label>截止時間（台灣）<input type="datetime-local" data-field="deadline"></label><button class="btn" data-action="extend">展延截止</button></div>
+      <details class="weekly-center-more"><summary>更多操作</summary><div class="weekly-center-more-menu"><button class="btn" data-action="resend">更新回饋並補發</button><button class="btn" data-action="older">更早週次</button></div></details></div><nav class="weekly-center-roster" data-field="roster" aria-label="選擇週報成員"></nav></div>
+      <div class="weekly-center-footer"><div class="weekly-center-counts" data-field="counts"></div><p class="weekly-center-message" data-field="handoff" role="status"></p></div></div>
+      <div data-field="publication"></div><div class="weekly-center-message" data-field="message" role="status" aria-live="polite"></div><div class="weekly-center-message" data-field="jobs" role="status" aria-live="polite"></div>
       <div class="weekly-center-grid"><section class="weekly-center-detail" data-field="detail">選擇成員查看週報。</section></div>`;
     parent.append(root,manual);
     const el=name=>root.querySelector(`[data-field="${name}"]`);
@@ -264,10 +265,15 @@
     }
     root.addEventListener('click',event=>{
       const person=event.target.closest('[data-member]'),version=event.target.closest('[data-version]'),button=event.target.closest('[data-action]');
+      if(button || !event.target.closest('.weekly-center-more'))root.querySelector('.weekly-center-more').removeAttribute('open');
       if(person){memberId=person.dataset.member;renderRoster();const row=model().latest(active()?.submissions||[],memberId);if(row)openReport(row.id);else{++sequence;detail=null;el('detail').textContent='這位成員尚未繳交。';}}
       else if(version)openReport(version.dataset.version);
       else if(button?.dataset.action==='remove-feedback')button.closest('.weekly-center-feedback-editor').remove();
       else if(button)action(button.dataset.action).catch(e=>message(e.message,true));
+    });
+    root.addEventListener('keydown',event=>{
+      const more=root.querySelector('.weekly-center-more');
+      if(event.key==='Escape'&&more.open){more.open=false;more.querySelector('summary').focus();event.stopPropagation();}
     });
     el('batch').addEventListener('change',()=>{++sequence;batchId=el('batch').value;memberId='';detail=null;el('detail').textContent='選擇成員查看週報。';el('deadline').value=model().taipeiInput(active()?.due_at);renderRoster();});
     el('filter').addEventListener('change',renderRoster);
