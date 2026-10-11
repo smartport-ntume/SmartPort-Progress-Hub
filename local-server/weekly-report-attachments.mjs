@@ -82,7 +82,9 @@ export async function createWeeklyReportAttachments(payload = {}) {
       previousReview: payload.previous_review,
       publication: payload.publication,
       memberId: member.id,
-      reportDate: payload.report_date
+      reportDate: payload.report_date,
+      documentDate: payload.document_date,
+      weekKey: payload.week_key
     });
     const blob = await modules.SmartPortWeeklyDocx.create(model);
     const buffer = Buffer.from(await blob.arrayBuffer());

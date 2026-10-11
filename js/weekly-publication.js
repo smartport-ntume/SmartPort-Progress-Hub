@@ -52,6 +52,7 @@
       requestInput=batch?{batch_id:batch.id}:{report_date:value.report_date,due_at:value.due_at};
       el('preview').hidden=false;
       el('preview').innerHTML=`<h4>${esc(value.week_key)} · 共 ${value.members.length} 人 · 發布第 ${esc(value.revision)} 版</h4>
+        ${value.document_date?`<p>填報日期 ${esc(value.document_date)}${value.period_start&&value.period_end?` · 報告期間 ${esc(value.period_start)} ～ ${esc(value.period_end)}`:''}</p>`:''}
         <p>已審 ${value.counts.REVIEWED} 人 · 未繳 ${value.counts.MISSING} 人 · 待審 ${value.counts.PENDING} 人${value.counts.NOT_REQUIRED?` · 首次／上期無需繳交 ${value.counts.NOT_REQUIRED} 人`:''}</p>
         <p class="muted">${value.previous_week?`上期來源：${esc(value.previous_week)}`:'首次發布，沒有上期回饋。'}${value.resume?' 此版尚未發完，將沿用已確認的內容，續送剩餘附件。':''}</p>
         <table><thead><tr><th>收件成員</th><th>Word 帶入狀態</th></tr></thead><tbody>${value.members.map(m=>`<tr><td>${esc(m.member_name)}</td><td>${esc(m.label)}</td></tr>`).join('')}</tbody></table>`;
@@ -80,7 +81,7 @@
       el('title').textContent=batch?'更新回饋並補發':'發布新一期週報';
       const date=batch?.report_date||suggestedDate(options.batches);
       el('week').value=weekOf(date);el('due').value=batch?localInput(batch.due_at):dueDefault(date);
-      el('note').textContent=batch?'只更新上期回饋與狀態；保留本期成員、工作範圍、進度基準、截止時間與繳交紀錄。'
+      el('note').textContent=batch?'更新上期回饋、狀態與填報日期；保留本期成員、工作範圍、進度基準、截止時間與繳交紀錄。'
         :'發布後固定此版內容；後續 PM 意見完成時，由你決定是否更新回饋並補發。';
       controls();
     }

@@ -91,11 +91,14 @@ test('scheduler sends nothing until all reports are reviewed, then sends fresh p
   f.setNow('2026-09-15T05:10:00Z');
   const result=await f.automation.publish(f.schedule());assert.equal(result.sent,true);assert.equal(f.requests.length,1);
   const next=f.db.weekly_report_batches[1];assert.equal(next.payload.previous_review.week_key,'2026-W37');
+  assert.equal(next.report_date,'2026-09-14');
+  assert.equal(next.payload.document_date,'2026-09-15','late automatic delivery uses its actual Taiwan date');
   const form=f.requests[0].body;
   assert.match(JSON.parse(form.get('payload_json')).content,/已帶入 2026-W37/);
   for(const [index,own,other] of [[0,'甲：請補介面測試紀錄','乙：請補定位佐證'],[1,'乙：請補定位佐證','甲：請補介面測試紀錄']]){
     const buffer=Buffer.from(await form.get('files['+index+']').arrayBuffer());
     const text=(await mammoth.extractRawText({buffer})).value;
+    assert.match(text,/填報 2026\/09\/15/);
     assert.ok(text.includes(own));assert.ok(!text.includes(other));
     assert.match(text,/本週回覆與處理結果/);assert.match(text,/上期審閱紀錄/);
   }
@@ -208,6 +211,46 @@ test('manual publish works before the scheduled hour and with automatic publicat
   assert.equal(f.requests.length,1);
 });
 
+test('the reported October 11 publication has October 11 dates in preview, Discord and every Word',async()=>{
+  const f=fixture();f.setNow('2026-10-11T07:00:00Z');
+  f.files['project/checkpoints.json'].checkpoints=[{id:'CP1',date:'2026-10-11',name:'Basic Motion'}];
+  const c=await confirm(f,{report_date:'2026-10-05',due_at:'2026-10-18T04:00:00Z'});
+  assert.equal(c.preview.week_key,'2026-W41');assert.equal(c.preview.document_date,'2026-10-11');
+  assert.equal(c.preview.period_start,'2026-10-05');assert.equal(c.preview.period_end,'2026-10-11');
+  await f.automation.publishManually(c.input,c.job);
+  const batch=f.db.weekly_report_batches[1];
+  assert.equal(batch.report_date,'2026-10-05');assert.equal(batch.due_at,'2026-10-18T04:00:00.000Z');
+  assert.equal(batch.payload.document_date,'2026-10-11');
+  const message=JSON.parse(f.requests[0].body.get('payload_json')).content;
+  assert.match(message,/填報：2026-10-11/);assert.match(message,/CP1｜2026-10-11｜Basic Motion｜今日檢核/);
+  for(let i=0;i<2;i++){
+    assert.match(f.requests[0].body.get(`files[${i}]`).name,/2026-10-11/);
+    const text=await attachmentText(f.requests[0],i);
+    assert.match(text,/填報 2026\/10\/11/);assert.match(text,/2026\/10\/05 ～ 2026\/10\/11/);
+    assert.match(text,/今日檢核/);assert.doesNotMatch(text,/倒數 6 天/);
+  }
+  f.setNow('2026-10-12T07:00:00Z');
+  const update=await confirm(f,{batch_id:batch.id},'date-update');
+  assert.equal(update.preview.week_key,'2026-W41');assert.equal(update.preview.document_date,'2026-10-12');
+  await f.automation.publishManually(update.input,update.job);
+  assert.equal(batch.week_key,'2026-W41');assert.equal(batch.report_date,'2026-10-05');
+  assert.match(await attachmentText(f.requests[1]),/已逾期 1 天/);
+  assert.match(f.requests[1].body.get('files[0]').name,/2026-10-12.*_v2\.docx$/);
+});
+
+test('crossing Taiwan midnight requires a new preview instead of sending unconfirmed dates',async()=>{
+  const f=fixture();f.setNow('2026-10-11T15:59:00Z');
+  // A future selected week may differ from the current local publication week.
+  const input={report_date:'2026-10-12',due_at:'2026-10-19T04:00:00Z'},c=await confirm(f,input);
+  assert.equal(c.preview.document_date,'2026-10-11');assert.equal(c.preview.week_key,'2026-W42');
+  f.setNow('2026-10-11T16:01:00Z');
+  await assert.rejects(()=>f.automation.publishManually(c.input,c.job),/重新預覽/);
+  assert.equal(f.requests.length,0);
+  const refreshed=await confirm(f,input);assert.equal(refreshed.preview.document_date,'2026-10-12');
+  await f.automation.publishManually(refreshed.input,refreshed.job);
+  assert.match(await attachmentText(f.requests[0]),/填報 2026\/10\/12/);
+});
+
 test('manual publication and automatic catch-up serialize and never resend after PM finishes later',async()=>{
   const f=fixture(),c=await confirm(f);
   await Promise.all([f.automation.publishManually(c.input,c.job),f.automation.publish(f.schedule())]);
@@ -270,6 +313,8 @@ test('interrupted manual delivery resumes only remaining chunks from the confirm
   await f.automation.publishManually(c.input,c.job);
   assert.equal(f.requests.length,2);assert.equal(f.requests[1].body.get('files[1]'),null);
   const text=await attachmentText(f.requests[1]);assert.match(text,/上期未繳交/);assert.doesNotMatch(text,/發送途中才完成的意見|新名字/);
+  assert.match(text,/填報 2026\/09\/14/,'partial delivery retains the confirmed edition date across weeks');
+  assert.match(f.requests[1].body.get('files[0]').name,/2026-09-14/);
   await f.automation.publishManually(c.input,c.job);assert.equal(f.requests.length,2);
 });
 
@@ -280,6 +325,21 @@ test('automatic catch-up resumes a confirmed partial manual edition but respects
   const batch=f.db.weekly_report_batches[1];batch.status='CLOSED';fail=false;
   await assert.rejects(()=>f.automation.publish(f.schedule()),/weekly_batch_closed/);assert.equal(f.requests.length,0);
   batch.status='OPEN';await f.automation.publish(f.schedule());assert.equal(f.requests.length,1);
+});
+
+test('explicit continuation of a legacy partial edition pins its original confirmation date',async()=>{
+  const f=fixture();for(let i=3;i<=6;i++)addMember(f,i);
+  const send=f.automation.fetchFn;let attempts=0;
+  f.automation.fetchFn=(...args)=>{if(++attempts===2)throw new Error('interrupted');return send(...args);};
+  const c=await confirm(f);await assert.rejects(()=>f.automation.publishManually(c.input,c.job),/interrupted/);
+  const batch=f.db.weekly_report_batches[1];
+  delete batch.payload.document_date; // Prior releases saved confirmed_at only.
+  f.setNow('2026-09-22T05:00:00Z');
+  const resume=await confirm(f,{batch_id:batch.id},'resume-legacy');
+  assert.equal(resume.preview.resume,true);assert.equal(resume.preview.document_date,'2026-09-14');
+  await f.automation.publishManually(resume.input,resume.job);
+  assert.equal(f.requests.length,2);assert.equal(batch.payload.document_date,'2026-09-14');
+  assert.match(await attachmentText(f.requests[1]),/填報 2026\/09\/14/);
 });
 
 test('first publication and new members need no previous feedback; invalid dates and deadlines are rejected',async()=>{

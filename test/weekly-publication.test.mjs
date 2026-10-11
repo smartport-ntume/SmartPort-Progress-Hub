@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 const source=await readFile(new URL('../js/weekly-publication.js',import.meta.url),'utf8');
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const preview=()=>({preview_token:'a'.repeat(64),week_key:'2099-W03',report_date:'2099-01-12',due_at:'2099-01-19T04:00:00Z',
+  document_date:'2099-01-18',period_start:'2099-01-12',period_end:'2099-01-18',
   previous_week:'2099-W02',revision:1,resume:false,counts:{REVIEWED:1,MISSING:1,PENDING:1,NOT_REQUIRED:0},members:[
     {member_name:'已審成員',label:'已完成 PM 審閱'},
     {member_name:'<img src=x onerror=alert(1)>',label:'上期未繳交'},
@@ -39,6 +40,7 @@ test('manual publication previews all recipients before sending and ignores a do
   await f.finish('job-1',{preview:preview()});
   assert.equal(f.field('preview').querySelectorAll('tbody tr').length,3);
   assert.match(f.field('preview').textContent,/未繳 1 人 · 待審 1 人/);
+  assert.match(f.field('preview').textContent,/填報日期 2099-01-18 · 報告期間 2099-01-12 ～ 2099-01-18/);
   assert.equal(f.field('preview').querySelector('img'),null,'names are text, never HTML');
   assert.equal(f.button('send').hidden,false);assert.equal(f.calls.length,1);
   f.button('send').click();f.button('send').click();await flush();

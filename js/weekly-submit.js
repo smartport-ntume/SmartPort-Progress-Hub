@@ -171,7 +171,9 @@
       previousReview: payload.previous_review,
       publication: payload.publication,
       memberId,
-      reportDate: payload.report_date || batch.report_date
+      reportDate: payload.report_date || batch.report_date,
+      documentDate: payload.document_date,
+      weekKey: batch.week_key || payload.week_key
     });
   }
 
@@ -208,7 +210,12 @@
     $('#batchCard').hidden = false;
     $('#weekKey').textContent = batch.week_key || 'WEEKLY REPORT';
     $('#batchTitle').textContent = '本週個人週報已建立';
-    $('#batchMeta').textContent = `報告日期 ${batch.report_date}・上傳後自動批改並送交 PM`;
+    const reportDates = window.SmartPortWeeklyReport.dates({
+      reportDate: batch.payload?.report_date || batch.report_date,
+      documentDate: batch.payload?.document_date,
+      publication: batch.payload?.publication
+    });
+    $('#batchMeta').textContent = `報告日期 ${reportDates.reportDateDisplay}・上傳後自動批改並送交 PM`;
     const badge = $('#deadlineBadge');
     const overdue = Date.now() > +new Date(batch.due_at);
     badge.textContent = overdue && batch.can_submit
