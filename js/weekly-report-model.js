@@ -37,6 +37,31 @@
     return `${cursor.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
   }
 
+  function dates(options = {}) {
+    // reportDate identifies the batch and its frozen task scope. It is often
+    // Monday, even when the PM actually publishes later in that week.
+    const reportDate = parseDate(options.reportDate);
+    if (!reportDate) throw new Error('請選擇正確的報告日期');
+    let documentDate = parseDate(options.documentDate);
+    if (options.documentDate && !documentDate) throw new Error('週報填報日期無效');
+    // Existing manual editions already saved their confirmation time. Use it
+    // for downloads too, without silently moving an old edition to today.
+    const confirmedAt = options.publication?.confirmed_at;
+    if (!documentDate && confirmedAt && Number.isFinite(+new Date(confirmedAt))) {
+      const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).formatToParts(new Date(confirmedAt)).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+      documentDate = parseDate(`${parts.year}-${parts.month}-${parts.day}`);
+    }
+    documentDate ||= reportDate;
+    const periodStart = addDays(documentDate, -6);
+    return {
+      documentDate: isoDate(documentDate), reportDateDisplay: displayDate(documentDate),
+      periodStart: isoDate(periodStart), periodEnd: isoDate(documentDate),
+      periodDisplay: `${displayDate(periodStart)} ～ ${displayDate(documentDate)}`
+    };
+  }
+
   function progressOf(item) {
     const value = item?.actual_progress ?? item?.actualProgress ?? item?.progress;
     const number = Number(value);
@@ -107,6 +132,7 @@
     if (!member) throw new Error('請選擇有效的週報成員');
     const reportDate = parseDate(options.reportDate);
     if (!reportDate) throw new Error('請選擇正確的報告日期');
+    const reportDates = dates(options);
 
     const categories = (config.categories || []).filter(item =>
       item.active !== false && config.category_owners?.[item.id] === memberId
@@ -118,6 +144,9 @@
     const checkpointDateMap = new Map(parsedCheckpoints.map(entry => [clean(entry.item?.id, 80), entry.date]));
     const checkpointReferences = options.checkpointReferences || options.referenceModel?.acl_levels || [];
     const nextCheckpoint = nextCheckpointOf(options.checkpoints || [], reportDate, checkpointReferences);
+    if (nextCheckpoint) nextCheckpoint.daysRemaining = Math.round(
+      (parseDate(nextCheckpoint.date) - parseDate(reportDates.documentDate)) / 86400000
+    );
     const checkpointCutoff = nextCheckpoint ? parseDate(nextCheckpoint.date) : null;
     const previous = options.previousReview;
     const feedback = previous?.members?.find(row => row.member_id === memberId);
@@ -172,7 +201,6 @@
         || left.id.localeCompare(right.id);
     });
 
-    const periodStart = addDays(reportDate, -6);
     const previousReview = feedback && ['APPROVED','CHANGES_REQUESTED'].includes(feedback.review_status) ? {
       weekKey: clean(previous.week_key, 32), reportDate: clean(previous.report_date, 20),
       revision: Number(feedback.revision || 1), reviewStatus: feedback.review_status,
@@ -207,11 +235,8 @@
       categories: categories.map(item => ({ id: item.id, name: item.name, color: item.color })),
       ownerTeams: categories.map(item => item.id),
       reportDate: isoDate(reportDate),
-      reportDateDisplay: displayDate(reportDate),
-      periodStart: isoDate(periodStart),
-      periodEnd: isoDate(reportDate),
-      periodDisplay: `${displayDate(periodStart)} ～ ${displayDate(reportDate)}`,
-      weekId: isoWeek(reportDate),
+      ...reportDates,
+      weekId: clean(options.weekKey, 32) || isoWeek(reportDate),
       nextCheckpoint,
       previousReview,
       previousReviewNotice,
@@ -229,13 +254,14 @@
         dueByCheckpoint: tasks.filter(item => item.scope !== 'OVERDUE').length
       },
       scopeSubtaskIds: tasks.map(item => item.id),
-      filename: `SmartPort_Weekly_${isoDate(reportDate)}_${filenameMember}${publicationRevision > 1 ? `_v${publicationRevision}` : ''}.docx`
+      filename: `SmartPort_Weekly_${reportDates.documentDate}_${filenameMember}${publicationRevision > 1 ? `_v${publicationRevision}` : ''}.docx`
     };
   }
 
   window.SmartPortWeeklyReport = {
     addDays,
     build,
+    dates,
     displayDate,
     isCompleted,
     nextCheckpointOf,

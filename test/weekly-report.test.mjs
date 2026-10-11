@@ -90,6 +90,45 @@ test('personal weekly scope inherits every category owned by one member', async 
   assert.equal(window.SmartPortWeeklyReport.parseDate('2026-02-30'), null);
 });
 
+test('Sunday Word dates and countdown use the edition date while the selected week and task scope stay fixed', async () => {
+  const window = await browserWeeklyModules({ includeDocx: true });
+  const data = { ...fixture(), memberId: 'member-1', reportDate: '2026-10-05', weekKey: '2026-W41',
+    checkpoints: [{ id: 'CP1', date: '2026-10-11', name: 'Basic Motion' }, { id: 'CP2', date: '2026-11-01' }] };
+  const original = window.SmartPortWeeklyReport.build(data);
+  const model = window.SmartPortWeeklyReport.build({ ...data, documentDate: '2026-10-11' });
+  assert.equal(model.reportDate, '2026-10-05', 'the stored batch and scope date is not rewritten');
+  assert.equal(model.weekId, '2026-W41');
+  assert.equal(model.reportDateDisplay, '2026/10/11');
+  assert.equal(model.periodDisplay, '2026/10/05 ～ 2026/10/11');
+  assert.equal(model.nextCheckpoint.daysRemaining, 0);
+  assert.deepEqual(model.scopeSubtaskIds, original.scopeSubtaskIds);
+  assert.match(model.filename, /2026-10-11/);
+  const blob = await window.SmartPortWeeklyDocx.create(model);
+  const text = (await mammoth.extractRawText({ buffer: Buffer.from(await blob.arrayBuffer()) })).value;
+  assert.match(text, /填報 2026\/10\/11/);
+  assert.match(text, /本期檢核點預覽/);
+  assert.match(text, /今日檢核/);
+  assert.doesNotMatch(text, /倒數 6 天|2026\/09\/29/);
+  const revised = window.SmartPortWeeklyReport.build({ ...data, documentDate: '2026-10-12', publication: { revision: 2 } });
+  assert.equal(revised.weekId, '2026-W41', 'a resend does not silently become W42');
+  assert.deepEqual(revised.scopeSubtaskIds, original.scopeSubtaskIds);
+  const revisedBlob = await window.SmartPortWeeklyDocx.create(revised);
+  const revisedText = (await mammoth.extractRawText({ buffer: Buffer.from(await revisedBlob.arrayBuffer()) })).value;
+  assert.match(revisedText, /已逾期 1 天/);
+  assert.doesNotMatch(revisedText, /倒數 -/);
+});
+
+test('existing manual editions recover their Taiwan date from confirmation and never follow the download clock', async () => {
+  const window = await browserWeeklyModules();
+  const options = { reportDate: '2026-12-28', publication: { confirmed_at: '2026-12-31T16:01:00Z' } };
+  const dates = window.SmartPortWeeklyReport.dates(options);
+  assert.equal(dates.documentDate, '2027-01-01');
+  assert.equal(dates.periodStart, '2026-12-26');
+  assert.equal(window.SmartPortWeeklyReport.dates({ ...options, documentDate: '2026-12-30' }).documentDate, '2026-12-30');
+  assert.equal(window.SmartPortWeeklyReport.dates({ reportDate: '2026-12-28' }).documentDate, '2026-12-28');
+  assert.throws(() => window.SmartPortWeeklyReport.dates({ ...options, documentDate: '2026-02-30' }));
+});
+
 test('without a future checkpoint, personal weekly scope contains overdue work only', async () => {
   const window = await browserWeeklyModules({ includeDocx: true });
   const data = fixture();

@@ -116,8 +116,10 @@
     const cp = model.nextCheckpoint;
     if (!cp) return [table([row([metric('後續 CP', '尚未設定'),
       cell([label('報告規則'), paragraph('僅追蹤逾期未完成項目')])])], [35, 65])];
+    const timing = cp.daysRemaining === 0 ? '今日檢核'
+      : cp.daysRemaining < 0 ? `已逾期 ${-cp.daysRemaining} 天` : `倒數 ${cp.daysRemaining} 天`;
     return [
-      paragraph(`${cp.id}　${cp.name}　 ·　 ${cp.dateDisplay}　 ·　 倒數 ${cp.daysRemaining} 天`, { size: 24, bold: true, color: ACCENT,
+      paragraph(`${cp.id}　${cp.name}　 ·　 ${cp.dateDisplay}　 ·　 ${timing}`, { size: 24, bold: true, color: ACCENT,
         spacing: { before: 40, after: 120, line: 280 } }),
       table([row([
         cell([label('車輛能力 / Capability'), paragraph(valueText(cp.capability, '尚未設定'))]),
@@ -155,7 +157,7 @@
       ...(model.publicationRevision > 1 ? [paragraph(`發布更新版 v${model.publicationRevision} · 本期週次與繳交連結不變`, { size: 18, color: MUTED })] : []),
       ...(model.previousReviewNotice ? [paragraph(`${model.previousReviewNotice.weekKey} · ${model.previousReviewNotice.label}`, { bold: true }),
         paragraph(model.previousReviewNotice.text, { size: 19, color: MUTED })] : []),
-      sectionHeading('01', '下一個檢核點預覽'), ...checkpointBlock(model),
+      sectionHeading('01', model.nextCheckpoint?.daysRemaining <= 0 ? '本期檢核點預覽' : '下一個檢核點預覽'), ...checkpointBlock(model),
       table([row([
         cell([paragraph('', { children: [run('自評完成度　', { bold: true, size: 20 }), run('____ %', { size: 20, color: MUTED })] })]),
         cell([paragraph('', { children: [run('整體狀態　', { bold: true, size: 20 }), run('☐ 正常　☐ 需注意　☐ 延誤', { size: 20, color: MUTED })] })])
@@ -264,7 +266,7 @@
     sections.push(section(model, reviewAndIssuesPage(model), 'PM 回饋與跨任務事項'));
     return new (api().Document)({ creator: 'SmartPort Progress Hub',
       title: `SmartPort ${model.member.name} 每週個人工作進度報告`,
-      description: `甘特圖自動產生之 ${model.reportDate} 個人週報`,
+      description: `甘特圖自動產生之 ${model.documentDate || model.reportDate} 個人週報`,
       styles: {
         default: { title: { run: { font: FONT, size: 44, bold: true, color: '000000' } },
           document: { run: { font: FONT, language: LANGUAGE, size: 22, color: INK },

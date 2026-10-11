@@ -276,6 +276,7 @@ export class WeeklyReportAutomation {
       schema_version: '1.0',
       week_key: schedule.weekKey,
       report_date: schedule.reportDate,
+      document_date: localDateKey(this.now(), this.options.timezone),
       due_at: schedule.dueAt.toISOString(),
       previous_review: previousReview,
       project: arrays.project,
@@ -388,14 +389,19 @@ export class WeeklyReportAutomation {
     if (!confirmed.ready) throw pendingReviewError(confirmed);
     if (JSON.stringify(confirmed.review) !== JSON.stringify(gate.review)) throw new Error('上期 PM 回饋剛更新，稍後重新產生附件。');
     const checkpoint = nextCheckpoint(batch.payload?.checkpoints, schedule.reportDate);
+    const documentDate = batch.payload.document_date || (batch.payload.publication?.confirmed_at
+      ? localDateKey(batch.payload.publication.confirmed_at, this.options.timezone) : batch.payload.report_date);
+    const daysRemaining = checkpoint ? Math.round((dateOrdinal(checkpoint.date) - dateOrdinal(documentDate)) / DAY_MS) : null;
+    const checkpointTiming = daysRemaining === 0 ? '今日檢核' : daysRemaining < 0 ? `已逾期 ${-daysRemaining} 天` : `倒數 ${daysRemaining} 天`;
     const checkpointText = checkpoint
-      ? `${checkpoint.id || '下一個 CP'}｜${checkpoint.date}${checkpoint.name ? `｜${checkpoint.name}` : ''}`
+      ? `${checkpoint.id || '下一個 CP'}｜${checkpoint.date}${checkpoint.name ? `｜${checkpoint.name}` : ''}｜${checkpointTiming}`
       : '目前沒有後續 CP；本期只列逾期未完成項目';
     for (let index = messageIds.length; index < chunks.length; index += 1) {
       const content = index === 0 ? [
         `📣 **【SmartPort 每週週報｜${schedule.weekKey}${batch.payload?.publication?.revision > 1 ? `｜更新版 v${batch.payload.publication.revision}` : ''}】**`,
         `本期已建立，共 ${members.length} 位成員。請直接下載與自己姓名相同的 Word 附件，填完後由下方入口上傳。`,
         `📎 附件 ${index + 1}/${chunks.length}（本則 ${chunks[index].length} 份）`,
+        `🗓️ 填報：${documentDate}｜報告期間：${addLocalDays(documentDate, -6)} ～ ${documentDate}`,
         `⏰ 截止：${discordDate(new Date(batch.due_at), this.options.timezone)}`,
         `🎯 ${checkpointText}`,
         ...(gate.review ? [frozen
@@ -456,7 +462,15 @@ export class WeeklyReportAutomation {
     // A feedback update keeps the existing members, task scope, baseline and portal.
     // A new publication uses the current official project data for all eligible members.
     const payload = batch && (updating || resume) ? structuredClone(batch.payload) : await this.projectPayload(schedule, gate.review);
-    if (!resume) payload.previous_review = gate.review;
+    if (!resume) {
+      payload.previous_review = gate.review;
+      payload.document_date = localDateKey(this.now(), this.options.timezone);
+    }
+    const documentDate = payload.document_date || (payload.publication?.confirmed_at
+      ? localDateKey(payload.publication.confirmed_at, this.options.timezone) : payload.report_date);
+    // Pin the recovered date before a legacy partial edition gets a new job's
+    // confirmation timestamp; its remaining recipients must receive the same date.
+    payload.document_date = documentDate;
     const recipients = payload.team_config.members;
     const previous = payload.previous_review;
     const members = recipients.map(member => {
@@ -472,6 +486,7 @@ export class WeeklyReportAutomation {
       batch_id: batch?.id || null, revision, mode: updating ? 'update' : 'publish', resume });
     return { batch, payload, schedule, preview: { preview_token: token, week_key: schedule.weekKey,
       report_date: schedule.reportDate, due_at: schedule.dueAt.toISOString(), batch_id: batch?.id || null,
+      document_date: documentDate, period_start: addLocalDays(documentDate, -6), period_end: documentDate,
       previous_week: previous?.week_key || null, revision, resume, updating, members,
       counts: Object.fromEntries(['REVIEWED','MISSING','PENDING','NOT_REQUIRED'].map(state => [state, members.filter(m => m.state === state).length])) } };
   }
