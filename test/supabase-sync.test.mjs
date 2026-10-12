@@ -5,6 +5,26 @@ import {
   refreshWeeklyBatchMemberNames
 } from '../local-server/supabase-sync.mjs';
 
+test('CP save publishes project and reference without fetching unrelated GitHub proposals', async () => {
+  const publisher = new SupabaseSnapshotPublisher({});
+  const calls = [];
+  let finishReference;
+  publisher.publishProject = async () => { calls.push('project'); return { source_commit: 'new-cp' }; };
+  publisher.publishReference = async () => { calls.push('reference'); return new Promise(resolve => { finishReference = resolve; }); };
+  publisher.publishProposals = async () => { assert.fail('CP save must not wait for proposals'); };
+  let complete = false;
+  const saving = publisher.publishAfterJob('patch_checkpoint').then(result => { complete = true; return result; });
+  await Promise.resolve(); assert.equal(complete, false);
+  finishReference({ source_commit: 'new-cp' });
+  const result = await saving;
+  assert.deepEqual(calls, ['project', 'reference']);
+  assert.equal(result.project.source_commit, result.reference.source_commit);
+  publisher.publishReference = async () => { throw new Error('snapshot failed'); };
+  await assert.rejects(publisher.publishAfterJob('write_checkpoints'), /snapshot failed/);
+  publisher.publishAll = async () => ({ all: true });
+  assert.deepEqual(await publisher.publishAfterJob('review_weekly_submission'), { all: true });
+});
+
 test('open weekly batches refresh display names without changing their frozen scope', () => {
   const original = {
     report_date: '2026-09-07',

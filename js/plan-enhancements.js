@@ -205,6 +205,7 @@
         document.getElementById('btnReload')?.click();
       }catch(err){alert(err.message||String(err));}
     };
+    document.dispatchEvent(new CustomEvent('smartport:checkpoint-editor-open',{detail:{id}}));
   }
 
   function cpIdFromElement(el){

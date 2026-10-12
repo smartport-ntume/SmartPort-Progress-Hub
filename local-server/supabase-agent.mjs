@@ -104,7 +104,7 @@ async function execute(job) {
   let gatewaySync = null;
   const warnings = [];
   try {
-    gatewaySync = await publisher.publishAll();
+    gatewaySync = await publisher.publishAfterJob(job.kind);
   } catch (error) {
     warnings.push('gateway_snapshot_sync_failed: ' + (error.message || String(error)));
   }
