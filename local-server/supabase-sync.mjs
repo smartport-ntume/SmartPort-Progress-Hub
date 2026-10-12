@@ -124,8 +124,9 @@ export class SupabaseSnapshotPublisher {
     return { project, reference, proposals };
   }
 
-  async publishAfterJob(kind) {
-    if (kind !== 'patch_checkpoint' && kind !== 'write_checkpoints') return this.publishAll();
+  async publishAfterJob(kind, payload = {}) {
+    const checkpointSync = kind === 'refresh_snapshots' && payload?.scope === 'checkpoints';
+    if (kind !== 'patch_checkpoint' && kind !== 'write_checkpoints' && !checkpointSync) return this.publishAll();
     // CP writes change the project and ACL roadmap only. Fetching every GitHub
     // proposal here made a small date edit wait on an unrelated remote request.
     const [project, reference] = await Promise.all([

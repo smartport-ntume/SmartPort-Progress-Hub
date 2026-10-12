@@ -459,6 +459,9 @@
         return data || [];
       },
       loadReference: () => snapshotRow('reference_snapshots'),
+      syncCheckpoint: (id, options = {}) => enqueueAndWait('refresh_snapshots', {
+        scope: 'checkpoints', checkpoint_id: id
+      }, { ...options, timeoutMs: 60_000, recheckMs: 5_000, requestTimeoutMs: 15_000 }),
       request: requestPath,
       uploadWeeklyReport,
       analyzeWeeklyReport,

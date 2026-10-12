@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
-const [apiSource, editorSource, saveSource] = await Promise.all([
-  'supabase-api.js', 'plan-enhancements.js', 'checkpoint-save.js'
+const [apiSource, editorSource, saveSource, storeSource] = await Promise.all([
+  'supabase-api.js', 'plan-enhancements.js', 'checkpoint-save.js', 'store.js'
 ].map(file => readFile(new URL('../js/' + file, import.meta.url), 'utf8')));
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const cp = () => ({ id: 'CP1', date: '2026-10-11', acl: 'ACL-1', name: 'Motion', criteria: [], fsr_targets: [] });
@@ -100,18 +100,34 @@ test('CP Agent failure is terminal and is never displayed as a successful save',
   assert.equal(f.timers.size, 0);
 });
 
+test('CP snapshot repair has a separate idempotent job and resumes without another CP write', async t => {
+  const f = apiFixture(t, { id: 'sync-1', kind: 'refresh_snapshots', status: 'queued' });
+  const saving = f.api.syncCheckpoint('CP1', { idempotencyKey: 'sync-key' }); await flush();
+  assert.equal(f.calls[0].payload.p_kind, 'refresh_snapshots');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].payload.p_payload)), { scope: 'checkpoints', checkpoint_id: 'CP1' });
+  assert.equal(f.calls[0].payload.p_idempotency_key, 'sync-key');
+  f.emit({ id: 'sync-1', status: 'completed', result: { ok: true } });
+  assert.equal((await saving).ok, true);
+  f.setRow({ id: 'sync-1', status: 'completed', result: { ok: true } });
+  await f.api.syncCheckpoint('CP1', { jobId: 'sync-1', idempotencyKey: 'sync-key' });
+  assert.equal(f.calls.length, 1);
+});
+
 function editorFixture(t, storage = []) {
   const dom = new JSDOM('<button data-edit-cp="CP1">Edit</button><button id="btnReload"></button><div id="drawer"><h2 id="drawerTitle"></h2><form id="drawerBody"></form></div><div id="drawerBackdrop"></div><div id="toast"></div>', {
     url: 'https://example.test', runScripts: 'outside-only'
   });
   t.after(() => dom.window.close());
   const w = dom.window, doc = w.document, calls = [], waiters = [], alerts = [];
-  let reloads = 0;
+  let reloads = 0, saved = { checkpoint: cp(), reference: {} };
   w.alert = message => alerts.push(message);
   w.SMARTPORT_ACCESS = { can_write: true, login: 'pm' };
-  w.SmartPortStore = { state: { checkpoints: [cp()], workPackages: [], subtasks: [] } };
+  w.eval(storeSource);
+  w.SmartPortStore.replaceSnapshot({ checkpoints: [cp()] });
   w.SmartPortAPI = {
     getMode: () => 'supabase', getBase: () => 'https://example.supabase.co',
+    async loadSnapshot() { return { checkpoints: [structuredClone(saved.checkpoint)] }; },
+    async loadReference() { return { reference: { acl_levels: [structuredClone(saved.reference)] } }; },
     async request(path, options) {
       if (!options) return { reference: { acl_levels: [] } };
       calls.push({ path, ...options });
@@ -126,8 +142,16 @@ function editorFixture(t, storage = []) {
   const input = name => doc.querySelector(`[name="cp_${name}"]`);
   const button = () => doc.querySelector('button[type="submit"]');
   function submit() { doc.querySelector('form').dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true })); }
+  function complete() {
+    const checkpoint = { ...cp(), ...JSON.parse(calls.at(-1).body) };
+    const [,month,day] = checkpoint.date.split('-');
+    saved = { checkpoint, reference: { checkpoint: checkpoint.id, date: `${Number(month)}/${Number(day)}`,
+      level: checkpoint.acl, capability: checkpoint.capability, review_checks: checkpoint.review_checks,
+      fsr_maturity_target: checkpoint.fsrTarget } };
+    waiters.at(-1).resolve(structuredClone(saved));
+  }
   open();
-  return { w, doc, calls, waiters, alerts, open, input, button, submit, reloads: () => reloads,
+  return { w, doc, calls, waiters, alerts, open, input, button, submit, complete, reloads: () => reloads,
     storage: () => Object.entries(w.sessionStorage), message: () => doc.querySelector('[data-cp-save-status]')?.textContent || '' };
 }
 
@@ -148,9 +172,9 @@ test('real CP editor prevents double submit and resumes after timeout and page r
   assert.equal(next.input('date').value, '2026-10-18');
   assert.equal(next.button().textContent, '查看儲存狀態'); next.submit();
   assert.equal(next.calls[0].jobId, 'job-1'); assert.equal(next.calls[0].idempotencyKey, f.calls[0].idempotencyKey);
-  next.waiters[0].resolve({ checkpoint: { ...cp(), date: '2026-10-18' } }); await flush();
+  next.complete(); await flush();
   assert.equal(next.w.SmartPortStore.state.checkpoints[0].date, '2026-10-18');
-  assert.equal(next.reloads(), 1); assert.equal(next.storage().length, 0);
+  assert.equal(next.reloads(), 0); assert.equal(next.storage().length, 0);
   assert.equal(next.doc.querySelector('#drawer').classList.contains('open'), false);
 });
 
@@ -174,7 +198,7 @@ test('CP completion never closes an unrelated draft and invalid JSON never enque
   f.input('criteria').value = '{}'; f.submit(); assert.equal(f.calls.length, 0); assert.equal(f.alerts.length, 1);
   f.input('criteria').value = '[]'; f.submit();
   f.doc.querySelector('#drawerBody').innerHTML = '<input name="other" value="unsaved draft">';
-  f.waiters[0].resolve({ checkpoint: { ...cp(), date: '2026-10-18' } }); await flush();
+  f.complete(); await flush();
   assert.equal(f.doc.querySelector('[name="other"]').value, 'unsaved draft');
   assert.equal(f.doc.querySelector('#drawer').classList.contains('open'), true);
 });
