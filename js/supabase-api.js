@@ -156,12 +156,13 @@
       };
     }
 
-    async function jobRow(id) {
-      const { data, error } = await requireClient()
+    async function jobRow(id, signal) {
+      let query = requireClient()
         .from('gateway_jobs')
         .select('*')
-        .eq('id', id)
-        .maybeSingle();
+        .eq('id', id);
+      if (signal) query = query.abortSignal(signal);
+      const { data, error } = await query.maybeSingle();
       if (error) throw errorFrom(error);
       if (!data) throw Object.assign(new Error('gateway_job_not_found'), { status: 404 });
       return data;
@@ -177,68 +178,116 @@
       return { done: false };
     }
 
-    async function waitForJob(id, timeoutMs = 20 * 60 * 1000) {
+    async function waitForJob(id, options = {}) {
+      const { timeoutMs = 20 * 60 * 1000, recheckMs = 0, onUpdate } = options;
       const db = requireClient();
-      const initial = await jobRow(id);
-      const immediate = settleJob(initial);
-      if (immediate.done) {
-        if (immediate.error) throw immediate.error;
-        return initial;
-      }
-
       return new Promise((resolve, reject) => {
         let finished = false;
+        let lastRow = options.initialRow || { id, status: 'queued' };
+        let reading = false;
+        let recheckTimer = null;
+        let readTimer = null;
+        let readController = null;
         const channelName = `smartport-job-${id}-${crypto.randomUUID()}`;
         const channel = db.channel(channelName);
-        const timer = setTimeout(() => finish(new Error('local_agent_job_timeout')), timeoutMs);
+        // Bound the whole wait, including the first HTTP read. A missing Realtime
+        // event must not leave a checkpoint editor spinning for twenty minutes.
+        const timer = setTimeout(() => {
+          const error = new Error('local_agent_job_timeout');
+          error.code = 'gateway_job_wait_timeout';
+          finish(error);
+        }, timeoutMs);
 
         function finish(error, row) {
           if (finished) return;
           finished = true;
           clearTimeout(timer);
+          clearTimeout(recheckTimer);
+          clearTimeout(readTimer);
+          readController?.abort();
           db.removeChannel(channel).catch(() => {});
-          if (error) reject(error);
+          if (error) {
+            error.job ||= normalizeJob(lastRow);
+            reject(error);
+          }
           else resolve(row);
         }
 
         function inspect(row) {
+          if (finished || !row) return;
+          // An older catch-up read can arrive after a Realtime running event.
+          if (lastRow.status === 'running' && row.status === 'queued') return;
+          lastRow = row;
+          onUpdate?.(normalizeJob(row));
           const state = settleJob(row);
           if (!state.done) return;
           finish(state.error || null, state.value || row);
+        }
+
+        async function recheck() {
+          if (finished || reading) return;
+          reading = true;
+          clearTimeout(recheckTimer);
+          const controller = new AbortController();
+          readController = controller;
+          readTimer = setTimeout(() => controller.abort(), 10_000);
+          try {
+            inspect(await jobRow(id, controller.signal));
+          } catch (error) {
+            if (!recheckMs || error.status === 404) finish(error);
+          } finally {
+            clearTimeout(readTimer);
+            reading = false;
+            if (!finished && recheckMs) recheckTimer = setTimeout(recheck, recheckMs);
+          }
         }
 
         channel
           .on('postgres_changes', {
             event: 'UPDATE', schema: 'public', table: 'gateway_jobs', filter: `id=eq.${id}`
           }, event => inspect(event.new))
-          .subscribe(async status => {
+          .subscribe(status => {
             if (status !== 'SUBSCRIBED' && status !== 'TIMED_OUT' && status !== 'CHANNEL_ERROR') return;
-            try {
-              // One race-closing/catch-up read per subscription state; this is not polling.
-              inspect(await jobRow(id));
-            } catch (error) {
-              if (status !== 'SUBSCRIBED') finish(error);
-            }
+            recheck();
           });
+        inspect(lastRow);
+        recheck();
       });
     }
 
-    async function enqueue(kind, payload, idempotencyKey = '') {
+    async function enqueue(kind, payload, idempotencyKey = '', requestTimeoutMs = 0) {
       const key = idempotencyKey || `${kind}:${crypto.randomUUID()}`;
-      const { data, error } = await requireClient().rpc('enqueue_gateway_job', {
+      let query = requireClient().rpc('enqueue_gateway_job', {
         p_kind: kind,
         p_payload: payload || {},
         p_idempotency_key: key
       });
-      if (error) throw errorFrom(error);
+      let timer;
+      if (requestTimeoutMs) {
+        const controller = new AbortController();
+        timer = setTimeout(() => controller.abort(), requestTimeoutMs);
+        query = query.abortSignal(controller.signal);
+      }
+      let response;
+      try { response = await query; }
+      finally { clearTimeout(timer); }
+      const { data, error } = response;
+      if (error) {
+        const failure = errorFrom(error);
+        // A database rejection is definitive; a lost HTTP response is not.
+        failure.queueRejected = /^(PGRST\d+|[0-9A-Z]{5})$/.test(String(error.code || ''));
+        throw failure;
+      }
       const row = Array.isArray(data) ? data[0] : data;
       if (!row?.id) throw new Error('Supabase did not return the queued job');
       return row;
     }
 
-    async function enqueueAndWait(kind, payload) {
-      const queued = await enqueue(kind, payload);
-      const completed = await waitForJob(queued.id);
+    async function enqueueAndWait(kind, payload, options = {}) {
+      const queued = options.jobId
+        ? { id: options.jobId, kind, status: 'queued' }
+        : await enqueue(kind, payload, options.idempotencyKey, options.requestTimeoutMs);
+      const completed = await waitForJob(queued.id, { ...options, initialRow: queued });
       return completed.result;
     }
 
@@ -326,7 +375,7 @@
         return enqueueAndWait('patch_checkpoint', {
           id: decodeURIComponent(checkpoint[1]),
           patch: body
-        });
+        }, { ...options, timeoutMs: 60_000, recheckMs: 5_000, requestTimeoutMs: 15_000 });
       }
       throw Object.assign(new Error(`Unsupported Supabase API path: ${method} ${path}`), { status: 404 });
     }
