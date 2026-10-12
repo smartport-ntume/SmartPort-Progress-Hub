@@ -148,9 +148,12 @@
 
   function exportSnapshot(){const blob=new Blob([JSON.stringify({project:S.project,work_packages:S.workPackages,subtasks:S.subtasks,functional_safety_requirements:S.fsrs,checkpoints:S.checkpoints,team_config:S.teamConfig},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`SmartPort_Project_Snapshot_${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
   function renderAll(){renderSummary();renderGantt();renderPlan();renderFsr();renderCp()}
+  let loadSequence=0;
   async function load(){
+    const sequence=++loadSequence,revision=window.SmartPortStore.getRevision();
     try{
       const me=await API.me();
+      if(sequence!==loadSequence)return;
       window.SMARTPORT_ACCESS={...(window.SMARTPORT_ACCESS||{}),...me};
       $('#githubUser').value=me.login;
       const headerLogout=$('#btnHeaderLogout');
@@ -160,11 +163,11 @@
         return;
       }
       const snap=await API.loadSnapshot();
-      window.SmartPortStore.replaceSnapshot(snap);
+      if(sequence!==loadSequence||!window.SmartPortStore.replaceSnapshot(snap,revision))return;
       const connected=API.getMode?.()==='supabase'?`Supabase Gateway · ${me.login}`:`本機 Project Store 已連線 · ${me.login}`;
       setConnection(true,me.public_snapshot?`Public Snapshot · Read Only · ${String(snap.generated_at||'').slice(0,10)||'unknown date'}`:connected);
-      renderAll();
     }catch(e){
+      if(sequence!==loadSequence||revision!==window.SmartPortStore.getRevision())return;
       setConnection(false,'連線失敗');
       toast(e.message);
     }
@@ -180,6 +183,8 @@
   });
   $('#showSubs').addEventListener('change',renderGantt);
   document.addEventListener('smartport:team-config-saved',renderAll);
+  document.addEventListener('smartport:snapshot-replaced',renderAll);
+  document.addEventListener('smartport:checkpoint-updated',renderAll);
   $('#btnReload').onclick=load;
   $('#apiBase').value=API.getBase();
   if(API.getMode?.()==='supabase'){

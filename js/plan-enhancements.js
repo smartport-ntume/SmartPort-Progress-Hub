@@ -6,6 +6,7 @@
   let filter='ALL';
   let refMap=new Map();
   let referenceData=null;
+  let referenceRevision=0;
   let scheduled=false;
   let lastOwnRender=0;
 
@@ -221,8 +222,26 @@
   function schedule(){if(scheduled)return;scheduled=true;setTimeout(enhance,40);}
 
   async function loadReference(){
-    try{const data=await API.request('/api/project/reference');referenceData=data?.reference||null;refMap=new Map((referenceData?.acl_levels||[]).map(x=>[x.checkpoint,x]));schedule();}catch(_){}
+    const revision=referenceRevision;
+    try{
+      const data=await API.request('/api/project/reference');
+      if(revision!==referenceRevision)return;
+      referenceData=data?.reference||null;
+      refMap=new Map((referenceData?.acl_levels||[]).map(x=>[x.checkpoint,window.SmartPortStore.checkpointReference(x.checkpoint,x)]));
+      schedule();
+    }catch(_){}
   }
+
+  document.addEventListener('smartport:checkpoint-updated',event=>{
+    referenceRevision++;
+    const ref=event.detail.reference;
+    if(ref){
+      refMap.set(ref.checkpoint,ref);
+      if(referenceData)referenceData.acl_levels=[...refMap.values()];
+    }
+    schedule();
+  });
+  document.addEventListener('smartport:edit-checkpoint',event=>openCpEditor(event.detail?.id));
 
   document.addEventListener('click',e=>{
     const family=e.target.closest?.('[data-plan-family]');

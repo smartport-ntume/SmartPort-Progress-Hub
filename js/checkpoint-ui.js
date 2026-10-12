@@ -5,6 +5,7 @@
   let refMap = new Map();
   let referenceLoaded = false;
   let referenceLoading = null;
+  let referenceRevision = 0;
 
   function esc(v='') {
     return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -81,9 +82,12 @@
     if(referenceLoaded&&!force)return true;
     if(referenceLoading&&!force)return referenceLoading;
     referenceLoading=(async()=>{
+      const revision=referenceRevision;
       try{
         const data=await API.request('/api/project/reference');
-        refMap=new Map((data?.reference?.acl_levels||[]).map(x=>[x.checkpoint,x]));
+        if(revision!==referenceRevision)return false;
+        refMap=new Map((data?.reference?.acl_levels||[]).map(x=>[x.checkpoint,
+          window.SmartPortStore.checkpointReference(x.checkpoint,x)]));
         referenceLoaded=true;
         return true;
       }catch(_){return false;}
@@ -91,6 +95,12 @@
     })();
     return referenceLoading;
   }
+
+  document.addEventListener('smartport:checkpoint-updated',event=>{
+    referenceRevision++;
+    const ref=event.detail.reference;
+    if(ref)refMap.set(ref.checkpoint,ref);
+  });
 
   function renderFullCpDetail(id) {
     const S=window.SmartPortStore?.state;
@@ -133,7 +143,10 @@
       return;
     }
     if(!refMap.has(id)){
-      loadReference().then(ok=>{if(ok)renderFullCpDetail(id);});
+      const content=$('#drawerBody').firstElementChild;
+      loadReference().then(ok=>{
+        if(ok&&$('#drawer').classList.contains('open')&&$('#drawerBody').firstElementChild===content)renderFullCpDetail(id);
+      });
     }
   }
 

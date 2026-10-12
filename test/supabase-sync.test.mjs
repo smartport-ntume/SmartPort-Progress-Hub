@@ -21,8 +21,12 @@ test('CP save publishes project and reference without fetching unrelated GitHub 
   assert.equal(result.project.source_commit, result.reference.source_commit);
   publisher.publishReference = async () => { throw new Error('snapshot failed'); };
   await assert.rejects(publisher.publishAfterJob('write_checkpoints'), /snapshot failed/);
+  publisher.publishReference = async () => ({ source_commit: 'retry-cp' });
+  const retry = await publisher.publishAfterJob('refresh_snapshots', { scope: 'checkpoints', checkpoint_id: 'CP1' });
+  assert.equal(retry.reference.source_commit, 'retry-cp');
   publisher.publishAll = async () => ({ all: true });
   assert.deepEqual(await publisher.publishAfterJob('review_weekly_submission'), { all: true });
+  assert.deepEqual(await publisher.publishAfterJob('refresh_snapshots'), { all: true });
 });
 
 test('open weekly batches refresh display names without changing their frozen scope', () => {

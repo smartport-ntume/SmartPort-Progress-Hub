@@ -299,8 +299,9 @@
 
   async function refreshSnapshotAfterApprove(){
     try{
+      const revision=Store.getRevision();
       const snap=await API.loadSnapshot();
-      Store.replaceSnapshot(snap);
+      Store.replaceSnapshot(snap,revision);
       document.querySelector('#btnReload')?.click();
     }catch(_){ }
   }

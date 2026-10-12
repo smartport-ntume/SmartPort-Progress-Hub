@@ -3,6 +3,8 @@
   const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const lines=v=>esc(v||'').replace(/\n/g,'<br>');
   let data=null,currentGroup='ALL';
+  let referenceRevision=0;
+  const committedReferences=new Map();
   const canWrite=()=>!!window.SMARTPORT_ACCESS?.can_write;
 
   async function req(path,options={}){
@@ -34,11 +36,39 @@
   async function saveTR(){await req('/api/project/reference/technical-requirements',{method:'PUT',body:JSON.stringify(data.technical_requirements)});}
 
   async function load(){
-    try{data=await req('/api/project/reference');renderReference();renderTR(currentGroup)}catch(e){const msg=`Reference data 載入失敗：${esc(e.message||e)}`;document.getElementById('referenceBody').innerHTML=`<div class="alert">${msg}</div>`;document.getElementById('trBody').innerHTML=`<div class="alert">${msg}</div>`}
+    const revision=referenceRevision;
+    try{
+      data=await req('/api/project/reference');
+      if(data.reference){
+        data.reference.acl_levels=(data.reference.acl_levels||[]).map(x=>
+          window.SmartPortStore.checkpointReference(x.checkpoint,
+            revision!==referenceRevision?committedReferences.get(x.checkpoint)||x:x));
+      }
+      renderReference();renderTR(currentGroup);
+    }catch(e){const msg=`Reference data 載入失敗：${esc(e.message||e)}`;document.getElementById('referenceBody').innerHTML=`<div class="alert">${msg}</div>`;document.getElementById('trBody').innerHTML=`<div class="alert">${msg}</div>`}
   }
 
+  document.addEventListener('smartport:checkpoint-updated',event=>{
+    referenceRevision++;
+    const ref=event.detail.reference;
+    if(!ref)return;
+    committedReferences.set(ref.checkpoint,ref);
+    if(data?.reference){
+      const rows=data.reference.acl_levels||=[];
+      const i=rows.findIndex(x=>x.checkpoint===ref.checkpoint);
+      if(i>=0)rows[i]={...rows[i],...ref};else rows.push(ref);
+      renderReference();
+    }
+  });
+
   function editMaturity(i){const x=data.reference.fsr_maturity_levels[i];editModal(`編輯 ${x.level}`,['level','name','definition','evidence'].map(k=>({name:k,label:k==='level'?'Level':k==='name'?'Name':k==='definition'?'Definition':'Evidence',value:x[k],type:k==='definition'||k==='evidence'?'textarea':'text'})),async fd=>{for(const k of ['level','name','definition','evidence'])x[k]=String(fd.get(k)||'').trim();await saveReference();renderReference()})}
-  function editAcl(i){const x=data.reference.acl_levels[i];editModal(`編輯 ${x.checkpoint} · ${x.level}`,[{name:'checkpoint',label:'Checkpoint',value:x.checkpoint},{name:'date',label:'Date',value:x.date},{name:'level',label:'ACL',value:x.level},{name:'capability',label:'Vehicle Capability',value:x.capability,type:'textarea',rows:6},{name:'review_checks',label:'Review / Check',value:x.review_checks,type:'textarea',rows:6},{name:'fsr_maturity_target',label:'FSR Maturity Target',value:x.fsr_maturity_target}],async fd=>{for(const k of ['checkpoint','date','level','capability','review_checks','fsr_maturity_target'])x[k]=String(fd.get(k)||'').trim();await saveReference();renderReference()})}
+  function editAcl(i){
+    const x=data.reference.acl_levels[i];
+    if(!window.SmartPortStore.state.checkpoints.some(cp=>cp.id===x.checkpoint)){
+      toast('找不到對應的 CP，請先重新整理專案資料。');return;
+    }
+    document.dispatchEvent(new CustomEvent('smartport:edit-checkpoint',{detail:{id:x.checkpoint}}));
+  }
 
   function renderReference(){
     const root=document.getElementById('referenceBody');if(!root||!data)return;const r=data.reference||{},m=r.fsr_maturity_levels||[],acl=r.acl_levels||[],edit=canWrite();
